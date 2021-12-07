@@ -359,6 +359,10 @@ function unsafeMigrateCache(cached: GlobalState, initialState: GlobalState) {
   if (!cached.archiveSettings) {
     cached.archiveSettings = initialState.archiveSettings;
   }
+
+  if (!cached.ton) {
+    cached.ton = { byChatId: {} };
+  }
 }
 
 function updateCache() {
@@ -416,6 +420,7 @@ export function serializeGlobal<T extends GlobalState>(global: T) {
       'shouldShowContextMenuHint',
       'trustedBotIds',
       'recentlyFoundChatIds',
+      'ton',
     ]),
     lastIsChatInfoShown: !getIsMobile() ? global.lastIsChatInfoShown : undefined,
     customEmojis: reduceCustomEmojis(global),

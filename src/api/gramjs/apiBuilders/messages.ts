@@ -50,6 +50,8 @@ import {
   SUPPORTED_VIDEO_CONTENT_TYPES,
   VIDEO_MOV_TYPE,
   VIDEO_WEBM_TYPE,
+  TON_MSG_ADDRESS_REQUEST,
+  TON_MSG_ADDRESS_RESPONSE,
 } from '../../../config';
 import { pick } from '../../../util/iteratees';
 import { buildStickerFromDocument } from './symbols';
@@ -173,8 +175,9 @@ export function buildApiMessageWithChatId(
   const content = buildMessageContent(mtpMessage);
   const action = mtpMessage.action
     && buildAction(mtpMessage.action, fromId, peerId, Boolean(mtpMessage.post), isOutgoing);
-  if (action) {
-    content.action = action;
+  const tonAction = mtpMessage.message ? buildTonAction(mtpMessage.message, isOutgoing) : undefined;
+  if (action || tonAction) {
+    content.action = action || tonAction;
   }
   const isScheduled = mtpMessage.date > (Math.round(Date.now() / 1000) + getServerTimeOffset());
 
@@ -1124,6 +1127,24 @@ function buildAction(
   };
 }
 
+export function buildTonAction(text: string, isOutgoing: boolean): ApiAction | undefined {
+  if (text === TON_MSG_ADDRESS_REQUEST) {
+    return {
+      text: isOutgoing ? 'You requested TON address' : 'Your TON address was requested',
+      type: 'tonAddressRequest',
+      translationValues: [],
+    };
+  } else if (text.startsWith(TON_MSG_ADDRESS_RESPONSE)) {
+    return {
+      text: isOutgoing ? 'Your TON address was shared' : 'TON address was shared with you',
+      type: 'tonAddressResponse',
+      translationValues: [],
+    };
+  }
+
+  return undefined;
+}
+
 function buildReplyButtons(message: UniversalMessage, shouldSkipBuyButton?: boolean): ApiReplyKeyboard | undefined {
   const { replyMarkup, media } = message;
 
@@ -1319,6 +1340,7 @@ export function buildLocalMessage(
       ...(gif && { video: gif }),
       ...(poll && buildNewPoll(poll, localId)),
       ...(contact && { contact }),
+      action: text ? buildTonAction(text, true) : undefined,
     },
     date: scheduledAt || Math.round(Date.now() / 1000) + getServerTimeOffset(),
     isOutgoing: !isChannel,

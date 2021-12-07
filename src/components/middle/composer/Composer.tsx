@@ -139,6 +139,7 @@ import WebPagePreview from './WebPagePreview';
 import SendAsMenu from './SendAsMenu.async';
 import BotMenuButton from './BotMenuButton';
 import SymbolMenuButton from './SymbolMenuButton';
+import TonModal from './TonModal.async';
 
 import './Composer.scss';
 
@@ -341,6 +342,8 @@ const Composer: FC<OwnProps & StateProps> = ({
   const [requestCalendar, calendar] = useSchedule(canScheduleUntilOnline, handleScheduleCancel);
 
   useTimeout(() => { setIsMounted(true); }, MOUNT_ANIMATION_DURATION);
+
+  const [isTonModalOpen, openTonModal, closeTonModal] = useFlag();
 
   useEffect(() => {
     lastMessageSendTimeSeconds.current = undefined;
@@ -1299,6 +1302,11 @@ const Composer: FC<OwnProps & StateProps> = ({
         onClear={closePollModal}
         onSend={handlePollSend}
       />
+      <TonModal
+        isOpen={isTonModalOpen}
+        chatId={chatId}
+        onClear={closeTonModal}
+      />
       {renderedEditedMessage && (
         <DeleteMessageModal
           isOpen={isDeleteModalOpen}
@@ -1487,6 +1495,8 @@ const Composer: FC<OwnProps & StateProps> = ({
             attachBots={attachBots}
             peerType={attachMenuPeerType}
             theme={theme}
+            canSendTons={!isChatWithSelf && isUserId(chatId)}
+            onSendTons={openTonModal}
           />
           {Boolean(botKeyboardMessageId) && (
             <BotKeyboardMenu

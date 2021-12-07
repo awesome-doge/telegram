@@ -302,3 +302,11 @@ body:not(.is-ios) {
     opacity: 0;
   }
 }
+
+.icon-custom-image {
+  width: 1.5rem;
+  height: 1.25rem;
+  background-repeat: no-repeat;
+  background-size: 100%;
+  background-position: center;
+}

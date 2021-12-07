@@ -306,3 +306,9 @@ export const DEFAULT_LIMITS: Record<ApiLimitType, readonly [number, number]> = {
   chatlistInvites: [3, 100],
   chatlistJoined: [2, 20],
 };
+
+// TON magic messages
+export const TON_MAGIC_URL = 'https://telegra.ph/Telegram--TON-11-10';
+export const TON_MSG_ADDRESS_RESPONSE = 'My TON address is: ';
+// eslint-disable-next-line max-len
+export const TON_MSG_ADDRESS_REQUEST = `I want to send you Toncoins. Please provide your wallet address in a reply message in this format:\n\n${TON_MSG_ADDRESS_RESPONSE}YOUR ADDRESS\n\nMore about TON + Telegram integration: ${TON_MAGIC_URL}`;

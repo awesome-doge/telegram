@@ -33,7 +33,7 @@ const {
   APP_TITLE = DEFAULT_APP_TITLE,
 } = process.env;
 
-module.exports = (_env, { mode = 'production' }) => {
+module.exports = (_env, { mode = 'production', ['output-path']: outputPath }) => {
   return {
     mode,
     entry: './src/index.tsx',
@@ -76,7 +76,7 @@ module.exports = (_env, { mode = 'production' }) => {
       filename: '[name].[contenthash].js',
       chunkFilename: '[id].[chunkhash].js',
       assetModuleFilename: '[name].[contenthash][ext]',
-      path: path.resolve(__dirname, 'dist'),
+      path: path.resolve(__dirname, outputPath || 'dist'),
       clean: true,
     },
 

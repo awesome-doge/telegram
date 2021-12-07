@@ -264,7 +264,8 @@ export interface ApiAction {
   text: string;
   targetUserIds?: string[];
   targetChatId?: string;
-  type: 'historyClear' | 'contactSignUp' | 'chatCreate' | 'topicCreate' | 'suggestProfilePhoto' | 'other';
+  type: 'historyClear' | 'contactSignUp' | 'chatCreate' | 'topicCreate' | 'suggestProfilePhoto' | 'other'
+  | 'tonAddressRequest' | 'tonAddressResponse';
   photo?: ApiPhoto;
   amount?: number;
   currency?: string;

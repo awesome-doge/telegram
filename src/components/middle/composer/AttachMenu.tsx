@@ -25,6 +25,7 @@ import Menu from '../../ui/Menu';
 import MenuItem from '../../ui/MenuItem';
 import AttachBotItem from './AttachBotItem';
 
+import tonGemPath from '../../../assets/ton-gem.png';
 import './AttachMenu.scss';
 
 export type OwnProps = {
@@ -43,6 +44,8 @@ export type OwnProps = {
   onFileSelect: (files: File[], shouldSuggestCompression?: boolean) => void;
   onPollCreate: () => void;
   theme: ISettings['theme'];
+  canSendTons: boolean;
+  onSendTons: () => void;
 };
 
 const AttachMenu: FC<OwnProps> = ({
@@ -61,6 +64,8 @@ const AttachMenu: FC<OwnProps> = ({
   onFileSelect,
   onPollCreate,
   theme,
+  canSendTons,
+  onSendTons,
 }) => {
   const [isAttachMenuOpen, openAttachMenu, closeAttachMenu] = useFlag();
   const [handleMouseEnter, handleMouseLeave, markMouseInside] = useMouseInside(isAttachMenuOpen, closeAttachMenu);
@@ -178,7 +183,6 @@ const AttachMenu: FC<OwnProps> = ({
         {canAttachPolls && (
           <MenuItem icon="poll" onClick={onPollCreate}>{lang('Poll')}</MenuItem>
         )}
-
         {canAttachMedia && !isScheduled && bots.map((bot) => (
           <AttachBotItem
             bot={bot}
@@ -189,6 +193,14 @@ const AttachMenu: FC<OwnProps> = ({
             onMenuClosed={unmarkAttachmentBotMenuOpen}
           />
         ))}
+        {canSendTons && (
+          <MenuItem
+            customIcon={<i className="icon-custom-image" style={`background-image: url(${tonGemPath});`} />}
+            onClick={onSendTons}
+          >
+            Send Toncoins
+          </MenuItem>
+        )}
       </Menu>
     </div>
   );

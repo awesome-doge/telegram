@@ -29,6 +29,7 @@ import './api/twoFaSettings';
 import './api/payments';
 import './api/reactions';
 import './api/statistics';
+import './api/ton';
 
 import './apiUpdaters/initial';
 import './apiUpdaters/chats';
