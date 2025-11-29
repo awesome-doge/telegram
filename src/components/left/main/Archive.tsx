@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
 import type { GlobalState } from '../../../global/types';
@@ -13,7 +13,7 @@ import { formatIntegerCompact } from '../../../util/textFormat';
 import renderText from '../../common/helpers/renderText';
 
 import { useFolderManagerForOrderedIds, useFolderManagerForUnreadCounters } from '../../../hooks/useFolderManager';
-import useOldLang from '../../../hooks/useOldLang';
+import useLang from '../../../hooks/useLang';
 
 import Avatar from '../../common/Avatar';
 import Icon from '../../common/icons/Icon';
@@ -26,6 +26,7 @@ type OwnProps = {
   archiveSettings: GlobalState['archiveSettings'];
   onDragEnter?: NoneToVoidFunction;
   onClick?: NoneToVoidFunction;
+  isFoldersSidebarShown?: boolean;
 };
 
 const PREVIEW_SLICE = 5;
@@ -40,9 +41,10 @@ const Archive: FC<OwnProps> = ({
   archiveSettings,
   onDragEnter,
   onClick,
+  isFoldersSidebarShown,
 }) => {
   const { updateArchiveSettings } = getActions();
-  const lang = useOldLang();
+  const lang = useLang();
 
   const orderedChatIds = useFolderManagerForOrderedIds(ARCHIVED_FOLDER_ID);
   const unreadCounters = useFolderManagerForUnreadCounters();
@@ -75,7 +77,7 @@ const Archive: FC<OwnProps> = ({
 
   const contextActions = useMemo(() => {
     const actionMinimize = !archiveSettings.isMinimized && {
-      title: lang('lng_context_archive_collapse'),
+      title: lang('ContextArchiveCollapse'),
       icon: 'collapse',
       handler: () => {
         updateArchiveSettings({ isMinimized: true });
@@ -83,7 +85,7 @@ const Archive: FC<OwnProps> = ({
     } satisfies MenuItemContextAction;
 
     const actionExpand = archiveSettings.isMinimized && {
-      title: lang('lng_context_archive_expand'),
+      title: lang('ContextArchiveExpand'),
       icon: 'expand',
       handler: () => {
         updateArchiveSettings({ isMinimized: false });
@@ -91,7 +93,7 @@ const Archive: FC<OwnProps> = ({
     } satisfies MenuItemContextAction;
 
     const actionHide = {
-      title: lang('lng_context_archive_to_menu'),
+      title: lang('ContextArchiveToMenu'),
       icon: 'archive-to-main',
       handler: () => {
         updateArchiveSettings({ isHidden: true });
@@ -118,7 +120,7 @@ const Archive: FC<OwnProps> = ({
           </div>
           <Badge
             className={styles.unreadCount}
-            text={archiveUnreadCount ? formatIntegerCompact(archiveUnreadCount) : undefined}
+            text={archiveUnreadCount ? formatIntegerCompact(lang, archiveUnreadCount) : undefined}
           />
         </div>
       </div>
@@ -143,7 +145,7 @@ const Archive: FC<OwnProps> = ({
             </div>
             <Badge
               className={styles.unreadCount}
-              text={archiveUnreadCount ? formatIntegerCompact(archiveUnreadCount) : undefined}
+              text={archiveUnreadCount ? formatIntegerCompact(lang, archiveUnreadCount) : undefined}
             />
           </div>
         </div>
@@ -158,6 +160,7 @@ const Archive: FC<OwnProps> = ({
       className={buildClassName(
         styles.root,
         archiveSettings.isMinimized && styles.minimized,
+        isFoldersSidebarShown && archiveSettings.isMinimized && styles.noMarginTop,
         'chat-item-clickable',
         'chat-item-archive',
       )}

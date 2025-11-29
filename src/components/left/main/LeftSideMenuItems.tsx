@@ -1,6 +1,8 @@
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import type React from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
+import type { ApiUser } from '../../../api/types';
 import type { GlobalState } from '../../../global/types';
 import type { AnimationLevel, ThemeKey } from '../../../types';
 
@@ -17,23 +19,27 @@ import {
 } from '../../../config';
 import {
   INITIAL_PERFORMANCE_STATE_MAX,
-  INITIAL_PERFORMANCE_STATE_MID,
+  INITIAL_PERFORMANCE_STATE_MED,
   INITIAL_PERFORMANCE_STATE_MIN,
 } from '../../../global/initialState';
-import { selectTabState, selectTheme } from '../../../global/selectors';
+import { selectTabState, selectTheme, selectUser } from '../../../global/selectors';
+import { selectPremiumLimit } from '../../../global/selectors/limits';
+import { selectSharedSettings } from '../../../global/selectors/sharedState';
+import { IS_MULTIACCOUNT_SUPPORTED } from '../../../util/browser/globalEnvironment';
+import { IS_TAURI } from '../../../util/browser/globalEnvironment';
 import { getPromptInstall } from '../../../util/installPrompt';
 import { switchPermanentWebVersion } from '../../../util/permanentWebVersion';
-import { IS_ELECTRON } from '../../../util/windowEnvironment';
 
 import { useFolderManagerForUnreadCounters } from '../../../hooks/useFolderManager';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
-import useOldLang from '../../../hooks/useOldLang';
 
 import AttachBotItem from '../../middle/composer/AttachBotItem';
 import MenuItem from '../../ui/MenuItem';
+import MenuSeparator from '../../ui/MenuSeparator';
 import Switcher from '../../ui/Switcher';
 import Toggle from '../../ui/Toggle';
+import AccountMenuItems from './AccountMenuItems';
 
 type OwnProps = {
   onSelectSettings: NoneToVoidFunction;
@@ -45,9 +51,11 @@ type OwnProps = {
 
 type StateProps = {
   animationLevel: AnimationLevel;
+  currentUser?: ApiUser;
   theme: ThemeKey;
   canInstall?: boolean;
   attachBots: GlobalState['attachMenu']['bots'];
+  accountsTotalLimit: number;
 } & Pick<GlobalState, 'currentUserId' | 'archiveSettings'>;
 
 const LeftSideMenuItems = ({
@@ -57,6 +65,8 @@ const LeftSideMenuItems = ({
   theme,
   canInstall,
   attachBots,
+  currentUser,
+  accountsTotalLimit,
   onSelectArchived,
   onSelectContacts,
   onSelectSettings,
@@ -65,23 +75,26 @@ const LeftSideMenuItems = ({
 }: OwnProps & StateProps) => {
   const {
     openChat,
-    setSettingOption,
+    setSharedSettingOption,
     updatePerformanceSettings,
     openChatByUsername,
     openUrl,
     openChatWithInfo,
   } = getActions();
-  const oldLang = useOldLang();
   const lang = useLang();
 
   const animationLevelValue = animationLevel !== ANIMATION_LEVEL_MIN
     ? (animationLevel === ANIMATION_LEVEL_MAX ? 'max' : 'mid') : 'min';
 
-  const withOtherVersions = !IS_ELECTRON && (window.location.hostname === PRODUCTION_HOSTNAME || IS_TEST);
+  const withOtherVersions = !IS_TAURI && (window.location.hostname === PRODUCTION_HOSTNAME || IS_TEST);
 
   const archivedUnreadChatsCount = useFolderManagerForUnreadCounters()[ARCHIVED_FOLDER_ID]?.chatsCount || 0;
 
   const bots = useMemo(() => Object.values(attachBots).filter((bot) => bot.isForSideMenu), [attachBots]);
+
+  const handleSelectMyProfile = useLastCallback(() => {
+    openChatWithInfo({ id: currentUserId, shouldReplaceHistory: true, isOwnProfile: true });
+  });
 
   const handleSelectSaved = useLastCallback(() => {
     openChat({ id: currentUserId, shouldReplaceHistory: true });
@@ -91,8 +104,8 @@ const LeftSideMenuItems = ({
     e.stopPropagation();
     const newTheme = theme === 'light' ? 'dark' : 'light';
 
-    setSettingOption({ theme: newTheme });
-    setSettingOption({ shouldUseSystemTheme: false });
+    setSharedSettingOption({ theme: newTheme });
+    setSharedSettingOption({ shouldUseSystemTheme: false });
   });
 
   const handleAnimationLevelChange = useLastCallback((e: React.SyntheticEvent<HTMLElement>) => {
@@ -104,14 +117,14 @@ const LeftSideMenuItems = ({
     }
     const performanceSettings = newLevel === ANIMATION_LEVEL_MIN
       ? INITIAL_PERFORMANCE_STATE_MIN
-      : (newLevel === ANIMATION_LEVEL_MAX ? INITIAL_PERFORMANCE_STATE_MAX : INITIAL_PERFORMANCE_STATE_MID);
+      : (newLevel === ANIMATION_LEVEL_MAX ? INITIAL_PERFORMANCE_STATE_MAX : INITIAL_PERFORMANCE_STATE_MED);
 
-    setSettingOption({ animationLevel: newLevel as AnimationLevel });
+    setSharedSettingOption({ animationLevel: newLevel as AnimationLevel, wasAnimationLevelSetManually: true });
     updatePerformanceSettings(performanceSettings);
   });
 
   const handleChangelogClick = useLastCallback(() => {
-    window.open(BETA_CHANGELOG_URL, '_blank', 'noopener');
+    window.open(BETA_CHANGELOG_URL, '_blank', 'noopener,noreferrer');
   });
 
   const handleSwitchToWebK = useLastCallback(() => {
@@ -119,41 +132,53 @@ const LeftSideMenuItems = ({
   });
 
   const handleOpenTipsChat = useLastCallback(() => {
-    openChatByUsername({ username: oldLang('Settings.TipsUsername') });
+    openChatByUsername({ username: lang('TelegramFeaturesUsername') });
   });
 
   const handleBugReportClick = useLastCallback(() => {
     openUrl({ url: FEEDBACK_URL });
   });
 
-  const handleOpenMyStories = useLastCallback(() => {
-    openChatWithInfo({ id: currentUserId, shouldReplaceHistory: true, profileTab: 'stories' });
-  });
-
   return (
     <>
+      {IS_MULTIACCOUNT_SUPPORTED && currentUser && (
+        <>
+          <AccountMenuItems
+            currentUser={currentUser}
+            totalLimit={accountsTotalLimit}
+            onSelectCurrent={onSelectSettings}
+          />
+          <MenuSeparator />
+        </>
+      )}
+      <MenuItem
+        icon="user"
+        onClick={handleSelectMyProfile}
+      >
+        {lang('MenuMyProfile')}
+      </MenuItem>
       <MenuItem
         icon="saved-messages"
         onClick={handleSelectSaved}
       >
-        {oldLang('SavedMessages')}
+        {lang('MenuSavedMessages')}
       </MenuItem>
       {archiveSettings.isHidden && (
         <MenuItem
           icon="archive"
           onClick={onSelectArchived}
         >
-          <span className="menu-item-name">{oldLang('ArchivedChats')}</span>
+          <span className="menu-item-name">{lang('MenuArchivedChats')}</span>
           {archivedUnreadChatsCount > 0 && (
             <div className="right-badge">{archivedUnreadChatsCount}</div>
           )}
         </MenuItem>
       )}
       <MenuItem
-        icon="user"
+        icon="group"
         onClick={onSelectContacts}
       >
-        {oldLang('Contacts')}
+        {lang('MenuContacts')}
       </MenuItem>
       {bots.map((bot) => (
         <AttachBotItem
@@ -166,25 +191,19 @@ const LeftSideMenuItems = ({
         />
       ))}
       <MenuItem
-        icon="play-story"
-        onClick={handleOpenMyStories}
-      >
-        {oldLang('Settings.MyStories')}
-      </MenuItem>
-      <MenuItem
         icon="settings"
         onClick={onSelectSettings}
       >
-        {oldLang('Settings')}
+        {lang('MenuSettings')}
       </MenuItem>
       <MenuItem
         icon="darkmode"
         onClick={handleDarkModeToggle}
       >
-        <span className="menu-item-name">{oldLang('lng_menu_night_mode')}</span>
+        <span className="menu-item-name">{lang('MenuNightMode')}</span>
         <Switcher
           id="darkmode"
-          label={oldLang(theme === 'dark' ? 'lng_settings_disable_night_theme' : 'lng_settings_enable_night_theme')}
+          label={lang(theme === 'dark' ? 'AriaMenuDisableNightMode' : 'AriaMenuEnableNightMode')}
           checked={theme === 'dark'}
           noAnimation
         />
@@ -193,14 +212,14 @@ const LeftSideMenuItems = ({
         icon="animations"
         onClick={handleAnimationLevelChange}
       >
-        <span className="menu-item-name capitalize">{oldLang('Appearance.Animations').toLowerCase()}</span>
+        <span className="menu-item-name capitalize">{lang('MenuAnimationsSwitch')}</span>
         <Toggle value={animationLevelValue} />
       </MenuItem>
       <MenuItem
         icon="help"
         onClick={handleOpenTipsChat}
       >
-        {oldLang('TelegramFeatures')}
+        {lang('MenuTelegramFeatures')}
       </MenuItem>
       <MenuItem
         icon="bug"
@@ -239,21 +258,23 @@ const LeftSideMenuItems = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const tabState = selectTabState(global);
     const {
       currentUserId, archiveSettings,
     } = global;
-    const { animationLevel } = global.settings.byKey;
+    const { animationLevel } = selectSharedSettings(global);
     const attachBots = global.attachMenu.bots;
 
     return {
       currentUserId,
+      currentUser: selectUser(global, currentUserId!),
       theme: selectTheme(global),
       animationLevel,
       canInstall: Boolean(tabState.canInstall),
       archiveSettings,
       attachBots,
+      accountsTotalLimit: selectPremiumLimit(global, 'moreAccounts'),
     };
   },
 )(LeftSideMenuItems));

@@ -1,4 +1,4 @@
-import React, { memo } from '../../../lib/teact/teact';
+import { memo } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
 import type { ThemeKey } from '../../../types';
@@ -13,13 +13,17 @@ import styles from './GiftRibbon.module.scss';
 const COLORS = {
   red: [['#FF5B54', '#ED1C26'], ['#653633', '#532224']],
   blue: [['#6ED2FF', '#34A4FC'], ['#344F5A', '#152E42']],
+  purple: [['#E367D7', '#757BF6'], ['#E367D7', '#757BF6']],
+  green: [['#52D553', '#4BB121'], ['#52D553', '#4BB121']],
+  orange: [['#D48F23', '#BE7E15'], ['#D48F23', '#BE7E15']],
 } as const;
 type ColorKey = keyof typeof COLORS;
 
 const COLOR_KEYS = new Set(Object.keys(COLORS) as ColorKey[]);
+type GradientColor = readonly [string, string];
 
 type OwnProps = {
-  color: ColorKey | string;
+  color: ColorKey | GradientColor | (string & {});
   text: string;
   className?: string;
 };
@@ -38,7 +42,13 @@ const GiftRibbon = ({
 
   const isDarkTheme = theme === 'dark';
 
-  const gradientColor = colorKey ? COLORS[colorKey][isDarkTheme ? 1 : 0] : undefined;
+  const gradientColor: GradientColor | undefined
+    = Array.isArray(color)
+      ? color as GradientColor
+      : colorKey
+        ? COLORS[colorKey][isDarkTheme ? 1 : 0]
+        : undefined;
+
   const startColor = gradientColor ? gradientColor[0] : color;
   const endColor = gradientColor ? gradientColor[1] : color;
 
@@ -59,7 +69,7 @@ const GiftRibbon = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       theme: selectTheme(global),
     };

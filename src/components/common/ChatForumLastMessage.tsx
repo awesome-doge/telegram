@@ -1,5 +1,5 @@
-import type { FC } from '../../lib/teact/teact';
-import React, {
+import type { TeactNode } from '../../lib/teact/teact';
+import {
   memo,
   useEffect,
   useMemo,
@@ -18,7 +18,7 @@ import renderText from './helpers/renderText';
 
 import { getIsMobile } from '../../hooks/useAppLayout';
 import { useFastClick } from '../../hooks/useFastClick';
-import useOldLang from '../../hooks/useOldLang';
+import useLang from '../../hooks/useLang';
 
 import TopicIcon from './TopicIcon';
 
@@ -27,27 +27,27 @@ import styles from './ChatForumLastMessage.module.scss';
 type OwnProps = {
   chat: ApiChat;
   topics?: Record<number, ApiTopic>;
-  renderLastMessage: () => React.ReactNode;
+  hasTags?: boolean;
+  renderLastMessage: () => TeactNode | undefined;
   observeIntersection?: ObserveFn;
 };
 
 const NO_CORNER_THRESHOLD = Number(REM);
 const MAX_TOPICS = 3;
 
-const ChatForumLastMessage: FC<OwnProps> = ({
+const ChatForumLastMessage = ({
   chat,
   topics,
+  hasTags,
   renderLastMessage,
   observeIntersection,
-}) => {
+}: OwnProps) => {
   const { openThread } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const lastMessageRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const mainColumnRef = useRef<HTMLDivElement>(null);
+  const lastMessageRef = useRef<HTMLDivElement>();
+  const mainColumnRef = useRef<HTMLDivElement>();
 
-  const lang = useOldLang();
+  const lang = useLang();
 
   const [lastActiveTopic, ...otherTopics] = useMemo(() => {
     if (!topics) {
@@ -64,7 +64,7 @@ const ChatForumLastMessage: FC<OwnProps> = ({
     handleClick: handleOpenTopicClick,
     handleMouseDown: handleOpenTopicMouseDown,
   } = useFastClick((e: React.MouseEvent<HTMLDivElement>) => {
-    if (lastActiveTopic.unreadCount === 0 || chat.isForumAsMessages) return;
+    if (lastActiveTopic.unreadCount === 0 || (chat.isForumAsMessages && !chat.isBotForum)) return;
 
     e.stopPropagation();
     e.preventDefault();
@@ -80,7 +80,7 @@ const ChatForumLastMessage: FC<OwnProps> = ({
   useEffect(() => {
     const lastMessageElement = lastMessageRef.current;
     const mainColumnElement = mainColumnRef.current;
-    if (!lastMessageElement || !mainColumnElement) return;
+    if (!lastMessageElement || !mainColumnElement || hasTags) return;
 
     const lastMessageWidth = lastMessageElement.offsetWidth;
     const mainColumnWidth = mainColumnElement.offsetWidth;
@@ -91,7 +91,7 @@ const ChatForumLastMessage: FC<OwnProps> = ({
       setOverwrittenWidth(undefined);
     }
     setIsReversedCorner(lastMessageWidth > mainColumnWidth);
-  }, [lastActiveTopic, renderLastMessage]);
+  }, [lastActiveTopic, renderLastMessage, hasTags]);
 
   return (
     <div
@@ -103,53 +103,63 @@ const ChatForumLastMessage: FC<OwnProps> = ({
       dir={lang.isRtl ? 'rtl' : undefined}
       style={overwrittenWidth ? `--overwritten-width: ${overwrittenWidth}px` : undefined}
     >
-      {lastActiveTopic && (
-        <div className={styles.titleRow}>
-          <div
-            className={buildClassName(
-              styles.mainColumn,
-              lastActiveTopic.unreadCount && styles.unread,
-            )}
-            ref={mainColumnRef}
-            onClick={handleOpenTopicClick}
-            onMouseDown={handleOpenTopicMouseDown}
-          >
-            <TopicIcon
-              topic={lastActiveTopic}
-              observeIntersection={observeIntersection}
-            />
-            <div className={styles.title}>{renderText(lastActiveTopic.title)}</div>
-            {!overwrittenWidth && isReversedCorner && (
-              <div className={styles.afterWrapper}>
-                <div className={styles.after} />
+      {
+        !hasTags && (
+          <>
+            {lastActiveTopic && (
+              <div className={styles.titleRow}>
+                <div
+                  className={buildClassName(
+                    styles.mainColumn,
+                    lastActiveTopic.unreadCount && styles.unread,
+                  )}
+                  ref={mainColumnRef}
+                  onClick={handleOpenTopicClick}
+                  onMouseDown={handleOpenTopicMouseDown}
+                >
+                  <TopicIcon
+                    topic={lastActiveTopic}
+                    observeIntersection={observeIntersection}
+                  />
+                  <div className={styles.title}>{renderText(lastActiveTopic.title)}</div>
+                  {!overwrittenWidth && isReversedCorner && (
+                    <div className={styles.afterWrapper}>
+                      <div className={styles.after} />
+                    </div>
+                  )}
+                </div>
+
+                <div className={styles.otherColumns}>
+                  {otherTopics.map((topic) => (
+                    <div
+                      className={buildClassName(
+                        styles.otherColumn, topic.unreadCount && styles.unread,
+                      )}
+                      key={topic.id}
+                    >
+                      <TopicIcon
+                        topic={topic}
+                        className={styles.otherColumnIcon}
+                        observeIntersection={observeIntersection}
+                      />
+                      <span className={styles.otherColumnTitle}>{renderText(topic.title)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className={styles.ellipsis} />
               </div>
             )}
-          </div>
-
-          <div className={styles.otherColumns}>
-            {otherTopics.map((topic) => (
-              <div
-                className={buildClassName(
-                  styles.otherColumn, topic.unreadCount && styles.unread,
-                )}
-                key={topic.id}
-              >
-                <TopicIcon
-                  topic={topic}
-                  className={styles.otherColumnIcon}
-                  observeIntersection={observeIntersection}
-                />
-                <span className={styles.otherColumnTitle}>{renderText(topic.title)}</span>
+            {!lastActiveTopic && (
+              <div className={buildClassName(styles.titleRow, styles.loading)}>
+                {lang('Loading')}
               </div>
-            ))}
-          </div>
-
-          <div className={styles.ellipsis} />
-        </div>
-      )}
-      {!lastActiveTopic && <div className={buildClassName(styles.titleRow, styles.loading)}>{lang('Loading')}</div>}
+            )}
+          </>
+        )
+      }
       <div
-        className={buildClassName(styles.lastMessage, lastActiveTopic?.unreadCount && styles.unread)}
+        className={buildClassName(styles.lastMessage, lastActiveTopic?.unreadCount && !hasTags && styles.unread)}
         ref={lastMessageRef}
         onClick={handleOpenTopicClick}
         onMouseDown={handleOpenTopicMouseDown}

@@ -1,14 +1,8 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useEffect,
-  useMemo,
-  useRef, useState,
-} from '../../../lib/teact/teact';
+import { memo, useEffect, useMemo, useRef, useState } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type {
-  ApiAttachBot, ApiBotAppSettings, ApiUser,
-} from '../../../api/types';
+import type { ApiAttachBot, ApiBotAppSettings, ApiUser } from '../../../api/types';
 import type { TabState } from '../../../global/types';
 import type { BotAppPermissions, ThemeKey } from '../../../types';
 import type {
@@ -30,10 +24,11 @@ import {
   selectUserFullInfo,
   selectWebApp,
 } from '../../../global/selectors';
+import { getGeolocationStatus, IS_GEOLOCATION_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
+import buildStyle from '../../../util/buildStyle.ts';
 import download from '../../../util/download';
 import { extractCurrentThemeParams, validateHexColor } from '../../../util/themeStyle';
-import { getGeolocationStatus, IS_GEOLOCATION_SUPPORTED } from '../../../util/windowEnvironment';
 import { callApi } from '../../../api/gramjs';
 import renderText from '../../common/helpers/renderText';
 
@@ -75,7 +70,7 @@ export type OwnProps = {
   registerReloadFrameCallback: (callback: (url: string) => void) => void;
   onContextMenuButtonClick: (e: React.MouseEvent) => void;
   isTransforming?: boolean;
-  isMultiTabSupported? : boolean;
+  isMultiTabSupported?: boolean;
   modalHeight: number;
 };
 
@@ -87,12 +82,9 @@ type StateProps = {
   theme?: ThemeKey;
   isPaymentModalOpen?: boolean;
   paymentStatus?: TabState['payment']['status'];
-  isPremium?: boolean;
   modalState?: WebAppModalStateType;
   botAppPermissions?: BotAppPermissions;
 };
-
-const NBSP = '\u00A0';
 
 const MAIN_BUTTON_ANIMATION_TIME = 250;
 const ANIMATION_WAIT = 400;
@@ -114,6 +106,8 @@ const DEFAULT_BUTTON_TEXT: Record<string, string> = {
   cancel: 'Cancel',
   close: 'Close',
 };
+
+const NBSP = '\u00A0';
 
 const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
   modal,
@@ -148,6 +142,7 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
     openLocationAccessModal,
     changeWebAppModalState,
     closeWebAppModal,
+    openPreparedInlineMessageModal,
   } = getActions();
   const [mainButton, setMainButton] = useState<WebAppButton | undefined>();
   const [secondaryButton, setSecondaryButton] = useState<WebAppButton | undefined>();
@@ -163,24 +158,22 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
     unlockPopupsAt, handlePopupOpened, handlePopupClosed,
   } = usePopupLimit(POPUP_SEQUENTIAL_LIMIT, POPUP_RESET_DELAY);
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
-  // eslint-disable-next-line no-null/no-null
-  const headerButtonRef = useRef<HTMLDivElement>(null);
+  const headerButtonRef = useRef<HTMLDivElement>();
 
-  // eslint-disable-next-line no-null/no-null
-  const headerButtonCaptionRef = useRef<HTMLDivElement>(null);
+  const headerButtonCaptionRef = useRef<HTMLDivElement>();
 
   const isFullscreen = modalState === 'fullScreen';
   const isMinimizedState = modalState === 'minimized';
 
   const exitFullScreenCallback = useLastCallback(() => {
-    setTimeout(() => { changeWebAppModalState({ state: 'maximized' }); }, COLLAPSING_WAIT);
+    setTimeout(() => {
+      changeWebAppModalState({ state: 'maximized' });
+    }, COLLAPSING_WAIT);
   });
 
-  // eslint-disable-next-line no-null/no-null
-  const fullscreenElementRef = useRef<HTMLElement | null>(null);
+  const fullscreenElementRef = useRef<HTMLElement>();
 
   useEffect(() => {
     fullscreenElementRef.current = document.querySelector('#portals') as HTMLElement;
@@ -189,7 +182,7 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
   const [, setFullscreen, exitFullscreen] = useFullscreen(fullscreenElementRef, exitFullScreenCallback);
 
   const activeWebApp = modal?.activeWebAppKey ? modal.openedWebApps[modal.activeWebAppKey] : undefined;
-  const activeWebAppName = activeWebApp?.appName;
+  const { appName: activeWebAppName, backgroundColor } = activeWebApp || {};
   const {
     url, buttonText, isBackButtonVisible,
   } = webApp || {};
@@ -246,8 +239,7 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
     updateCurrentWebApp({ headerColor: color });
   }, [themeHeaderColor, headerColorFromEvent, headerColorFromSettings]);
 
-  // eslint-disable-next-line no-null/no-null
-  const frameRef = useRef<HTMLIFrameElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>();
 
   const oldLang = useOldLang();
   const lang = useLang();
@@ -334,7 +326,9 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
   });
 
   const sendFullScreenChangedCallback = useLastCallback(
-    (value: boolean) => { if (isActive) sendFullScreenChanged(value); },
+    (value: boolean) => {
+      if (isActive) sendFullScreenChanged(value);
+    },
   );
 
   useEffect(() => {
@@ -573,9 +567,10 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
     }
 
     if (eventType === 'web_app_open_tg_link') {
+      changeWebAppModalState({ state: 'minimized' });
+
       const linkUrl = TME_LINK_PREFIX + eventData.path_full;
       openTelegramLink({ url: linkUrl, shouldIgnoreCache: eventData.force_request });
-      closeActiveWebApp();
     }
 
     if (eventType === 'web_app_setup_back_button') {
@@ -698,6 +693,12 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
       handleCheckDownloadFile(eventData.url, eventData.file_name);
     }
 
+    if (eventType === 'web_app_send_prepared_message') {
+      if (!bot || !webAppKey) return;
+      const { id } = eventData;
+      openPreparedInlineMessageModal({ botId: bot.id, messageId: id, webAppKey });
+    }
+
     if (eventType === 'web_app_request_emoji_status_access') {
       if (!bot) return;
       openEmojiStatusAccessModal({ bot, webAppKey });
@@ -740,14 +741,14 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
             sendEvent({
               eventType: 'location_requested',
               eventData: {
-                available: botAppPermissions?.geolocation!,
+                available: Boolean(botAppPermissions?.geolocation),
                 latitude: geolocation?.latitude,
                 longitude: geolocation?.longitude,
                 altitude: geolocation?.altitude,
                 course: geolocation?.heading,
                 speed: geolocation?.speed,
                 horizontal_accuracy: geolocation?.accuracy,
-                vertical_accuracy: geolocation?.accuracy,
+                vertical_accuracy: geolocation?.altitudeAccuracy,
               },
             });
           } else {
@@ -892,7 +893,10 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
     }
   }, [setShouldDecreaseWebFrameSize, shouldShowSecondaryButton, shouldShowMainButton]);
 
-  const frameStyle = isTransforming ? 'pointer-events: none;' : '';
+  const frameStyle = buildStyle(
+    `background-color: ${backgroundColor || 'var(--color-background)'}`,
+    isTransforming && 'pointer-events: none;',
+  );
 
   const handleBackClick = useLastCallback(() => {
     if (isBackButtonVisible) {
@@ -972,14 +976,14 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
               styles.headerButton,
               styles.left,
             )}
+            tabIndex={0}
+            role="button"
+            aria-label={lang('WebAppCollapse')}
+            onClick={handleCollapseClick}
           >
             <Icon
               name="down"
-              className={buildClassName(
-                styles.icon,
-                styles.collapseIcon,
-              )}
-              onClick={handleCollapseClick}
+              className={styles.icon}
             />
           </div>
           <div
@@ -987,6 +991,11 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
               styles.headerButton,
               styles.right,
             )}
+            tabIndex={0}
+            role="button"
+            aria-haspopup="menu"
+            aria-label={lang('AriaMoreButton')}
+            onClick={handleShowContextMenu}
           >
             <Icon
               name="more"
@@ -994,7 +1003,6 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
                 styles.icon,
                 styles.moreIcon,
               )}
-              onClick={handleShowContextMenu}
             />
           </div>
         </div>
@@ -1047,9 +1055,9 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
         )}
         style={frameStyle}
         src={url}
-        title={`${bot?.firstName} Web App`}
+        title={lang('AriaMiniApp', { bot: bot?.firstName })}
         sandbox={SANDBOX_ATTRIBUTES}
-        allow="camera; microphone; geolocation;"
+        allow="camera; microphone; geolocation; clipboard-write;"
         allowFullScreen
         ref={frameRef}
       />
@@ -1078,7 +1086,6 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
             disabled={!secondaryButtonCurrentIsActive && !secondaryButton?.isProgressVisible}
             nonInteractive={secondaryButton?.isProgressVisible}
             onClick={handleSecondaryButtonClick}
-            size="smaller"
           >
             {!secondaryButton?.isProgressVisible && secondaryButtonCurrentText}
             {secondaryButton?.isProgressVisible
@@ -1095,22 +1102,21 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
             disabled={!mainButtonCurrentIsActive && !mainButton?.isProgressVisible}
             nonInteractive={mainButton?.isProgressVisible}
             onClick={handleMainButtonClick}
-            size="smaller"
           >
             {!mainButton?.isProgressVisible && mainButtonCurrentText}
             {mainButton?.isProgressVisible && <Spinner className={styles.mainButtonSpinner} color="white" />}
           </Button>
         </div>
-      ) }
+      )}
       {popupParameters && (
         <Modal
           isOpen={Boolean(popupParameters)}
           title={popupParameters.title || NBSP}
-          onClose={handleAppPopupModalClose}
-          hasCloseButton
           className={
             buildClassName(styles.webAppPopup, !popupParameters.title?.trim().length && styles.withoutTitle)
           }
+          hasAbsoluteCloseButton
+          onClose={handleAppPopupModalClose}
         >
           {popupParameters.message}
           <div className="dialog-buttons mt-2">
@@ -1120,8 +1126,6 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
                 className="confirm-dialog-button"
                 color={button.type === 'destructive' ? 'danger' : 'primary'}
                 isText
-                size="smaller"
-                // eslint-disable-next-line react/jsx-no-bind
                 onClick={() => handleAppPopupClose(button.id)}
               >
                 {button.text || oldLang(DEFAULT_BUTTON_TEXT[button.type])}
@@ -1134,10 +1138,14 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
       <ConfirmDialog
         isOpen={isRequestingPhone}
         onClose={handleRejectPhone}
-        title={oldLang('ShareYouPhoneNumberTitle')}
-        text={oldLang('AreYouSureShareMyContactInfoBot')}
+        title={lang('ShareYouPhoneNumberTitle')}
+        textParts={lang(
+          'AreYouSureShareMyContactInfoBot',
+          undefined,
+          { withNodes: true, withMarkdown: true, renderTextFilters: ['br', 'emoji'],
+          })}
         confirmHandler={handleAcceptPhone}
-        confirmLabel={oldLang('ContactShare')}
+        confirmLabel={lang('ContactShare')}
       />
       <ConfirmDialog
         isOpen={isRequestingWriteAccess}
@@ -1184,7 +1192,7 @@ const WebAppModalTabContent: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { modal }): StateProps => {
+  (global, { modal }): Complete<StateProps> => {
     const activeWebApp = modal?.activeWebAppKey ? selectWebApp(global, modal.activeWebAppKey) : undefined;
     const { botId: activeBotId } = activeWebApp || {};
     const modalState = modal?.modalState;

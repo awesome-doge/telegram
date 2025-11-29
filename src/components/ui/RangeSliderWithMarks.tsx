@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react';
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useLayoutEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 
@@ -15,12 +15,7 @@ export type OwnProps = {
 };
 
 const RangeSliderWithMarks: FC<OwnProps> = ({ marks, onChange, rangeCount }) => {
-  // eslint-disable-next-line no-null/no-null
-  const sliderRef = useRef<HTMLInputElement | null>(null);
-
-  const fillPercentage = useMemo(() => {
-    return ((marks.indexOf(rangeCount) / (marks.length - 1)) * 100).toFixed(2);
-  }, [marks, rangeCount]);
+  const sliderRef = useRef<HTMLInputElement>();
 
   const rangeCountIndex = useMemo(() => marks.indexOf(rangeCount), [marks, rangeCount]);
 
@@ -29,8 +24,13 @@ const RangeSliderWithMarks: FC<OwnProps> = ({ marks, onChange, rangeCount }) => 
   }, [marks, rangeCount]);
 
   useLayoutEffect(() => {
-    sliderRef.current!.style.setProperty('--fill-percentage', `${fillPercentage}%`);
-  }, [fillPercentage]);
+    if (sliderRef.current) {
+      const fillPercentage = (rangeCountIndex / (marks.length - 1)) * 100;
+      const thumbOffset = fillPercentage / 2;
+      sliderRef.current.style.setProperty('--fill-percentage', `${fillPercentage}%`);
+      sliderRef.current.style.setProperty('--thumb-offset', `${thumbOffset}%`);
+    }
+  }, [rangeCountIndex, marks]);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const index = parseInt(event.target.value, 10);

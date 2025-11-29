@@ -1,7 +1,7 @@
-import { ESTABLISH_BROADCAST_CHANNEL_NAME } from '../config';
+import { IS_TAURI } from './browser/globalEnvironment';
 import { createCallbackManager } from './callbacks';
+import { ESTABLISH_BROADCAST_CHANNEL_NAME } from './multiaccount';
 import { getPasscodeHash, setPasscodeHash } from './passcode';
-import { IS_MULTITAB_SUPPORTED } from './windowEnvironment';
 
 import Deferred from './Deferred';
 
@@ -11,13 +11,14 @@ const { addCallback, runCallbacks } = createCallbackManager();
 const { addCallback: addCallbackTokenDied, runCallbacks: runCallbacksTokenDied } = createCallbackManager();
 const token = Number(Math.random().toString().substring(2));
 const collectedTokens = new Set([token]);
-let channel = IS_MULTITAB_SUPPORTED ? new BroadcastChannel(ESTABLISH_BROADCAST_CHANNEL_NAME) : undefined;
+const channel = new BroadcastChannel(ESTABLISH_BROADCAST_CHANNEL_NAME);
 
 let isEstablished = false;
 const initialEstablishment = new Deferred();
 let masterToken: number | undefined;
 let isWaitingForMaster = false;
 let reestablishToken: number | undefined;
+let isChannelClosed = false;
 
 type EstablishMessage = {
   collectedTokens: Set<number>;
@@ -30,7 +31,7 @@ type EstablishMessage = {
 };
 
 const handleMessage = ({ data }: { data: EstablishMessage }) => {
-  if (!channel || !data) return;
+  if (!data) return;
 
   if (data.currentPasscodeHash) {
     setPasscodeHash(data.currentPasscodeHash);
@@ -137,8 +138,7 @@ const handleMessage = ({ data }: { data: EstablishMessage }) => {
 };
 
 export function establishMultitabRole(shouldReestablishMasterToSelf?: boolean) {
-  if (!channel) return;
-
+  if (isChannelClosed) return;
   channel.addEventListener('message', handleMessage);
 
   channel.postMessage({ collectedTokens });
@@ -156,20 +156,19 @@ export function establishMultitabRole(shouldReestablishMasterToSelf?: boolean) {
   }, ESTABLISH_TIMEOUT);
 
   window.addEventListener('beforeunload', signalTokenDead);
+  if (IS_TAURI) window.addEventListener('unload', signalTokenDead);
 }
 
 export function signalTokenDead() {
-  if (!channel) return;
-
+  if (isChannelClosed) return;
   runCallbacksTokenDied(token);
   channel.removeEventListener('message', handleMessage);
   channel.postMessage({ tokenDied: token, currentPasscodeHash: getPasscodeHash() });
   channel.close();
-  channel = undefined;
+  isChannelClosed = true;
 }
 
 export function signalPasscodeHash() {
-  if (!channel) return;
   channel.postMessage({ currentPasscodeHash: getPasscodeHash() });
 }
 
@@ -182,8 +181,6 @@ export function getAllMultitabTokens() {
 }
 
 export function reestablishMasterToSelf() {
-  if (!channel) return;
-
   isWaitingForMaster = true;
   channel.postMessage({
     collectedTokens, masterToken: token, shouldGiveUpMaster: true,

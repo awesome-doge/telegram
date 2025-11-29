@@ -1,9 +1,7 @@
 import type { FC } from '../../lib/teact/teact';
-import React from '../../lib/teact/teact';
 
 import useOldLang from '../../hooks/useOldLang';
 
-import Icon from '../common/icons/Icon';
 import Button from './Button';
 
 import './ShowMoreButton.scss';
@@ -29,14 +27,19 @@ const ShowMoreButton: FC<OwnProps> = ({
     <Button
       className="ShowMoreButton"
       color="translucent"
-      size="smaller"
       isText
       isLoading={isLoading}
       isRtl={lang.isRtl}
       onClick={onClick}
+      iconName="down"
     >
-      <Icon name="down" />
-      Show {count} more {count > 1 ? itemPluralName || `${itemName}s` : itemName}
+      Show
+      {' '}
+      {count}
+      {' '}
+      more
+      {' '}
+      {count > 1 ? itemPluralName || `${itemName}s` : itemName}
     </Button>
   );
 };

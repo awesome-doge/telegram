@@ -1,16 +1,12 @@
-/* eslint-disable @typescript-eslint/naming-convention */
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
 
 import type { ApiAppConfig, ApiLimitType, ApiPremiumSection } from '../../types';
 
+import { omitUndefined } from '../../../util/iteratees';
 import {
+  DEFAULT_APP_CONFIG,
   DEFAULT_LIMITS,
-  MAX_UNIQUE_REACTIONS,
-  SERVICE_NOTIFICATIONS_USER_ID,
-  STORY_EXPIRE_PERIOD,
-  STORY_VIEWERS_EXPIRE_PERIOD,
-} from '../../../config';
+} from '../../../limits';
 import localDb from '../localDb';
 import { buildJson } from './misc';
 
@@ -30,7 +26,8 @@ type Limit =
   | 'chatlist_invites_limit'
   | 'chatlist_joined_limit'
   | 'recommended_channels_limit'
-  | 'saved_dialogs_pinned_limit';
+  | 'saved_dialogs_pinned_limit'
+  | 'reactions_user_max';
 type LimitKey = `${Limit}_${LimitType}`;
 type LimitsConfig = Record<LimitKey, number>;
 
@@ -51,6 +48,7 @@ export interface GramJsAppConfig extends LimitsConfig {
   autologin_domains: string[];
   autologin_token: string;
   url_auth_domains: string[];
+  whitelisted_domains: string[];
   premium_purchase_blocked: boolean;
   giveaway_gifts_purchase_available: boolean;
   giveaway_add_peers_max: number;
@@ -68,11 +66,9 @@ export interface GramJsAppConfig extends LimitsConfig {
   // Forums
   topics_pinned_limit: number;
   // Stories
-  stories_all_hidden?: boolean;
-  story_expire_period: number;
   story_viewers_expire_period: number;
-  stories_changelog_user_id?: number;
-  stories_pinned_to_top_count_max?: number;
+  stories_changelog_user_id: number;
+  stories_pinned_to_top_count_max: number;
   // Boosts
   group_transcribe_level_min?: number;
   new_noncontact_peers_require_premium_without_ownpremium?: boolean;
@@ -86,6 +82,44 @@ export interface GramJsAppConfig extends LimitsConfig {
   stargifts_message_length_max?: number;
   stargifts_convert_period_max?: number;
   starref_start_param_prefixes?: string[];
+  ton_blockchain_explorer_url?: string;
+  stars_paid_messages_available?: boolean;
+  stars_usd_withdraw_rate_x1000?: number;
+  stars_paid_message_commission_permille?: number;
+  stars_paid_message_amount_max?: number;
+  stargifts_pinned_to_top_limit?: number;
+  freeze_since_date?: number;
+  freeze_until_date?: number;
+  freeze_appeal_url?: string;
+  channel_autotranslation_level_min?: number;
+  stars_stargift_resale_amount_max?: number;
+  stars_stargift_resale_amount_min?: number;
+  stars_stargift_resale_commission_permille?: number;
+  ton_stargift_resale_amount_min?: number;
+  ton_stargift_resale_amount_max?: number;
+  ton_stargift_resale_commission_permille?: number;
+  stars_suggested_post_amount_max?: number;
+  stars_suggested_post_amount_min?: number;
+  stars_suggested_post_commission_permille?: number;
+  stars_suggested_post_age_min?: number;
+  stars_suggested_post_future_max?: number;
+  stars_suggested_post_future_min?: number;
+  ton_suggested_post_commission_permille?: number;
+  ton_suggested_post_amount_max?: number;
+  ton_suggested_post_amount_min?: number;
+  ton_usd_rate?: number;
+  ton_topup_url?: string;
+  poll_answers_max?: number;
+  todo_items_max?: number;
+  todo_title_length_max?: number;
+  todo_item_length_max?: number;
+  ignore_restriction_reasons?: string[];
+  need_age_video_verification?: boolean;
+  verify_age_bot_username?: string;
+  verify_age_country?: string;
+  verify_age_min?: number;
+  message_typing_draft_ttl?: number;
+  contact_note_length_limit?: number;
 }
 
 function buildEmojiSounds(appConfig: GramJsAppConfig) {
@@ -98,7 +132,7 @@ function buildEmojiSounds(appConfig: GramJsAppConfig) {
       dcId: 1,
       mimeType: 'audio/ogg',
       fileReference: Buffer.alloc(0),
-      size: BigInt(0),
+      size: 0n,
     } as GramJs.Document);
 
     acc[key] = l.id;
@@ -115,14 +149,15 @@ function getLimit(appConfig: GramJsAppConfig, key: Limit, fallbackKey: ApiLimitT
 export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiAppConfig {
   const appConfig = buildJson(json) as GramJsAppConfig;
 
-  return {
+  const config: Partial<ApiAppConfig> = {
     emojiSounds: buildEmojiSounds(appConfig),
     seenByMaxChatMembers: appConfig.chat_read_mark_size_threshold,
     seenByExpiresAt: appConfig.chat_read_mark_expire_period,
     readDateExpiresAt: appConfig.pm_read_date_expire_period,
     autologinDomains: appConfig.autologin_domains || [],
     urlAuthDomains: appConfig.url_auth_domains || [],
-    maxUniqueReactions: appConfig.reactions_uniq_max ?? MAX_UNIQUE_REACTIONS,
+    whitelistedDomains: appConfig.whitelisted_domains || [],
+    maxUniqueReactions: appConfig.reactions_uniq_max,
     premiumBotUsername: appConfig.premium_bot_username,
     premiumInvoiceSlug: appConfig.premium_invoice_slug,
     premiumPromoOrder: appConfig.premium_promo_order as ApiPremiumSection[],
@@ -130,8 +165,6 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
     isGiveawayGiftsPurchaseAvailable: appConfig.giveaway_gifts_purchase_available,
     defaultEmojiStatusesStickerSetId: appConfig.default_emoji_statuses_stickerset_id,
     topicsPinnedLimit: appConfig.topics_pinned_limit,
-    maxUserReactionsDefault: appConfig.reactions_user_max_default,
-    maxUserReactionsPremium: appConfig.reactions_user_max_premium,
     hiddenMembersMinCount: appConfig.hidden_members_group_size_min,
     giveawayAddPeersMax: appConfig.giveaway_add_peers_max,
     giveawayBoostsPerPremium: appConfig.giveaway_boosts_per_premium,
@@ -153,24 +186,67 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
       chatlistJoined: getLimit(appConfig, 'chatlist_joined_limit', 'chatlistJoined'),
       recommendedChannels: getLimit(appConfig, 'recommended_channels_limit', 'recommendedChannels'),
       savedDialogsPinned: getLimit(appConfig, 'saved_dialogs_pinned_limit', 'savedDialogsPinned'),
+      maxReactions: getLimit(appConfig, 'reactions_user_max', 'maxReactions'),
+      moreAccounts: DEFAULT_LIMITS.moreAccounts,
     },
+    contactNoteLimit: appConfig.contact_note_length_limit,
     hash,
-    areStoriesHidden: appConfig.stories_all_hidden,
-    storyExpirePeriod: appConfig.story_expire_period ?? STORY_EXPIRE_PERIOD,
-    storyViewersExpirePeriod: appConfig.story_viewers_expire_period ?? STORY_VIEWERS_EXPIRE_PERIOD,
-    storyChangelogUserId: appConfig.stories_changelog_user_id?.toString() ?? SERVICE_NOTIFICATIONS_USER_ID,
+    storyViewersExpirePeriod: appConfig.story_viewers_expire_period,
+    storyChangelogUserId: appConfig.stories_changelog_user_id?.toString(),
     maxPinnedStoriesCount: appConfig.stories_pinned_to_top_count_max,
     groupTranscribeLevelMin: appConfig.group_transcribe_level_min,
     canLimitNewMessagesWithoutPremium: appConfig.new_noncontact_peers_require_premium_without_ownpremium,
+    starsPaidMessagesAvailable: appConfig.stars_paid_messages_available,
+    starsPaidMessageCommissionPermille: appConfig.stars_paid_message_commission_permille,
+    starsPaidMessageAmountMax: appConfig.stars_paid_message_amount_max,
+    starsUsdWithdrawRateX1000: appConfig.stars_usd_withdraw_rate_x1000,
     bandwidthPremiumNotifyPeriod: appConfig.upload_premium_speedup_notify_period,
     bandwidthPremiumUploadSpeedup: appConfig.upload_premium_speedup_upload,
     bandwidthPremiumDownloadSpeedup: appConfig.upload_premium_speedup_download,
     channelRestrictAdsLevelMin: appConfig.channel_restrict_sponsored_level_min,
+    channelAutoTranslationLevelMin: appConfig.channel_autotranslation_level_min,
     paidReactionMaxAmount: appConfig.stars_paid_reaction_amount_max,
     isChannelRevenueWithdrawalEnabled: appConfig.channel_revenue_withdrawal_enabled,
     isStarsGiftEnabled: appConfig.stars_gifts_enabled,
     starGiftMaxMessageLength: appConfig.stargifts_message_length_max,
     starGiftMaxConvertPeriod: appConfig.stargifts_convert_period_max,
     starRefStartPrefixes: appConfig.starref_start_param_prefixes,
+    tonExplorerUrl: appConfig.ton_blockchain_explorer_url,
+    savedGiftPinLimit: appConfig.stargifts_pinned_to_top_limit,
+    freezeSinceDate: appConfig.freeze_since_date,
+    freezeUntilDate: appConfig.freeze_until_date,
+    freezeAppealUrl: appConfig.freeze_appeal_url,
+    starsStargiftResaleAmountMin: appConfig.stars_stargift_resale_amount_min,
+    starsStargiftResaleAmountMax: appConfig.stars_stargift_resale_amount_max,
+    starsStargiftResaleCommissionPermille: appConfig.stars_stargift_resale_commission_permille,
+    tonStargiftResaleAmountMin: appConfig.ton_stargift_resale_amount_min,
+    tonStargiftResaleAmountMax: appConfig.ton_stargift_resale_amount_max,
+    tonStargiftResaleCommissionPermille: appConfig.ton_stargift_resale_commission_permille,
+    starsSuggestedPostAmountMax: appConfig.stars_suggested_post_amount_max,
+    starsSuggestedPostAmountMin: appConfig.stars_suggested_post_amount_min,
+    starsSuggestedPostCommissionPermille: appConfig.stars_suggested_post_commission_permille,
+    starsSuggestedPostAgeMin: appConfig.stars_suggested_post_age_min,
+    starsSuggestedPostFutureMax: appConfig.stars_suggested_post_future_max,
+    starsSuggestedPostFutureMin: appConfig.stars_suggested_post_future_min,
+    tonSuggestedPostCommissionPermille: appConfig.ton_suggested_post_commission_permille,
+    tonSuggestedPostAmountMax: appConfig.ton_suggested_post_amount_max,
+    tonSuggestedPostAmountMin: appConfig.ton_suggested_post_amount_min,
+    tonUsdRate: appConfig.ton_usd_rate,
+    tonTopupUrl: appConfig.ton_topup_url,
+    pollMaxAnswers: appConfig.poll_answers_max,
+    todoItemsMax: appConfig.todo_items_max,
+    todoTitleLengthMax: appConfig.todo_title_length_max,
+    todoItemLengthMax: appConfig.todo_item_length_max,
+    ignoreRestrictionReasons: appConfig.ignore_restriction_reasons,
+    needAgeVideoVerification: appConfig.need_age_video_verification,
+    verifyAgeBotUsername: appConfig.verify_age_bot_username,
+    verifyAgeCountry: appConfig.verify_age_country,
+    verifyAgeMin: appConfig.verify_age_min,
+    typingDraftTtl: appConfig.message_typing_draft_ttl,
+  };
+
+  return {
+    ...DEFAULT_APP_CONFIG,
+    ...omitUndefined(config),
   };
 }

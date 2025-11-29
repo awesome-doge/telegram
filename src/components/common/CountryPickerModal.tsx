@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
@@ -14,7 +14,6 @@ import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
-import Icon from './icons/Icon';
 import ItemPicker from './pickers/ItemPicker';
 
 import styles from './CountryPickerModal.module.scss';
@@ -85,9 +84,8 @@ const CountryPickerModal: FC<OwnProps> = ({
             size="smaller"
             color="translucent"
             onClick={onClose}
-          >
-            <Icon name="close" />
-          </Button>
+            iconName="close"
+          />
 
           <h4 className={styles.pickerTitle}>
             {lang('BoostingSelectCountry')}
@@ -109,7 +107,6 @@ const CountryPickerModal: FC<OwnProps> = ({
 
       <div className={styles.footer}>
         <Button
-          size="smaller"
           onClick={handleSubmit}
         >
           {lang('SelectCountries.OK')}

@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
@@ -101,7 +101,8 @@ const LockScreen: FC<OwnProps & StateProps> = ({
     return (
       <div className={styles.help}>
         <p>
-          <Link onClick={openSignOutConfirmation}>Log out</Link>{' '}
+          <Link onClick={openSignOutConfirmation}>Log out</Link>
+          {' '}
           if you don&apos;t remember your passcode.
         </p>
         <p>
@@ -131,7 +132,7 @@ const LockScreen: FC<OwnProps & StateProps> = ({
           error={validationError}
           placeholder={lang('Passcode.EnterPasscodePlaceholder')}
           submitLabel={lang('Next')}
-          clearError={handleClearError}
+          onClearError={handleClearError}
           isPasswordVisible={shouldShowPasscode}
           noRipple
           onChangePasswordVisibility={setShouldShowPasscode}
@@ -154,7 +155,7 @@ const LockScreen: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       passcodeSettings: global.passcode,
     };

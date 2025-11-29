@@ -1,5 +1,5 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, { memo } from '../../../../lib/teact/teact';
+import { memo } from '../../../../lib/teact/teact';
 
 import type {
   ApiBotInlineMediaResult, ApiBotInlineResult, ApiPhoto, ApiThumbnail, ApiWebDocument,
@@ -20,7 +20,7 @@ export type OwnProps = {
   focus?: boolean;
   isForGallery?: boolean;
   inlineResult: ApiBotInlineMediaResult | ApiBotInlineResult;
-  onClick: (result: ApiBotInlineResult) => void;
+  onClick: (result: ApiBotInlineMediaResult | ApiBotInlineResult) => void;
 };
 
 const MediaResult: FC<OwnProps> = ({

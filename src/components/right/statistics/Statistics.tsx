@@ -1,5 +1,4 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect, useMemo,
   useRef, useState,
 } from '../../../lib/teact/teact';
@@ -11,7 +10,6 @@ import type {
   ApiGroupStatistics,
   ApiMessage,
   ApiTypeStory,
-  StatisticsGraph,
 } from '../../../api/types';
 
 import {
@@ -23,6 +21,7 @@ import {
 } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { callApi } from '../../../api/gramjs';
+import { isGraph } from './helpers/isGraph';
 
 import useForceUpdate from '../../../hooks/useForceUpdate';
 import useOldLang from '../../../hooks/useOldLang';
@@ -34,8 +33,8 @@ import StatisticsRecentStory from './StatisticsRecentStory';
 
 import styles from './Statistics.module.scss';
 
-type ILovelyChart = { create: Function };
-let lovelyChartPromise: Promise<ILovelyChart>;
+type ILovelyChart = { create: (el: HTMLElement, params: AnyLiteral) => void };
+let lovelyChartPromise: Promise<ILovelyChart> | undefined;
 let LovelyChart: ILovelyChart;
 
 async function ensureLovelyChart() {
@@ -85,7 +84,7 @@ export type StateProps = {
   storiesById?: Record<string, ApiTypeStory>;
 };
 
-const Statistics: FC<OwnProps & StateProps> = ({
+const Statistics = ({
   chatId,
   chat,
   statistics,
@@ -93,12 +92,12 @@ const Statistics: FC<OwnProps & StateProps> = ({
   isGroup,
   messagesById,
   storiesById,
-}) => {
+}: OwnProps & StateProps) => {
   const lang = useOldLang();
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
   const [isReady, setIsReady] = useState(false);
-  const loadedCharts = useRef<string[]>([]);
+  const loadedCharts = useRef<Set<string>>(new Set());
+  const errorCharts = useRef<Set<string>>(new Set());
 
   const { loadStatistics, loadStatisticsAsyncGraph } = getActions();
   const forceUpdate = useForceUpdate();
@@ -123,13 +122,16 @@ const Statistics: FC<OwnProps & StateProps> = ({
 
     graphs.forEach((name) => {
       const graph = statistics[name as keyof typeof statistics];
-      const isAsync = typeof graph === 'string';
+      if (!isGraph(graph)) {
+        return;
+      }
+      const isAsync = graph.graphType === 'async';
 
       if (isAsync) {
         loadStatisticsAsyncGraph({
           name,
           chatId,
-          token: graph,
+          token: graph.token,
           // Hardcode percentage for languages graph, since API does not return `percentage` flag
           isPercentage: name === 'languagesGraph',
         });
@@ -152,14 +154,20 @@ const Statistics: FC<OwnProps & StateProps> = ({
 
       graphs.forEach((name, index: number) => {
         const graph = statistics[name as keyof typeof statistics];
-        const isAsync = typeof graph === 'string';
-
-        if (isAsync || loadedCharts.current.includes(name)) {
+        if (!isGraph(graph)) {
           return;
         }
 
-        if (!graph) {
-          loadedCharts.current.push(name);
+        const isAsync = graph.graphType === 'async';
+        const isError = graph.graphType === 'error';
+
+        if (isAsync || loadedCharts.current.has(name)) {
+          return;
+        }
+
+        if (isError) {
+          loadedCharts.current.add(name);
+          errorCharts.current.add(name);
 
           return;
         }
@@ -167,18 +175,18 @@ const Statistics: FC<OwnProps & StateProps> = ({
         const { zoomToken } = graph;
 
         LovelyChart.create(
-          containerRef.current!.children[index],
+          containerRef.current!.children[index] as HTMLElement,
           {
             title: lang((graphTitles as Record<string, string>)[name]),
             ...zoomToken ? {
               onZoom: (x: number) => callApi('fetchStatisticsAsyncGraph', { token: zoomToken, x, dcId }),
               zoomOutLabel: lang('Graph.ZoomOut'),
             } : {},
-            ...graph as StatisticsGraph,
+            ...graph,
           },
         );
 
-        loadedCharts.current.push(name);
+        loadedCharts.current.add(name);
 
         containerRef.current!.children[index].classList.remove(styles.hidden);
       });
@@ -189,27 +197,28 @@ const Statistics: FC<OwnProps & StateProps> = ({
     graphs, graphTitles, isReady, statistics, lang, chatId, loadStatisticsAsyncGraph, dcId, forceUpdate,
   ]);
 
-  if (!isReady || !statistics) {
-    return <Loading />;
-  }
-
   return (
-    <div className={buildClassName(styles.root, 'custom-scroll', isReady && styles.ready)}>
-      <StatisticsOverview
-        statistics={statistics}
-        type={isGroup ? 'group' : 'channel'}
-        title={lang('StatisticOverview')}
-      />
+    <div className={buildClassName(styles.root, 'panel-content custom-scroll', isReady && styles.ready)}>
+      {statistics && (
+        <StatisticsOverview
+          statistics={statistics}
+          type={isGroup ? 'group' : 'channel'}
+          title={lang('StatisticOverview')}
+        />
+      )}
 
-      {!loadedCharts.current.length && <Loading />}
+      {!loadedCharts.current.size && <Loading />}
 
       <div ref={containerRef}>
-        {graphs.map((graph) => (
-          <div key={graph} className={buildClassName(styles.graph, styles.hidden)} />
-        ))}
+        {graphs.map((graph) => {
+          const isGraphReady = loadedCharts.current.has(graph) && !errorCharts.current.has(graph);
+          return (
+            <div className={buildClassName(styles.graph, !isGraphReady && styles.hidden)} />
+          );
+        })}
       </div>
 
-      {Boolean((statistics as ApiChannelStatistics).recentPosts?.length) && (
+      {Boolean((statistics as ApiChannelStatistics)?.recentPosts?.length) && (
         <div className={styles.messages}>
           <h2 className={styles.messagesTitle}>{lang('ChannelStats.Recent.Header')}</h2>
 
@@ -249,7 +258,7 @@ const Statistics: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const statistics = selectStatistics(global, chatId);
     const chat = selectChat(global, chatId);
     const dcId = selectChatFullInfo(global, chatId)?.statisticsDcId;

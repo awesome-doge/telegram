@@ -1,17 +1,18 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect,
 } from '../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type { ThreadId } from '../../types';
 
-import { getChatTitle, getUserFirstOrLastName, isUserId } from '../../global/helpers';
+import { getChatTitle, getUserFirstOrLastName } from '../../global/helpers';
 import {
   selectChat,
   selectTabState,
   selectUser,
 } from '../../global/selectors';
+import { isUserId } from '../../util/entities/ids';
 
 import useFlag from '../../hooks/useFlag';
 import useOldLang from '../../hooks/useOldLang';
@@ -117,11 +118,12 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
       onSelectRecipient={handleSelectRecipient}
       onClose={handleClose}
       onCloseAnimationEnd={unmarkIsShown}
+      isForwarding={isForwarding}
     />
   );
 };
 
-export default memo(withGlobal<OwnProps>((global): StateProps => {
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
   const { messageIds, storyId } = selectTabState(global).forwardMessages;
   const isForwarding = (messageIds && messageIds.length > 0);
   return {

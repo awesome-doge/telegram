@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useMemo,
   useState,
 } from '../../../lib/teact/teact';
@@ -104,7 +104,7 @@ const StarsGiftingPickerModal: FC<OwnProps & StateProps> = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>((global): StateProps => {
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
   const {
     chats: {
       listIds,

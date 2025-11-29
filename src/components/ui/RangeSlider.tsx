@@ -1,10 +1,10 @@
 import type { ChangeEvent } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../lib/teact/teact';
+import type { FC, TeactNode } from '../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
 
-import useOldLang from '../../hooks/useOldLang';
+import useLang from '../../hooks/useLang';
 
 import './RangeSlider.scss';
 
@@ -16,9 +16,10 @@ type OwnProps = {
   label?: string;
   value: number;
   disabled?: boolean;
+  readOnly?: boolean;
   bold?: boolean;
   className?: string;
-  renderValue?: (value: number) => string;
+  renderValue?: (value: number) => TeactNode;
   onChange: (value: number) => void;
   isCenteredLayout?: boolean;
 };
@@ -31,13 +32,14 @@ const RangeSlider: FC<OwnProps> = ({
   label,
   value,
   disabled,
+  readOnly,
   bold,
   className,
   renderValue,
   onChange,
   isCenteredLayout,
 }) => {
-  const lang = useOldLang();
+  const lang = useLang();
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     onChange(Number(event.currentTarget.value));
   }, [onChange]);
@@ -46,6 +48,7 @@ const RangeSlider: FC<OwnProps> = ({
     className,
     'RangeSlider',
     disabled && 'disabled',
+    readOnly && 'readOnly',
     bold && 'bold',
   );
 

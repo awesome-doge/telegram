@@ -11,14 +11,17 @@
 
 .moreMenu, .copy {
   position: absolute;
-  right: 0.5rem;
-  top: 50%;
-  transform: translate(0, -50%);
   z-index: 1;
+  top: 50%;
+  right: 0.5rem;
+  transform: translate(0, -50%);
 }
 
 .title {
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-secondary);
-  padding-left: 1rem;
+}
+
+.share {
+  font-weight: var(--font-weight-semibold);
 }

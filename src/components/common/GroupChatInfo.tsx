@@ -1,9 +1,8 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect, useMemo } from '../../lib/teact/teact';
-import { getActions, withGlobal } from '../../global';
+import { memo, useEffect, useMemo } from '../../lib/teact/teact';
+import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type {
-  ApiChat, ApiThreadInfo, ApiTopic, ApiTypingStatus, ApiUser,
+  ApiChat, ApiTopic, ApiTypingStatus, ApiUser,
 } from '../../api/types';
 import type { IconName } from '../../types/icons';
 import { MediaViewerOrigin, type StoryViewerOrigin, type ThreadId } from '../../types';
@@ -18,7 +17,8 @@ import {
   selectChat,
   selectChatMessages,
   selectChatOnlineCount,
-  selectThreadInfo,
+  selectIsChatRestricted,
+  selectMonoforumChannel,
   selectThreadMessagesCount,
   selectTopic,
   selectUser,
@@ -27,6 +27,7 @@ import buildClassName from '../../util/buildClassName';
 import { REM } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 
@@ -62,22 +63,22 @@ type OwnProps = {
   withStory?: boolean;
   storyViewerOrigin?: StoryViewerOrigin;
   isSavedDialog?: boolean;
+  withMonoforumStatus?: boolean;
   onClick?: VoidFunction;
-  onEmojiStatusClick?: NoneToVoidFunction;
+  onEmojiStatusClick?: VoidFunction;
 };
 
-type StateProps =
-  {
-    chat?: ApiChat;
-    threadInfo?: ApiThreadInfo;
-    topic?: ApiTopic;
-    onlineCount?: number;
-    areMessagesLoaded: boolean;
-    messagesCount?: number;
-    self?: ApiUser;
-  };
+type StateProps = {
+  chat?: ApiChat;
+  topic?: ApiTopic;
+  onlineCount?: number;
+  areMessagesLoaded: boolean;
+  messagesCount?: number;
+  self?: ApiUser;
+  monoforumChannel?: ApiChat;
+};
 
-const GroupChatInfo: FC<OwnProps & StateProps> = ({
+const GroupChatInfo = ({
   typingStatus,
   className,
   statusIcon,
@@ -90,9 +91,8 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
   withFullInfo,
   withUpdatingStatus,
   withChatType,
-  threadInfo,
   noRtl,
-  chat,
+  chat: realChat,
   onlineCount,
   areMessagesLoaded,
   topic,
@@ -104,20 +104,26 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
   emojiStatusSize,
   isSavedDialog,
   self,
+  withMonoforumStatus,
+  monoforumChannel,
   onClick,
   onEmojiStatusClick,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     loadFullChat,
     openMediaViewer,
     loadMoreProfilePhotos,
   } = getActions();
 
-  const lang = useOldLang();
+  const chat = !withMonoforumStatus && monoforumChannel ? monoforumChannel : realChat;
+
+  const oldLang = useOldLang();
+  const lang = useLang();
 
   const isSuperGroup = chat && isChatSuperGroup(chat);
-  const isTopic = Boolean(chat?.isForum && threadInfo && topic);
-  const { id: chatId, isMin, isRestricted } = chat || {};
+  const isTopic = Boolean(chat?.isForum && topic);
+  const { id: chatId, isMin } = chat || {};
+  const isRestricted = selectIsChatRestricted(getGlobal(), chatId!);
 
   useEffect(() => {
     if (chatId && !isMin) {
@@ -147,6 +153,24 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
   }
 
   function renderStatusOrTyping() {
+    if (withUpdatingStatus && !areMessagesLoaded && !isRestricted) {
+      return (
+        <DotAnimation className="status" content={oldLang('Updating')} />
+      );
+    }
+
+    if (withMonoforumStatus) {
+      return (
+        <span className="status" dir="auto">
+          {lang('MonoforumStatus')}
+        </span>
+      );
+    }
+
+    if (realChat?.isMonoforum) {
+      return undefined;
+    }
+
     if (status) {
       return withDots ? (
         <DotAnimation className="status" content={status} />
@@ -155,12 +179,6 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
           {statusIcon && <Icon className="status-icon" name={statusIcon} />}
           {renderText(status)}
         </span>
-      );
-    }
-
-    if (withUpdatingStatus && !areMessagesLoaded && !isRestricted) {
-      return (
-        <DotAnimation className="status" content={lang('Updating')} />
       );
     }
 
@@ -181,7 +199,7 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
             activeKey={messagesCount !== undefined ? 1 : 2}
             className="message-count-transition"
           >
-            {messagesCount !== undefined && lang('messages', messagesCount, 'i')}
+            {messagesCount !== undefined ? oldLang('messages', messagesCount, 'i') : oldLang('lng_forum_no_messages')}
           </Transition>
         </span>
       );
@@ -189,12 +207,12 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
 
     if (withChatType) {
       return (
-        <span className="status" dir="auto">{lang(getChatTypeString(chat))}</span>
+        <span className="status" dir="auto">{oldLang(getChatTypeString(chat))}</span>
       );
     }
 
-    const groupStatus = getGroupStatus(lang, chat);
-    const onlineStatus = onlineCount ? `, ${lang('OnlineCount', onlineCount, 'i')}` : undefined;
+    const groupStatus = getGroupStatus(oldLang, chat);
+    const onlineStatus = onlineCount ? `, ${oldLang('OnlineCount', onlineCount, 'i')}` : undefined;
 
     return (
       <span className="status">
@@ -230,6 +248,7 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
             size={avatarSize}
             peer={chat}
             withStory={withStory}
+            asMessageBubble={Boolean(monoforumChannel)}
             storyViewerOrigin={storyViewerOrigin}
             storyViewerMode="single-peer"
             isSavedDialog={isSavedDialog}
@@ -250,6 +269,7 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
           : (
             <FullNameTitle
               peer={chat}
+              isMonoforum={!withMonoforumStatus && Boolean(monoforumChannel)}
               emojiStatusSize={emojiStatusSize}
               withEmojiStatus={!noEmojiStatus}
               isSavedDialog={isSavedDialog}
@@ -263,23 +283,23 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId, threadId }): StateProps => {
+  (global, { chatId, threadId }): Complete<StateProps> => {
     const chat = selectChat(global, chatId);
-    const threadInfo = threadId ? selectThreadInfo(global, chatId, threadId) : undefined;
     const onlineCount = chat ? selectChatOnlineCount(global, chat) : undefined;
     const areMessagesLoaded = Boolean(selectChatMessages(global, chatId));
     const topic = threadId ? selectTopic(global, chatId, threadId) : undefined;
     const messagesCount = topic && selectThreadMessagesCount(global, chatId, threadId!);
     const self = selectUser(global, global.currentUserId!);
+    const monoforumChannel = selectMonoforumChannel(global, chatId);
 
     return {
       chat,
-      threadInfo,
       onlineCount,
       topic,
       areMessagesLoaded,
       messagesCount,
       self,
+      monoforumChannel,
     };
   },
 )(GroupChatInfo));

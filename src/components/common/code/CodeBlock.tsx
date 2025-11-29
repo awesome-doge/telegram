@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../../lib/teact/teact';
+import { memo, useCallback, useState } from '../../../lib/teact/teact';
 
 import { ApiMessageEntityTypes } from '../../../api/types';
 
@@ -8,6 +8,7 @@ import { getPrettyCodeLanguageName } from '../../../util/prettyCodeLanguageNames
 
 import useAsync from '../../../hooks/useAsync';
 
+import PeerColorWrapper from '../PeerColorWrapper';
 import CodeOverlay from './CodeOverlay';
 
 import './CodeBlock.scss';
@@ -37,7 +38,9 @@ const CodeBlock: FC<OwnProps> = ({ text, language, noCopy }) => {
   );
 
   return (
-    <div className="CodeBlock">
+    <PeerColorWrapper
+      className="CodeBlock"
+    >
       {language && (<p className="code-title">{getPrettyCodeLanguageName(language)}</p>)}
       <pre className={blockClass} data-entity-type={ApiMessageEntityTypes.Pre} data-language={language}>
         {highlighted ?? text}
@@ -48,7 +51,7 @@ const CodeBlock: FC<OwnProps> = ({ text, language, noCopy }) => {
           noCopy={noCopy}
         />
       </pre>
-    </div>
+    </PeerColorWrapper>
   );
 };
 

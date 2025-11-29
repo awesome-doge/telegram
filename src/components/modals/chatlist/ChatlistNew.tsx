@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
@@ -82,7 +82,6 @@ const ChatlistNew: FC<OwnProps> = ({ invite }) => {
       </div>
       <Button
         onClick={handleButtonClick}
-        size="smaller"
         disabled={!selectedPeerIds.length}
       >
         <div className={styles.buttonText}>

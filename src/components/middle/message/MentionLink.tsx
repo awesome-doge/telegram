@@ -1,5 +1,4 @@
 import type { TeactNode } from '../../../lib/teact/teact';
-import React from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiPeer } from '../../../api/types';
@@ -62,7 +61,7 @@ const MentionLink = ({
 };
 
 export default withGlobal<OwnProps>(
-  (global, { userId }): StateProps => {
+  (global, { userId }): Complete<StateProps> => {
     return {
       userOrChat: userId ? selectUser(global, userId) : undefined,
     };

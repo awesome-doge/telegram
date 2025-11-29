@@ -5,7 +5,12 @@ import {
   UPLOADING_WALLPAPER_SLUG,
 } from '../../../types';
 
-import { APP_CONFIG_REFETCH_INTERVAL, COUNTRIES_WITH_12H_TIME_FORMAT } from '../../../config';
+import {
+  APP_CONFIG_REFETCH_INTERVAL,
+  COUNTRIES_WITH_12H_TIME_FORMAT,
+  MUTE_INDEFINITE_TIMESTAMP,
+  UNMUTE_TIMESTAMP,
+} from '../../../config';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { buildCollectionByKey } from '../../../util/iteratees';
 import { requestPermission, subscribe, unsubscribe } from '../../../util/notifications';
@@ -18,12 +23,14 @@ import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
   addBlockedUser, addNotifyExceptions, deletePeerPhoto,
   removeBlockedUser, replaceSettings, updateChat,
-  updateNotifySettings, updateUser, updateUserFullInfo,
+  updateNotifyDefaults, updateSharedSettings, updateUser, updateUserFullInfo,
 } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
 import {
-  selectChat, selectTabState, selectUser,
+  selectChat, selectIsCurrentUserFrozen,
+  selectTabState, selectUser,
 } from '../../selectors';
+import { selectSharedSettings } from '../../selectors/sharedState';
 
 addActionHandler('updateProfile', async (global, actions, payload): Promise<void> => {
   const {
@@ -130,7 +137,7 @@ addActionHandler('deleteProfilePhoto', async (global, actions, payload): Promise
 });
 
 addActionHandler('checkUsername', async (global, actions, payload): Promise<void> => {
-  const { username, tabId = getCurrentTabId() } = payload!;
+  const { username, tabId = getCurrentTabId() } = payload;
 
   let tabState = selectTabState(global, tabId);
   // No need to check the username if profile update is already in progress
@@ -148,7 +155,7 @@ addActionHandler('checkUsername', async (global, actions, payload): Promise<void
   }, tabId);
   setGlobal(global);
 
-  const { result, error } = (await callApi('checkUsername', username))!;
+  const { result, error } = (await callApi('checkUsername', username));
 
   global = getGlobal();
   tabState = selectTabState(global, tabId);
@@ -306,26 +313,40 @@ addActionHandler('loadNotificationExceptions', async (global): Promise<void> => 
 });
 
 addActionHandler('loadNotificationSettings', async (global): Promise<void> => {
-  const result = await callApi('fetchNotificationSettings');
-  if (!result) {
-    return;
-  }
+  const [signUpNotification, notifyDefaults] = await Promise.all([
+    callApi('fetchContactSignUpSetting'),
+    callApi('fetchNotifyDefaultSettings'),
+  ]);
+
+  if (!notifyDefaults) return;
 
   global = getGlobal();
-  global = replaceSettings(global, result);
+  global = replaceSettings(global, {
+    hasContactJoinedNotifications: signUpNotification,
+  });
+  global = {
+    ...global,
+    settings: {
+      ...global.settings,
+      notifyDefaults,
+    },
+  };
   setGlobal(global);
 });
 
 addActionHandler('updateNotificationSettings', async (global, actions, payload): Promise<void> => {
-  const { peerType, isSilent, shouldShowPreviews } = payload!;
+  const { peerType, isMuted, shouldShowPreviews } = payload;
 
-  const result = await callApi('updateNotificationSettings', peerType, { isSilent, shouldShowPreviews });
+  const result = await callApi('updateNotificationSettings', peerType, { isMuted, shouldShowPreviews });
   if (!result) {
     return;
   }
 
   global = getGlobal();
-  global = updateNotifySettings(global, peerType, isSilent, shouldShowPreviews);
+  global = updateNotifyDefaults(global, peerType, {
+    mutedUntil: isMuted ? MUTE_INDEFINITE_TIMESTAMP : UNMUTE_TIMESTAMP,
+    shouldShowPreviews,
+  });
   setGlobal(global);
 });
 
@@ -370,17 +391,13 @@ addActionHandler('loadLanguages', async (global): Promise<void> => {
   }
 
   global = getGlobal();
-  global = {
-    ...global,
-    settings: {
-      ...global.settings,
-      languages: result,
-    },
-  };
+  global = updateSharedSettings(global, { languages: result });
   setGlobal(global);
 });
 
 addActionHandler('loadPrivacySettings', async (global): Promise<void> => {
+  if (selectIsCurrentUserFrozen(global)) return;
+
   const result = await Promise.all([
     callApi('fetchPrivacySettings', 'phoneNumber'),
     callApi('fetchPrivacySettings', 'addByPhone'),
@@ -394,6 +411,7 @@ addActionHandler('loadPrivacySettings', async (global): Promise<void> => {
     callApi('fetchPrivacySettings', 'bio'),
     callApi('fetchPrivacySettings', 'birthday'),
     callApi('fetchPrivacySettings', 'gifts'),
+    callApi('fetchPrivacySettings', 'noPaidMessages'),
   ]);
 
   if (result.some((e) => e === undefined)) {
@@ -413,6 +431,7 @@ addActionHandler('loadPrivacySettings', async (global): Promise<void> => {
     bioSettings,
     birthdaySettings,
     giftsSettings,
+    noPaidMessagesSettings,
   ] = result as {
     rules: ApiPrivacySettings;
   }[];
@@ -436,6 +455,7 @@ addActionHandler('loadPrivacySettings', async (global): Promise<void> => {
         bio: bioSettings.rules,
         birthday: birthdaySettings.rules,
         gifts: giftsSettings.rules,
+        noPaidMessages: noPaidMessagesSettings.rules,
       },
     },
   };
@@ -443,7 +463,7 @@ addActionHandler('loadPrivacySettings', async (global): Promise<void> => {
 });
 
 addActionHandler('setPrivacyVisibility', async (global, actions, payload): Promise<void> => {
-  const { privacyKey, visibility, onSuccess } = payload!;
+  const { privacyKey, visibility, onSuccess } = payload;
 
   if (!global.settings.privacy[privacyKey]) {
     const result = await callApi('fetchPrivacySettings', privacyKey);
@@ -504,13 +524,28 @@ addActionHandler('setPrivacyVisibility', async (global, actions, payload): Promi
 addActionHandler('setPrivacySettings', async (global, actions, payload): Promise<void> => {
   const {
     privacyKey, isAllowList, updatedIds, isPremiumAllowed, botsPrivacy,
-  } = payload!;
+  } = payload;
   const {
     privacy: { [privacyKey]: settings },
   } = global.settings;
 
   if (!settings) {
     return;
+  }
+
+  if (privacyKey === 'noPaidMessages') {
+    global = getGlobal();
+    const idsForUpdate = [
+      ...updatedIds.filter((id) => !settings.allowUserIds.includes(id)),
+      ...settings.allowUserIds.filter((id) => !updatedIds.includes(id)),
+    ];
+
+    idsForUpdate.forEach((userId) => {
+      global = updateUserFullInfo(global, userId, {
+        settings: undefined,
+      });
+    });
+    setGlobal(global);
   }
 
   const rules = buildApiInputPrivacyRules(global, {
@@ -543,10 +578,12 @@ addActionHandler('setPrivacySettings', async (global, actions, payload): Promise
 
 addActionHandler('updateIsOnline', (global, actions, payload): ActionReturnType => {
   if (global.connectionState !== 'connectionStateReady') return;
-  callApi('updateIsOnline', payload);
+  callApi('updateIsOnline', payload.isOnline);
 });
 
 addActionHandler('loadContentSettings', async (global): Promise<void> => {
+  if (selectIsCurrentUserFrozen(global)) return;
+
   const result = await callApi('fetchContentSettings');
   if (!result) return;
 
@@ -556,20 +593,20 @@ addActionHandler('loadContentSettings', async (global): Promise<void> => {
 });
 
 addActionHandler('updateContentSettings', async (global, actions, payload): Promise<void> => {
-  global = replaceSettings(global, { isSensitiveEnabled: payload });
+  global = replaceSettings(global, { isSensitiveEnabled: payload.isSensitiveEnabled });
   setGlobal(global);
 
-  const result = await callApi('updateContentSettings', payload);
+  const result = await callApi('updateContentSettings', payload.isSensitiveEnabled);
   if (!result) {
     global = getGlobal();
-    global = replaceSettings(global, { isSensitiveEnabled: !payload });
+    global = replaceSettings(global, { isSensitiveEnabled: !payload.isSensitiveEnabled });
     setGlobal(global);
   }
 });
 
 addActionHandler('loadCountryList', async (global, actions, payload): Promise<void> => {
   let { langCode } = payload;
-  if (!langCode) langCode = global.settings.byKey.language;
+  if (!langCode) langCode = selectSharedSettings(global).language;
 
   const countryList = await callApi('fetchCountryList', { langCode });
   if (!countryList) return;
@@ -582,23 +619,22 @@ addActionHandler('loadCountryList', async (global, actions, payload): Promise<vo
   setGlobal(global);
 });
 
-addActionHandler('ensureTimeFormat', async (global, actions, payload): Promise<void> => {
-  const { tabId = getCurrentTabId() } = payload || {};
+addActionHandler('ensureTimeFormat', async (global, actions): Promise<void> => {
   if (global.authNearestCountry) {
     const timeFormat = COUNTRIES_WITH_12H_TIME_FORMAT
       .has(global.authNearestCountry.toUpperCase()) ? '12h' : '24h';
-    actions.setSettingOption({ timeFormat, tabId });
+    actions.setSharedSettingOption({ timeFormat });
     setTimeFormat(timeFormat);
   }
 
-  if (global.settings.byKey.wasTimeFormatSetManually) {
+  if (selectSharedSettings(global).wasTimeFormatSetManually) {
     return;
   }
 
   const nearestCountryCode = await callApi('fetchNearestCountry');
   if (nearestCountryCode) {
     const timeFormat = COUNTRIES_WITH_12H_TIME_FORMAT.has(nearestCountryCode.toUpperCase()) ? '12h' : '24h';
-    actions.setSettingOption({ timeFormat, tabId });
+    actions.setSharedSettingOption({ timeFormat });
     setTimeFormat(timeFormat);
   }
 });
@@ -618,6 +654,7 @@ addActionHandler('loadAppConfig', async (global, actions, payload): Promise<void
   global = {
     ...global,
     appConfig,
+    isAppConfigLoaded: true,
   };
   setGlobal(global);
 });
@@ -641,17 +678,27 @@ addActionHandler('loadConfig', async (global): Promise<void> => {
 });
 
 addActionHandler('loadPeerColors', async (global): Promise<void> => {
-  const hash = global.peerColors?.generalHash;
-  const result = await callApi('fetchPeerColors', hash);
-  if (!result) return;
+  const generalHash = global.peerColors?.generalHash;
+  const profileHash = global.peerColors?.profileHash;
+  const [generalResult, profileResult] = await Promise.all([
+    callApi('fetchPeerColors', generalHash),
+    callApi('fetchPeerProfileColors', profileHash),
+  ]);
+
+  if (!generalResult && !profileResult) return;
 
   global = getGlobal();
+
+  const currentPeerColors = global.peerColors! || {};
+
   global = {
     ...global,
     peerColors: {
-      ...global.peerColors,
-      general: result.colors,
-      generalHash: result.hash,
+      ...currentPeerColors,
+      general: generalResult?.colors || currentPeerColors.general,
+      generalHash: generalResult?.hash || currentPeerColors.generalHash,
+      profile: profileResult?.colors || currentPeerColors.profile,
+      profileHash: profileResult?.hash || currentPeerColors.profileHash,
     },
   };
   setGlobal(global);
@@ -690,14 +737,36 @@ addActionHandler('updateGlobalPrivacySettings', async (global, actions, payload)
   const shouldHideReadMarks = payload.shouldHideReadMarks ?? Boolean(global.settings.byKey.shouldHideReadMarks);
   const shouldNewNonContactPeersRequirePremium = payload.shouldNewNonContactPeersRequirePremium
     ?? Boolean(global.settings.byKey.shouldNewNonContactPeersRequirePremium);
+    // eslint-disable-next-line no-null/no-null
+  const nonContactPeersPaidStars = payload.nonContactPeersPaidStars === null ? undefined
+    : payload.nonContactPeersPaidStars || global.settings.byKey.nonContactPeersPaidStars;
+  const shouldDisplayGiftsButton = payload.shouldDisplayGiftsButton
+    ?? Boolean(global.settings.byKey.shouldDisplayGiftsButton);
+  const disallowedGifts = payload.disallowedGifts
+    ?? global.settings.byKey.disallowedGifts;
 
-  global = replaceSettings(global, { shouldArchiveAndMuteNewNonContact, shouldHideReadMarks });
+  // eslint-disable-next-line no-null/no-null
+  const shouldUpdateUsersSettings = (payload.nonContactPeersPaidStars === null)
+    || payload.nonContactPeersPaidStars;
+
+  global = getGlobal();
+  global = replaceSettings(global, {
+    shouldArchiveAndMuteNewNonContact,
+    shouldHideReadMarks,
+    shouldNewNonContactPeersRequirePremium,
+    nonContactPeersPaidStars,
+    shouldDisplayGiftsButton,
+    disallowedGifts,
+  });
   setGlobal(global);
 
   const result = await callApi('updateGlobalPrivacySettings', {
     shouldArchiveAndMuteNewNonContact,
     shouldHideReadMarks,
     shouldNewNonContactPeersRequirePremium,
+    nonContactPeersPaidStars,
+    shouldDisplayGiftsButton,
+    disallowedGifts,
   });
 
   global = getGlobal();
@@ -709,7 +778,21 @@ addActionHandler('updateGlobalPrivacySettings', async (global, actions, payload)
     shouldNewNonContactPeersRequirePremium: !result
       ? !shouldNewNonContactPeersRequirePremium
       : result.shouldNewNonContactPeersRequirePremium,
+    nonContactPeersPaidStars: !result
+      ? undefined
+      : result.nonContactPeersPaidStars,
+    shouldDisplayGiftsButton: !result ? !shouldDisplayGiftsButton : result.shouldDisplayGiftsButton,
+    disallowedGifts: !result ? disallowedGifts : result.disallowedGifts,
   });
+
+  if (shouldUpdateUsersSettings) {
+    Object.keys(global.users.fullInfoById).forEach((userId) => {
+      global = updateUserFullInfo(global, userId, {
+        settings: undefined,
+      });
+    });
+  }
+
   setGlobal(global);
 });
 

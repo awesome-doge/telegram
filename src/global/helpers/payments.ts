@@ -6,20 +6,38 @@ import type {
   ApiRequestInputSavedStarGift,
   ApiStarsAmount,
   ApiStarsTransaction,
-  ApiStarsTransactionPeer,
-  ApiStarsTransactionPeerPeer,
+  ApiTypeCurrencyAmount,
 } from '../../api/types';
 import type { CustomPeer } from '../../types';
 import type { LangFn } from '../../util/localization';
 import type { GlobalState } from '../types';
 
+import { STARS_CURRENCY_CODE, TON_CURRENCY_CODE } from '../../config';
 import arePropsShallowEqual from '../../util/arePropsShallowEqual';
+import { convertTonFromNanos } from '../../util/formatCurrency';
 import { selectChat, selectPeer, selectUser } from '../selectors';
 
 export function getRequestInputInvoice<T extends GlobalState>(
   global: T, inputInvoice: ApiInputInvoice,
 ): ApiRequestInputInvoice | undefined {
   if (inputInvoice.type === 'slug') return inputInvoice;
+
+  if (inputInvoice.type === 'stargiftResale') {
+    const {
+      slug,
+      peerId,
+    } = inputInvoice;
+    const peer = selectPeer(global, peerId);
+
+    if (!peer) return undefined;
+
+    return {
+      type: 'stargiftResale',
+      slug,
+      peer,
+      currency: inputInvoice.currency,
+    };
+  }
 
   if (inputInvoice.type === 'stargift') {
     const {
@@ -93,6 +111,22 @@ export function getRequestInputInvoice<T extends GlobalState>(
       type: 'message',
       chat,
       messageId: inputInvoice.messageId,
+    };
+  }
+
+  if (inputInvoice.type === 'premiumGiftStars') {
+    const {
+      months, userId, message,
+    } = inputInvoice;
+    const user = selectUser(global, userId);
+
+    if (!user) return undefined;
+
+    return {
+      type: 'premiumGiftStars',
+      months,
+      message,
+      user,
     };
   }
 
@@ -201,6 +235,29 @@ export function getRequestInputInvoice<T extends GlobalState>(
     };
   }
 
+  if (inputInvoice.type === 'stargiftDropOriginalDetails') {
+    const { inputSavedGift } = inputInvoice;
+    const savedGift = getRequestInputSavedStarGift(global, inputSavedGift);
+    if (!savedGift) return undefined;
+
+    return {
+      type: 'stargiftDropOriginalDetails',
+      inputSavedGift: savedGift,
+    };
+  }
+
+  if (inputInvoice.type === 'stargiftPrepaidUpgrade') {
+    const { peerId, hash } = inputInvoice;
+    const peer = selectPeer(global, peerId);
+    if (!peer) return undefined;
+
+    return {
+      type: 'stargiftPrepaidUpgrade',
+      peer,
+      hash,
+    };
+  }
+
   return undefined;
 }
 
@@ -223,9 +280,25 @@ export function getRequestInputSavedStarGift<T extends GlobalState>(
   return undefined;
 }
 
+export function shouldUseCustomPeer(transaction: ApiStarsTransaction) {
+  return transaction.peer.type !== 'peer' || Boolean(transaction.isPostsSearch);
+}
+
 export function buildStarsTransactionCustomPeer(
-  peer: Exclude<ApiStarsTransactionPeer, ApiStarsTransactionPeerPeer>,
+  transaction: ApiStarsTransaction,
 ): CustomPeer {
+  const { peer } = transaction;
+  const isForTon = transaction.amount.currency === TON_CURRENCY_CODE;
+
+  if (transaction.isPostsSearch) {
+    return {
+      avatarIcon: 'search',
+      isCustomPeer: true,
+      title: '',
+      peerColorId: 5,
+    };
+  }
+
   if (peer.type === 'appStore') {
     return {
       avatarIcon: 'star',
@@ -247,8 +320,17 @@ export function buildStarsTransactionCustomPeer(
   }
 
   if (peer.type === 'fragment') {
+    if (isForTon) {
+      return {
+        avatarIcon: 'fragment',
+        isCustomPeer: true,
+        titleKey: 'Stars.Gift.Received.Title',
+        subtitleKey: 'Stars.Intro.Transaction.Gift.UnknownUser',
+        customPeerAvatarColor: '#000000',
+      };
+    }
     return {
-      avatarIcon: 'star',
+      avatarIcon: 'fragment',
       isCustomPeer: true,
       titleKey: 'Stars.Intro.Transaction.FragmentTopUp.Title',
       subtitleKey: 'Stars.Intro.Transaction.FragmentTopUp.Subtitle',
@@ -296,13 +378,28 @@ export function buildStarsTransactionCustomPeer(
   };
 }
 
-export function formatStarsTransactionAmount(lang: LangFn, starsAmount: ApiStarsAmount) {
-  const amount = starsAmount.amount + starsAmount.nanos / 1e9;
-  if (amount < 0) {
-    return `- ${lang.number(Math.abs(amount))}`;
+export function formatStarsTransactionAmount(lang: LangFn, currencyAmount: ApiTypeCurrencyAmount) {
+  if (currencyAmount.currency === STARS_CURRENCY_CODE) {
+    const amount = currencyAmount.amount + currencyAmount.nanos / 1e9;
+    if (amount < 0) {
+      return `- ${lang.number(Math.abs(amount))}`;
+    }
+
+    return `+ ${lang.number(amount)}`;
   }
 
-  return `+ ${lang.number(amount)}`;
+  if (currencyAmount.currency === TON_CURRENCY_CODE) {
+    const amount = convertTonFromNanos(currencyAmount.amount);
+    const absAmount = Math.abs(amount);
+
+    if (amount < 0) {
+      return `- ${lang.preciseNumber(absAmount)}`;
+    }
+
+    return `+ ${lang.preciseNumber(absAmount)}`;
+  }
+
+  return undefined;
 }
 
 export function formatStarsAmount(lang: LangFn, starsAmount: ApiStarsAmount) {
@@ -312,24 +409,45 @@ export function formatStarsAmount(lang: LangFn, starsAmount: ApiStarsAmount) {
 export function getStarsTransactionFromGift(message: ApiMessage): ApiStarsTransaction | undefined {
   const { action } = message.content;
 
-  if (action?.type !== 'giftStars') return undefined;
+  if (action?.type === 'giftStars') {
+    const { transactionId, stars } = action;
 
-  const { transactionId, stars } = action;
+    return {
+      id: transactionId,
+      amount: {
+        currency: STARS_CURRENCY_CODE,
+        amount: stars,
+        nanos: 0,
+      },
+      peer: {
+        type: 'peer',
+        id: message.isOutgoing ? message.chatId : (message.senderId || message.chatId),
+      },
+      date: message.date,
+      isGift: true,
+      isMyGift: message.isOutgoing || undefined,
+    };
+  }
 
-  return {
-    id: transactionId!,
-    stars: {
-      amount: stars!,
-      nanos: 0,
-    },
-    peer: {
-      type: 'peer',
-      id: message.isOutgoing ? message.chatId : (message.senderId || message.chatId),
-    },
-    date: message.date,
-    isGift: true,
-    isMyGift: message.isOutgoing || undefined,
-  };
+  if (action?.type === 'giftTon') {
+    const { transactionId, cryptoAmount } = action;
+
+    return {
+      id: transactionId,
+      amount: {
+        currency: TON_CURRENCY_CODE,
+        amount: cryptoAmount,
+      },
+      peer: {
+        type: 'fragment',
+      },
+      date: message.date,
+      isGift: true,
+      isMyGift: message.isOutgoing || undefined,
+    };
+  }
+
+  return undefined;
 }
 
 export function getPrizeStarsTransactionFromGiveaway(message: ApiMessage): ApiStarsTransaction | undefined {
@@ -337,17 +455,18 @@ export function getPrizeStarsTransactionFromGiveaway(message: ApiMessage): ApiSt
 
   if (action?.type !== 'prizeStars') return undefined;
 
-  const { transactionId, stars, targetChatId } = action;
+  const { transactionId, stars, boostPeerId } = action;
 
   return {
-    id: transactionId!,
-    stars: {
-      amount: stars!,
+    id: transactionId,
+    amount: {
+      currency: STARS_CURRENCY_CODE,
+      amount: stars,
       nanos: 0,
     },
     peer: {
       type: 'peer',
-      id: targetChatId!,
+      id: boostPeerId,
     },
     date: message.date,
     giveawayPostId: message.id,

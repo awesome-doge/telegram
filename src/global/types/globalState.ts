@@ -13,9 +13,11 @@ import type {
   ApiCountryCode,
   ApiEmojiStatusType,
   ApiGroupCall,
-  ApiLanguage,
   ApiMessage,
+  ApiNotifyPeerType,
+  ApiPaidReactionPrivacyType,
   ApiPeerColors,
+  ApiPeerNotifySettings,
   ApiPeerPhotos,
   ApiPeerStories,
   ApiPhoneCall,
@@ -26,15 +28,19 @@ import type {
   ApiReaction,
   ApiReactionKey,
   ApiSavedReactionTag,
+  ApiSavedStarGift,
   ApiSession,
   ApiSponsoredMessage,
+  ApiStarGiftCollection,
   ApiStarGiftRegular,
   ApiStarsAmount,
   ApiStarTopupOption,
   ApiStealthMode,
   ApiSticker,
   ApiStickerSet,
+  ApiStoryAlbum,
   ApiTimezone,
+  ApiTonAmount,
   ApiTranscription,
   ApiUpdateAuthorizationStateType,
   ApiUpdateConnectionStateType,
@@ -44,21 +50,19 @@ import type {
   ApiUserStatus,
   ApiVideo,
   ApiWallpaper,
+  ApiWebPage,
   ApiWebSession,
 } from '../../api/types';
 import type {
+  AccountSettings,
+  AttachmentCompression,
   BotAppPermissions,
   ChatListType,
   ChatTranslatedMessages,
   EmojiKeywords,
-  ISettings,
   IThemeSettings,
-  NotifyException,
-  PerformanceType,
-  Point,
   ServiceNotification,
   SimilarBotsInfo,
-  Size,
   StarGiftCategory,
   StarsSubscriptions,
   StarsTransactionHistory,
@@ -69,12 +73,14 @@ import type {
   WebPageMediaSize,
 } from '../../types';
 import type { RegularLangFnParameters } from '../../util/localization';
+import type { SharedState } from './sharedState';
 import type { TabState } from './tabState';
 
 export type GlobalState = {
+  cacheVersion: number;
   isInited: boolean;
   config?: ApiConfig;
-  appConfig?: ApiAppConfig;
+  appConfig: ApiAppConfig;
   peerColors?: ApiPeerColors;
   timezones?: {
     byId: Record<string, ApiTimezone>;
@@ -86,14 +92,15 @@ export type GlobalState = {
   connectionState?: ApiUpdateConnectionStateType;
   currentUserId?: string;
   isSyncing?: boolean;
+  isAppConfigLoaded?: boolean;
   isAppUpdateAvailable?: boolean;
-  isElectronUpdateAvailable?: boolean;
   isSynced?: boolean;
   isFetchingDifference?: boolean;
   leftColumnWidth?: number;
   lastIsChatInfoShown?: boolean;
   initialUnreadNotifications?: number;
   shouldShowContextMenuHint?: boolean;
+  botFreezeAppealId?: string;
 
   audioPlayer: {
     lastPlaybackRate: number;
@@ -115,9 +122,11 @@ export type GlobalState = {
 
   attachmentSettings: {
     shouldCompress: boolean;
+    defaultAttachmentCompression: AttachmentCompression;
     shouldSendGrouped: boolean;
     isInvertedMedia?: true;
     webPageMediaSize?: WebPageMediaSize;
+    shouldSendInHighQuality?: boolean;
   };
 
   attachMenu: {
@@ -219,6 +228,7 @@ export type GlobalState = {
       similarChannelIds?: string[];
       count?: number;
     }>>;
+    notifyExceptionById: Record<string, ApiPeerNotifySettings>;
 
     similarBotsById: Record<string, SimilarBotsInfo>;
   };
@@ -228,8 +238,12 @@ export type GlobalState = {
       byId: Record<number, ApiMessage>;
       threadsById: Record<ThreadId, Thread>;
     }>;
+    playbackByChatId: Record<string, {
+      byId: Record<number, number>;
+    }>;
     sponsoredByChatId: Record<string, ApiSponsoredMessage>;
     pollById: Record<string, ApiPoll>;
+    webPageById: Record<string, ApiWebPage>;
   };
 
   stories: {
@@ -243,6 +257,7 @@ export type GlobalState = {
       archived: string[];
     };
     stealthMode: ApiStealthMode;
+    albumsByPeerId: Record<string, ApiStoryAlbum[]>;
   };
 
   groupCalls: {
@@ -266,6 +281,7 @@ export type GlobalState = {
     byId: Record<number, ApiChatFolder>;
     invites: Record<number, ApiChatlistExportedInvite[]>;
     recommended?: ApiChatFolder[];
+    areTagsEnabled?: boolean;
   };
 
   phoneCall?: ApiPhoneCall;
@@ -295,6 +311,14 @@ export type GlobalState = {
   starGifts?: {
     byId: Record<string, ApiStarGiftRegular>;
     idsByCategory: Record<StarGiftCategory, string[]>;
+  };
+  myUniqueGifts?: {
+    byId: Record<string, ApiSavedStarGift>;
+    ids: string[];
+    nextOffset?: string;
+  };
+  starGiftCollections?: {
+    byPeerId: Record<string, ApiStarGiftCollection[]>;
   };
 
   stickers: {
@@ -360,6 +384,7 @@ export type GlobalState = {
   defaultTopicIconsId?: string;
   defaultStatusIconsId?: string;
   premiumGifts?: ApiStickerSet;
+  tonGifts?: ApiStickerSet;
   emojiKeywords: Record<string, EmojiKeywords | undefined>;
 
   collectibleEmojiStatuses?: {
@@ -401,18 +426,15 @@ export type GlobalState = {
   };
 
   settings: {
-    byKey: ISettings;
-    performance: PerformanceType;
+    byKey: AccountSettings;
     loadedWallpapers?: ApiWallpaper[];
-    themes: Partial<Record<ThemeKey, IThemeSettings>>;
     privacy: Partial<Record<ApiPrivacyKey, ApiPrivacySettings>>;
-    notifyExceptions?: Record<number, NotifyException>;
+    notifyDefaults?: Record<ApiNotifyPeerType, ApiPeerNotifySettings>;
     lastPremiumBandwithNotificationDate?: number;
-    paidReactionPrivacy?: boolean;
-    languages?: ApiLanguage[];
+    paidReactionPrivacy?: ApiPaidReactionPrivacyType;
     botVerificationShownPeerIds: string[];
-    miniAppsCachedPosition?: Point;
-    miniAppsCachedSize?: Size;
+    themes: Partial<Record<ThemeKey, IThemeSettings>>;
+    accountDaysTtl: number;
   };
 
   push?: {
@@ -426,6 +448,7 @@ export type GlobalState = {
   serviceNotifications: ServiceNotification[];
 
   byTabId: Record<number, TabState>;
+  sharedState: SharedState;
 
   archiveSettings: {
     isMinimized: boolean;

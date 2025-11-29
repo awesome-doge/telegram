@@ -47,10 +47,10 @@ export function validateHexColor(color: string) {
 export function getPropertyHexColor(style: CSSStyleDeclaration, property: string) {
   const value = style.getPropertyValue(property);
   if (!value) return undefined;
-  return prepareHexColor(value.trim());
+  return prepareHexColor(value.trim()).slice(0, 7);
 }
 
-function prepareHexColor(color: string) {
+export function prepareHexColor(color: string) {
   if (validateHexColor(color)) return color;
   return `#${color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*(\d+\.{0,1}\d*))?\)$/)!
     .slice(1)

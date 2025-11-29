@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
@@ -10,8 +10,8 @@ import type {
 } from '../../../api/types';
 import type { IAnchorPosition } from '../../../types';
 
+import { IS_TOUCH_ENV } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
-import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 
 import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
 import useFlag from '../../../hooks/useFlag';
@@ -154,7 +154,7 @@ const CustomSendMenu: FC<OwnProps> = ({
           'CustomSendMenu_items',
           areItemsHidden && 'CustomSendMenu_items-hidden',
         )}
-        dir={oldLang.isRtl ? 'rtl' : undefined}
+        dir={lang.isRtl ? 'rtl' : undefined}
       >
         {onSendSilent && <MenuItem icon="mute" onClick={onSendSilent}>{oldLang('SendWithoutSound')}</MenuItem>}
         {canSchedule && onSendSchedule && (

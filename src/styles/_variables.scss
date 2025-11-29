@@ -1,17 +1,19 @@
 @use "sass:color";
 
 @function toRGB($color) {
-  @return color.red($color) + ", " + color.green($color) + ", " + color.blue($color);
+  @return color.channel($color, "red") + ", " + color.channel($color, "green") + ", " + color.channel($color, "blue");
 }
 
 @function blend-normal($foreground, $background) {
-  $opacity: opacity($foreground);
-  $background-opacity: opacity($background);
+  $opacity: color.opacity($foreground);
+  $background-opacity: color.opacity($background);
 
   // calculate opacity
-  $bm-red: color.red($foreground) * $opacity + color.red($background) * $background-opacity * (1 - $opacity);
-  $bm-green: color.green($foreground) * $opacity + color.green($background) * $background-opacity * (1 - $opacity);
-  $bm-blue: color.blue($foreground) * $opacity + color.blue($background) * $background-opacity * (1 - $opacity);
+  /* stylelint-disable @stylistic/max-line-length */
+  $bm-red: color.channel($foreground, "red") * $opacity + color.channel($background, "red") * $background-opacity * (1 - $opacity);
+  $bm-green: color.channel($foreground, "green") * $opacity + color.channel($background, "green") * $background-opacity * (1 - $opacity);
+  $bm-blue: color.channel($foreground, "blue") * $opacity + color.channel($background, "blue") * $background-opacity * (1 - $opacity);
+  /* stylelint-enable @stylistic/max-line-length */
 
   @return rgb($bm-red, $bm-green, $bm-blue);
 }
@@ -58,6 +60,8 @@ $color-message-reaction-own-hover: #b5e0a4;
 $color-message-reaction-chosen-hover: #1a82ea;
 $color-message-reaction-chosen-hover-own: #3f9d4b;
 
+$color-message-non-contact: #cceebf;
+
 $color-message-story-mention-from: #4ef390;
 $color-message-story-mention-to: #74bcff;
 
@@ -70,6 +74,7 @@ $color-message-story-mention-to: #74bcff;
   --color-background-selected: #f4f4f5;
   --color-background-secondary: #f4f4f5;
   --color-background-secondary-accent: #e4e4e5;
+  --color-background-sidebar: #E4E4E5;
   --color-background-own: #{$color-light-green};
   --color-background-own-selected: color.adjust($color-light-green, -10%);
   --color-text: #{$color-black};
@@ -151,6 +156,8 @@ $color-message-story-mention-to: #74bcff;
   --color-message-reaction-chosen-hover: $color-message-reaction-chosen-hover;
   --color-message-reaction-chosen-hover-own: $color-message-reaction-chosen-hover-own;
 
+  --color-message-non-contact: $color-message-non-contact;
+
   --color-message-story-mention-from: $color-message-story-mention-from;
   --color-message-story-mention-to: $color-message-story-mention-to;
 
@@ -198,7 +205,10 @@ $color-message-story-mention-to: #74bcff;
   --color-archive: #9eaab5;
   --stars-gradient: linear-gradient(90deg, #FFAA00 0%, #FFCD3A 100%);
 
+  --color-stars: #FFAA00;
   --color-heart: #ff3c32;
+
+  --color-negative-progress: #CE4C47;
 
   --vh: 1vh;
 
@@ -211,6 +221,8 @@ $color-message-story-mention-to: #74bcff;
   --border-radius-forum-avatar: 33.3333%;
   --messages-container-width: 45.5rem;
   --right-column-width: 26.5rem;
+  --folders-sidebar-width: 5rem;
+  --window-controls-width: 0rem;
   --header-height: 3.5rem;
   --custom-emoji-size: 1.25rem;
   --emoji-size: 1.25rem;
@@ -222,29 +234,15 @@ $color-message-story-mention-to: #74bcff;
 
   --scrollbar-width: 0;
 
-  @media (min-width: 1276px) and (max-width: 1920px) {
-    --right-column-width: 25vw;
-  }
-
-  @media (min-width: 1921px) {
-    --messages-container-width: 50vw;
-  }
-
-  @media (max-width: 600px) {
-    --right-column-width: 100vw;
-    --symbol-menu-width: 100vw;
-    --symbol-menu-height: 17.6875rem;
-  }
-
-  --z-overlay-effects: 10001;
-  --z-modal-confirm: 10000;
+  --z-overlay-effects: 12000;
+  --z-modal-confirm: 10500;
+  --z-reaction-picker: 10200;
   --z-portal-menu: 10000;
   --z-symbol-menu-modal: 5000;
   --z-lock-screen: 3000;
   --z-ui-loader-mask: 2000;
   --z-notification: 1700;
   --z-confetti: 1600;
-  --z-reaction-picker: 1200;
   --z-story-viewer: 1150;
   --z-reaction-interaction-effect: 1100;
   --z-right-column: 900;
@@ -321,5 +319,19 @@ $color-message-story-mention-to: #74bcff;
 
   body.is-android {
     --slide-transition: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @media (min-width: 1276px) and (max-width: 1920px) {
+    --right-column-width: 25vw;
+  }
+
+  @media (min-width: 1921px) {
+    --messages-container-width: 50vw;
+  }
+
+  @media (max-width: 600px) {
+    --right-column-width: 100vw;
+    --symbol-menu-width: 100vw;
+    --symbol-menu-height: 17.6875rem;
   }
 }

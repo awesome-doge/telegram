@@ -2,10 +2,11 @@ import type { ActionReturnType } from '../../types';
 
 import { formatCurrencyAsString } from '../../../util/formatCurrency';
 import * as langProvider from '../../../util/oldLangProvider';
-import { addActionHandler, setGlobal } from '../../index';
-import { updateStarsBalance } from '../../reducers';
+import { getPeerTitle } from '../../helpers/peers';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import { removeGiftInfoOriginalDetails, updateStarsBalance } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
-import { selectTabState } from '../../selectors';
+import { selectPeer, selectTabState } from '../../selectors';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
@@ -15,16 +16,29 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       const { invoice } = form;
 
       const { totalAmount, currency } = invoice;
-
-      if (paymentState.inputInvoice?.type === 'stars') {
+      const inputInvoice = paymentState.inputInvoice;
+      if (inputInvoice?.type === 'stars') {
         actions.closeStarsBalanceModal({ tabId });
         actions.showNotification({
-          message: langProvider.oldTranslate('StarsAcquiredInfo', paymentState.inputInvoice.stars),
+          message: langProvider.oldTranslate('StarsAcquiredInfo', inputInvoice.stars),
           title: langProvider.oldTranslate('StarsAcquired'),
           icon: 'star',
           tabId,
         });
         actions.requestConfetti({ withStars: true, tabId });
+      } else if (inputInvoice?.type === 'giftcode') {
+        const giftModalState = selectTabState(global, tabId).giftModal;
+
+        if (giftModalState && inputInvoice?.userIds[0] === giftModalState.forPeerId) {
+          actions.showNotification({
+            message: {
+              key: 'GiftSent',
+            },
+            tabId,
+          });
+          actions.requestConfetti({ withStars: true, tabId });
+          actions.closeGiftModal({ tabId });
+        }
       } else {
         actions.showNotification({
           tabId,
@@ -78,7 +92,24 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
         if (giftModalState && inputInvoice.userIds[0] === giftModalState.forPeerId) {
           actions.showNotification({
-            message: langProvider.oldTranslate('StarsGiftCompleted'),
+            message: {
+              key: 'StarsGiftCompleted',
+            },
+            tabId,
+          });
+          actions.requestConfetti({ withStars: true, tabId });
+          actions.closeGiftModal({ tabId });
+        }
+      }
+
+      if (inputInvoice?.type === 'premiumGiftStars') {
+        const giftModalState = selectTabState(global, tabId).giftModal;
+
+        if (giftModalState && inputInvoice.userId === giftModalState.forPeerId) {
+          actions.showNotification({
+            message: {
+              key: 'StarsGiftCompleted',
+            },
             tabId,
           });
           actions.requestConfetti({ withStars: true, tabId });
@@ -111,23 +142,78 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
         if (starGiftModalState && inputInvoice.peerId === starGiftModalState.forPeerId) {
           actions.showNotification({
-            message: langProvider.oldTranslate('StarsGiftCompleted'),
+            message: {
+              key: 'StarsGiftCompleted',
+            },
             tabId,
           });
+          actions.reloadPeerSavedGifts({ peerId: starGiftModalState.forPeerId });
           actions.requestConfetti({ withStars: true, tabId });
           actions.closeGiftModal({ tabId });
         }
+      }
+
+      if (inputInvoice?.type === 'stargiftResale') {
+        const starGiftModalState = selectTabState(global, tabId).giftInfoModal;
+
+        if (starGiftModalState) {
+          actions.showNotification({
+            message: {
+              key: 'StarsGiftBought',
+            },
+            tabId,
+          });
+          if (starGiftModalState.peerId) {
+            actions.reloadPeerSavedGifts({ peerId: starGiftModalState.peerId });
+          }
+          actions.reloadPeerSavedGifts({ peerId: inputInvoice.peerId });
+          actions.requestConfetti({ withStars: true, tabId });
+          actions.closeGiftInfoModal({ tabId });
+        }
+      }
+
+      if (inputInvoice?.type === 'stargiftUpgrade' && global.currentUserId) {
+        actions.reloadPeerSavedGifts({ peerId: global.currentUserId });
+      }
+
+      if (inputInvoice?.type === 'stargiftDropOriginalDetails') {
+        global = getGlobal();
+        global = removeGiftInfoOriginalDetails(global, tabId);
+        setGlobal(global);
+
+        actions.closeGiftDescriptionRemoveModal({ tabId });
+        actions.showNotification({
+          message: { key: 'RemoveGiftDescriptionSuccessMessage' },
+          tabId,
+        });
+
+        if (global.currentUserId) {
+          actions.reloadPeerSavedGifts({ peerId: global.currentUserId });
+        }
+      }
+
+      if (inputInvoice?.type === 'stargiftPrepaidUpgrade') {
+        actions.reloadPeerSavedGifts({ peerId: inputInvoice.peerId });
+
+        const lang = langProvider.getTranslationFn();
+        const peer = selectPeer(global, inputInvoice.peerId);
+        const peerTitle = peer ? getPeerTitle(lang, peer) : undefined;
+
+        actions.showNotification({
+          icon: 'gift',
+          title: { key: 'GiftUpgradeSentTitle' },
+          message: {
+            key: 'GiftUpgradeSentMessage',
+            variables: { user: peerTitle },
+          },
+          tabId,
+        });
       }
 
       break;
     }
 
     case 'updateStarsBalance': {
-      const stars = global.stars;
-      if (!stars) {
-        return;
-      }
-
       global = updateStarsBalance(global, update.balance);
 
       setGlobal(global);

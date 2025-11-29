@@ -1,32 +1,24 @@
-import type { OldLangFn } from '../hooks/useOldLang';
+import type { LangFn } from './localization';
 
 import EMOJI_REGEX from '../lib/twemojiRegex';
 import fixNonStandardEmoji from './emoji/fixNonStandardEmoji';
+import { floor } from './math';
 import withCache from './withCache';
 
 export function formatInteger(value: number) {
   return String(value).replace(/\d(?=(\d{3})+$)/g, '$& ');
 }
 
-function formatFixedNumber(number: number) {
-  const fixed = String(number.toFixed(1));
-  if (fixed.substr(-2) === '.0') {
-    return Math.floor(number);
-  }
-
-  return number.toFixed(1).replace('.', ',');
-}
-
-export function formatIntegerCompact(views: number) {
+export function formatIntegerCompact(lang: LangFn, views: number) {
   if (views < 1e3) {
-    return views.toString();
+    return lang.number(views);
   }
 
   if (views < 1e6) {
-    return `${formatFixedNumber(views / 1e3)}K`;
+    return `${lang.number(floor(views / 1e3, 1))}K`;
   }
 
-  return `${formatFixedNumber(views / 1e6)}M`;
+  return `${lang.number(floor(views / 1e6, 1))}M`;
 }
 
 export function formatPercent(value: number, fractionDigits = 1) {
@@ -51,15 +43,16 @@ export const getFirstLetters = withCache((phrase: string, count = 2) => {
     .join('');
 });
 
-const FILE_SIZE_UNITS = ['B', 'KB', 'MB', 'GB'];
-export function formatFileSize(lang: OldLangFn, bytes: number, decimals = 1): string {
+const FILE_SIZE_UNITS = ['B', 'KB', 'MB', 'GB'] as const;
+export function formatFileSize(lang: LangFn, bytes: number, decimals = 1): string {
   if (bytes === 0) {
-    return lang('FileSize.B', 0);
+    return lang('MediaSizeB', { size: 0 }, { pluralValue: 0 });
   }
 
   const k = 1024;
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const value = (bytes / (k ** i)).toFixed(Math.max(decimals, 0));
+  const v = (bytes / (k ** i));
+  const value = v.toFixed(Math.max(decimals, 0));
 
-  return lang(`FileSize.${FILE_SIZE_UNITS[i]}`, value);
+  return lang(`MediaSize${FILE_SIZE_UNITS[i]}`, { size: value }, { pluralValue: v });
 }

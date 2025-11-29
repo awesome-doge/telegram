@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -8,13 +8,14 @@ import type { ApiChat } from '../../../api/types';
 import { ManagementScreens } from '../../../types';
 
 import { STICKER_SIZE_DISCUSSION_GROUPS } from '../../../config';
-import { isChatChannel } from '../../../global/helpers';
+import { isChatChannel, isChatPublic } from '../../../global/helpers';
 import { selectChat, selectChatFullInfo } from '../../../global/selectors';
 import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
 import renderText from '../../common/helpers/renderText';
 
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import AnimatedIconWithPreview from '../../common/AnimatedIconWithPreview';
@@ -151,16 +152,16 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
     const linkedGroup = chatsByIds[linkedGroupId];
     if (!linkedGroup) return undefined;
 
-    if (linkedGroup.hasPrivateLink) {
+    if (isChatPublic(linkedGroup)) {
       return renderText(
-        `Do you want to make **${linkedGroup.title}** the discussion board for **${chat!.title}**?`,
+        `Do you want to make **${linkedGroup.title}** the discussion board for **${chat?.title}**?`,
         ['br', 'simple_markdown'],
       );
     }
 
     return renderText(
-      // eslint-disable-next-line max-len
-      `Do you want to make **${linkedGroup.title}** the discussion board for **${chat!.title}**?\n\nAnyone from the channel will be able to see messages in this group.`,
+      // eslint-disable-next-line @stylistic/max-len
+      `Do you want to make **${linkedGroup.title}** the discussion board for **${chat?.title}**?\n\nAnyone from the channel will be able to see messages in this group.`,
       ['br', 'simple_markdown'],
     );
   }
@@ -168,12 +169,14 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
   function renderLinkedGroup() {
     return (
       <div>
-        <ListItem
-          className="chat-item-clickable"
-          inactive
-        >
-          <GroupChatInfo chatId={linkedChat!.id} />
-        </ListItem>
+        {linkedChat && (
+          <ListItem
+            className="chat-item-clickable"
+            inactive
+          >
+            <GroupChatInfo chatId={linkedChat.id} />
+          </ListItem>
+        )}
         <ListItem
           icon="delete"
           ripple
@@ -187,7 +190,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
           onClose={closeConfirmUnlinkGroupDialog}
           header={renderUnlinkGroupHeader()}
           textParts={renderText(
-            lang(isChannel ? 'DiscussionUnlinkChannelAlert' : 'DiscussionUnlinkGroupAlert', linkedChat!.title),
+            lang(isChannel ? 'DiscussionUnlinkChannelAlert' : 'DiscussionUnlinkGroupAlert', linkedChat?.title),
             ['br', 'simple_markdown'],
           )}
           confirmLabel={lang(isChannel ? 'DiscussionUnlinkGroup' : 'DiscussionUnlinkChannel')}
@@ -197,6 +200,10 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
       </div>
     );
   }
+
+  const handleNewGroupClick = useLastCallback(() => {
+    onScreenSelect(ManagementScreens.NewDiscussionGroup);
+  });
 
   function renderDiscussionGroups() {
     return (
@@ -208,8 +215,10 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
             key="create-group"
             icon="group"
             ripple
+            className="create-item"
+            withPrimaryColor
             teactOrderKey={0}
-            disabled
+            onClick={handleNewGroupClick}
           >
             {lang('DiscussionCreateGroup')}
           </ListItem>
@@ -219,7 +228,6 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
                 key={id}
                 teactOrderKey={i + 1}
                 className="chat-item-clickable scroll-item"
-                // eslint-disable-next-line react/jsx-no-bind
                 onClick={() => {
                   onDiscussionClick(id);
                 }}
@@ -246,7 +254,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="Management">
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         <div className="section">
           <AnimatedIconWithPreview
             tgsUrl={LOCAL_TGS_URLS.DiscussionGroups}
@@ -286,7 +294,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const chat = selectChat(global, chatId);
     const { linkedChatId } = selectChatFullInfo(global, chatId) || {};
     const { forDiscussionIds, byId: chatsByIds } = global.chats;

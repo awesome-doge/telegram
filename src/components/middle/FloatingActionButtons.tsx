@@ -1,12 +1,11 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { MessageListType } from '../../types';
+import type { MessageListType, ThreadId } from '../../types';
 import { MAIN_THREAD_ID } from '../../api/types';
 
 import { selectChat, selectCurrentMessageList, selectCurrentMiddleSearch } from '../../global/selectors';
-import animateScroll from '../../util/animateScroll';
 import buildClassName from '../../util/buildClassName';
 
 import useLastCallback from '../../hooks/useLastCallback';
@@ -24,6 +23,7 @@ type OwnProps = {
 type StateProps = {
   chatId?: string;
   messageListType?: MessageListType;
+  threadId?: ThreadId;
   unreadCount?: number;
   unreadReactions?: number[];
   unreadMentions?: number[];
@@ -31,13 +31,12 @@ type StateProps = {
   mentionsCount?: number;
 };
 
-const FOCUS_MARGIN = 20;
-
 const FloatingActionButtons: FC<OwnProps & StateProps> = ({
   withScrollDown,
   canPost,
   messageListType,
   chatId,
+  threadId,
   unreadCount,
   unreadReactions,
   unreadMentions,
@@ -47,14 +46,23 @@ const FloatingActionButtons: FC<OwnProps & StateProps> = ({
 }) => {
   const {
     focusNextReply, focusNextReaction, focusNextMention, fetchUnreadReactions,
-    readAllMentions, readAllReactions, fetchUnreadMentions,
+    readAllMentions, readAllReactions, fetchUnreadMentions, scrollMessageListToBottom,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const elementRef = useRef<HTMLDivElement>(null);
+  const elementRef = useRef<HTMLDivElement>();
 
   const hasUnreadReactions = Boolean(reactionsCount);
   const hasUnreadMentions = Boolean(mentionsCount);
+
+  const handleReadAllReactions = useLastCallback(() => {
+    if (!chatId) return;
+    readAllReactions({ chatId, threadId });
+  });
+
+  const handleReadAllMentions = useLastCallback(() => {
+    if (!chatId) return;
+    readAllMentions({ chatId, threadId });
+  });
 
   useEffect(() => {
     if (hasUnreadReactions && chatId && !unreadReactions?.length) {
@@ -88,21 +96,7 @@ const FloatingActionButtons: FC<OwnProps & StateProps> = ({
     if (messageListType === 'thread') {
       focusNextReply();
     } else {
-      const messagesContainer = elementRef.current!.parentElement!.querySelector<HTMLDivElement>(
-        '.Transition_slide-active > .MessageList',
-      )!;
-      const messageElements = messagesContainer.querySelectorAll<HTMLDivElement>('.message-list-item');
-      const lastMessageElement = messageElements[messageElements.length - 1];
-      if (!lastMessageElement) {
-        return;
-      }
-
-      animateScroll({
-        container: messagesContainer,
-        element: lastMessageElement,
-        position: 'end',
-        margin: FOCUS_MARGIN,
-      });
+      scrollMessageListToBottom();
     }
   });
 
@@ -120,7 +114,7 @@ const FloatingActionButtons: FC<OwnProps & StateProps> = ({
         icon="heart-outline"
         ariaLabelLang="AccDescrReactionMentionDown"
         onClick={focusNextReaction}
-        onReadAll={readAllReactions}
+        onReadAll={handleReadAllReactions}
         unreadCount={reactionsCount}
         className={buildClassName(
           styles.reactions,
@@ -133,7 +127,7 @@ const FloatingActionButtons: FC<OwnProps & StateProps> = ({
         icon="mention"
         ariaLabelLang="AccDescrMentionDown"
         onClick={focusNextMention}
-        onReadAll={readAllMentions}
+        onReadAll={handleReadAllMentions}
         unreadCount={mentionsCount}
         className={!hasUnreadMentions && styles.hidden}
       />
@@ -150,10 +144,10 @@ const FloatingActionButtons: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const currentMessageList = selectCurrentMessageList(global);
     if (!currentMessageList) {
-      return {};
+      return {} as Complete<StateProps>;
     }
 
     const { chatId, threadId, type: messageListType } = currentMessageList;
@@ -166,6 +160,7 @@ export default memo(withGlobal<OwnProps>(
     return {
       messageListType,
       chatId,
+      threadId,
       reactionsCount: shouldShowCount ? chat.unreadReactionsCount : undefined,
       unreadReactions: shouldShowCount ? chat.unreadReactions : undefined,
       unreadMentions: shouldShowCount ? chat.unreadMentions : undefined,

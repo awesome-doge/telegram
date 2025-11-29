@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useMemo } from '../../lib/teact/teact';
+import { memo, useMemo } from '../../lib/teact/teact';
 
 import type { TableAboutData } from '../modals/common/TableAboutModal';
 
@@ -94,6 +94,7 @@ const AboutMonetizationModal: FC<OwnProps> = ({
       isOpen={isOpen}
       listItemData={modalData.listItemData}
       headerIconName="cash-circle"
+      headerIconPremiumGradient
       withSeparator
       header={modalData.header}
       footer={modalData.footer}

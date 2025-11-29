@@ -1,16 +1,17 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, {
+import type React from '../../../../lib/teact/teact';
+import {
   memo, useEffect, useMemo, useRef,
   useState,
 } from '../../../../lib/teact/teact';
-import { getActions, getGlobal, withGlobal } from '../../../../global';
+import { getActions, withGlobal } from '../../../../global';
 
 import type {
   ApiStarTopupOption, ApiUser,
 } from '../../../../api/types';
 import type { TabState } from '../../../../global/types';
 
-import { getPeerTitle } from '../../../../global/helpers';
+import { getPeerTitle } from '../../../../global/helpers/peers';
 import {
   selectUser,
 } from '../../../../global/selectors';
@@ -23,7 +24,6 @@ import useLastCallback from '../../../../hooks/useLastCallback';
 import useOldLang from '../../../../hooks/useOldLang';
 
 import Avatar from '../../../common/Avatar';
-import Icon from '../../../common/icons/Icon';
 import SafeLink from '../../../common/SafeLink';
 import Button from '../../../ui/Button';
 import Modal from '../../../ui/Modal';
@@ -31,7 +31,7 @@ import StarTopupOptionList from '../StarTopupOptionList';
 
 import styles from './StarsGiftModal.module.scss';
 
-import StarLogo from '../../../../assets/icons/StarLogo.svg';
+import StarLogo from '../../../../assets/icons/GoldStar.svg';
 import StarsBackground from '../../../../assets/stars-bg.png';
 
 export type OwnProps = {
@@ -51,8 +51,7 @@ const StarsGiftModal: FC<OwnProps & StateProps> = ({
   const {
     closeStarsGiftModal, openInvoice, requestConfetti,
   } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>();
 
   const isOpen = Boolean(modal?.isOpen);
 
@@ -162,12 +161,10 @@ const StarsGiftModal: FC<OwnProps & StateProps> = ({
           size="smaller"
           className={styles.closeButton}
           color="translucent"
-          // eslint-disable-next-line react/jsx-no-bind
           onClick={() => closeStarsGiftModal()}
           ariaLabel={oldLang('Close')}
-        >
-          <Icon name="close" />
-        </Button>
+          iconName="close"
+        />
         <div className={buildClassName(styles.header, isHeaderHidden && styles.hiddenHeader)}>
           <h2 className={styles.starHeaderText}>
             {user ? oldLang('GiftStarsTitle') : oldLang('Star.List.GetStars')}
@@ -212,8 +209,8 @@ const StarsGiftModal: FC<OwnProps & StateProps> = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>((global, { modal }): StateProps => {
-  const user = modal?.forUserId ? selectUser(getGlobal(), modal.forUserId) : undefined;
+export default memo(withGlobal<OwnProps>((global, { modal }): Complete<StateProps> => {
+  const user = modal?.forUserId ? selectUser(global, modal.forUserId) : undefined;
 
   return {
     user,

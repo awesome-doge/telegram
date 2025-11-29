@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiMessage } from '../../../api/types';
@@ -12,7 +12,7 @@ import { throttle } from '../../../util/schedulers';
 import { renderMessageSummary } from '../../common/helpers/renderMessageText';
 
 import useAppLayout from '../../../hooks/useAppLayout';
-import useOldLang from '../../../hooks/useOldLang';
+import useLang from '../../../hooks/useLang';
 
 import NothingFound from '../../common/NothingFound';
 import InfiniteScroll from '../../ui/InfiniteScroll';
@@ -53,7 +53,7 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
 }) => {
   const { searchMessagesGlobal, openThread } = getActions();
 
-  const lang = useOldLang();
+  const lang = useLang();
   const { isMobile } = useAppLayout();
 
   const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
@@ -132,16 +132,17 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
         )}
         {nothingFound && (
           <NothingFound
-            text={lang('ChatList.Search.NoResults')}
-            description={lang('ChatList.Search.NoResultsDescription')}
+            withSticker
+            text={lang('ChatListSearchNoResults')}
+            description={lang('ChatListSearchNoResultsDescription')}
           />
         )}
         {Boolean(foundTopicIds?.length) && (
           <div className="pb-2">
             <h3 className="section-heading topic-search-heading" dir={lang.isRtl ? 'auto' : undefined}>
-              {lang('Topics')}
+              {lang('SearchResultTopics')}
             </h3>
-            {foundTopicIds!.map((id) => {
+            {foundTopicIds.map((id) => {
               return (
                 <LeftSearchResultTopic
                   chatId={searchChatId!}
@@ -166,7 +167,7 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { byId: chatsById } = global.chats;
     const { currentUserId, messages: { byChatId: globalMessagesByChatId } } = global;
     const {

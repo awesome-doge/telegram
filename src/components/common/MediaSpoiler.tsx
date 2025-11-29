@@ -1,12 +1,16 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useRef } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { memo, useRef } from '../../lib/teact/teact';
 
 import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import buildClassName from '../../util/buildClassName';
 
 import useCanvasBlur from '../../hooks/useCanvasBlur';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
+
+import Icon from './icons/Icon';
 
 import styles from './MediaSpoiler.module.scss';
 
@@ -14,6 +18,7 @@ type OwnProps = {
   isVisible: boolean;
   withAnimation?: boolean;
   thumbDataUri?: string;
+  isNsfw?: boolean;
   width?: number;
   height?: number;
   className?: string;
@@ -26,12 +31,14 @@ const MediaSpoiler: FC<OwnProps> = ({
   isVisible,
   withAnimation,
   thumbDataUri,
+  isNsfw,
   className,
   width,
   height,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
+
+  const lang = useLang();
 
   const { shouldRender, transitionClassNames } = useShowTransitionDeprecated(
     isVisible, undefined, true, withAnimation ? false : undefined, undefined, ANIMATION_DURATION,
@@ -68,6 +75,12 @@ const MediaSpoiler: FC<OwnProps> = ({
         height={height}
       />
       <div className={styles.dots} />
+      {isNsfw && (
+        <span className={styles.nsfw}>
+          <Icon name="eye-crossed-outline" className={styles.nsfwIcon} />
+          {lang('MediaSpoilerSensitive')}
+        </span>
+      )}
     </div>
   );
 };

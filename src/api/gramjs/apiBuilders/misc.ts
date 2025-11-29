@@ -7,8 +7,8 @@ import type {
   ApiCountry,
   ApiLanguage,
   ApiOldLangString,
-  ApiPeerColors,
   ApiPrivacyKey,
+  ApiRestrictionReason,
   ApiSession,
   ApiTimezone,
   ApiUrlAuthResult,
@@ -17,11 +17,10 @@ import type {
   LangPackStringValue,
 } from '../../types';
 
-import { numberToHexColor } from '../../../util/colors';
 import {
-  buildCollectionByCallback, omit, omitUndefined, pick,
+  omit, omitUndefined, pick,
 } from '../../../util/iteratees';
-import { getServerTime } from '../../../util/serverTime';
+import { toJSNumber } from '../../../util/numbers';
 import { addUserToLocalDb } from '../helpers/localDb';
 import { omitVirtualClassFields } from './helpers';
 import { buildApiDocument, buildMessageTextContent } from './messageContent';
@@ -101,46 +100,11 @@ export function buildPrivacyKey(key: GramJs.TypePrivacyKey): ApiPrivacyKey | und
       return 'birthday';
     case 'PrivacyKeyStarGiftsAutoSave':
       return 'gifts';
+    case 'PrivacyKeyNoPaidMessages':
+      return 'noPaidMessages';
   }
 
   return undefined;
-}
-
-export function buildApiNotifyException(
-  notifySettings: GramJs.TypePeerNotifySettings, peer: GramJs.TypePeer,
-) {
-  const {
-    silent, muteUntil, showPreviews, otherSound,
-  } = notifySettings;
-
-  const hasSound = Boolean(otherSound && !(otherSound instanceof GramJs.NotificationSoundNone));
-
-  return {
-    chatId: getApiChatIdFromMtpPeer(peer),
-    isMuted: silent || (typeof muteUntil === 'number' && getServerTime() < muteUntil),
-    ...(!hasSound && { isSilent: true }),
-    ...(showPreviews !== undefined && { shouldShowPreviews: Boolean(showPreviews) }),
-    muteUntil,
-  };
-}
-
-export function buildApiNotifyExceptionTopic(
-  notifySettings: GramJs.TypePeerNotifySettings, peer: GramJs.TypePeer, topicId: number,
-) {
-  const {
-    silent, muteUntil, showPreviews, otherSound,
-  } = notifySettings;
-
-  const hasSound = Boolean(otherSound && !(otherSound instanceof GramJs.NotificationSoundNone));
-
-  return {
-    chatId: getApiChatIdFromMtpPeer(peer),
-    topicId,
-    isMuted: silent || (typeof muteUntil === 'number' && getServerTime() < muteUntil),
-    ...(!hasSound && { isSilent: true }),
-    ...(showPreviews !== undefined && { shouldShowPreviews: Boolean(showPreviews) }),
-    muteUntil,
-  };
 }
 
 function buildApiCountry(country: GramJs.help.Country, code: GramJs.help.CountryCode) {
@@ -310,25 +274,6 @@ export function buildApiLanguage(lang: GramJs.TypeLangPackLanguage): ApiLanguage
   };
 }
 
-function buildApiPeerColorSet(colorSet: GramJs.help.TypePeerColorSet) {
-  if (colorSet instanceof GramJs.help.PeerColorSet) {
-    return colorSet.colors.map((color) => numberToHexColor(color));
-  }
-  return undefined;
-}
-
-export function buildApiPeerColors(wrapper: GramJs.help.TypePeerColors): ApiPeerColors['general'] | undefined {
-  if (!(wrapper instanceof GramJs.help.PeerColors)) return undefined;
-
-  return buildCollectionByCallback(wrapper.colors, (color) => {
-    return [color.colorId, {
-      isHidden: color.hidden,
-      colors: color.colors && buildApiPeerColorSet(color.colors),
-      darkColors: color.darkColors && buildApiPeerColorSet(color.darkColors),
-    }];
-  });
-}
-
 export function buildApiTimezone(timezone: GramJs.TypeTimezone): ApiTimezone {
   const { id, name, utcOffset } = timezone;
   return {
@@ -357,11 +302,23 @@ export function buildApiCollectibleInfo(info: GramJs.fragment.TypeCollectibleInf
   } = info;
 
   return {
-    amount: amount.toJSNumber(),
+    amount: toJSNumber(amount),
     currency,
-    cryptoAmount: cryptoAmount.toJSNumber(),
+    cryptoAmount: toJSNumber(cryptoAmount),
     cryptoCurrency,
     purchaseDate,
     url,
   };
+}
+
+export function buildApiRestrictionReasons(
+  restrictionReasons?: GramJs.RestrictionReason[],
+): ApiRestrictionReason[] | undefined {
+  if (!restrictionReasons) {
+    return undefined;
+  }
+
+  return restrictionReasons.map((
+    { reason, text, platform }) =>
+    ({ reason, text, platform }));
 }

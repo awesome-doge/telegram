@@ -1,6 +1,5 @@
-import type { RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, {
+import type { ElementRef, FC } from '../../lib/teact/teact';
+import {
   getIsHeavyAnimating,
   memo,
   useEffect,
@@ -13,11 +12,11 @@ import type RLottieInstance from '../../lib/rlottie/RLottie';
 
 import { requestMeasure } from '../../lib/fasterdom/fasterdom';
 import { ensureRLottie, getRLottie } from '../../lib/rlottie/RLottie.async';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
+import { hex2rgbaObj } from '../../util/colors.ts';
 import generateUniqueId from '../../util/generateUniqueId';
-import { hexToRgb } from '../../util/switchTheme';
-import { IS_ELECTRON } from '../../util/windowEnvironment';
 
 import useColorFilter from '../../hooks/stickers/useColorFilter';
 import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
@@ -33,7 +32,7 @@ import useUniqueId from '../../hooks/useUniqueId';
 import useBackgroundMode, { isBackgroundModeActive } from '../../hooks/window/useBackgroundMode';
 
 export type OwnProps = {
-  ref?: RefObject<HTMLDivElement>;
+  ref?: ElementRef<HTMLDivElement>;
   renderId?: string;
   className?: string;
   style?: string;
@@ -51,6 +50,8 @@ export type OwnProps = {
   sharedCanvas?: HTMLCanvasElement;
   sharedCanvasCoords?: { x: number; y: number };
   onClick?: NoneToVoidFunction;
+  onMouseEnter?: NoneToVoidFunction;
+  onMouseLeave?: NoneToVoidFunction;
   onLoad?: NoneToVoidFunction;
   onEnded?: NoneToVoidFunction;
   onLoop?: NoneToVoidFunction;
@@ -77,12 +78,13 @@ const AnimatedSticker: FC<OwnProps> = ({
   sharedCanvas,
   sharedCanvasCoords,
   onClick,
+  onMouseEnter,
+  onMouseLeave,
   onLoad,
   onEnded,
   onLoop,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  let containerRef = useRef<HTMLDivElement>(null);
+  let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
@@ -114,7 +116,7 @@ const AnimatedSticker: FC<OwnProps> = ({
 
   useSyncEffect(() => {
     if (color && !shouldUseColorFilter) {
-      const { r, g, b } = hexToRgb(color);
+      const { r, g, b } = hex2rgbaObj(color);
       rgbColor.current = [r, g, b];
     } else {
       rgbColor.current = undefined;
@@ -181,10 +183,14 @@ const AnimatedSticker: FC<OwnProps> = ({
   useSharedIntersectionObserver(sharedCanvas, throttledInit);
 
   useEffect(() => {
-    if (!animation) return;
-
-    animation.setColor(rgbColor.current);
+    animation?.setColor(rgbColor.current);
   }, [color, animation]);
+
+  useEffect(() => {
+    if (typeof speed === 'number') {
+      animation?.setSpeed(speed);
+    }
+  }, [speed, animation]);
 
   useUnmountCleanup(() => {
     animationRef.current?.removeView(viewId);
@@ -270,11 +276,13 @@ const AnimatedSticker: FC<OwnProps> = ({
       className={buildClassName('AnimatedSticker', className)}
       style={buildStyle(
         size !== undefined && `width: ${size}px; height: ${size}px;`,
-        onClick && !IS_ELECTRON && 'cursor: pointer',
+        onClick && !IS_TAURI && 'cursor: pointer',
         colorFilter,
         style,
       )}
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     />
   );
 };

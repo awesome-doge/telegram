@@ -1,13 +1,13 @@
-import React, { memo } from '../../../lib/teact/teact';
+import { memo } from '../../../lib/teact/teact';
 
 import type { ApiChat, ApiMessage, ApiPeer } from '../../../api/types';
 
-import { getMessageSenderName } from '../../../global/helpers';
+import { getMessageSenderName } from '../../../global/helpers/peers';
 import buildClassName from '../../../util/buildClassName';
 import renderText from '../../common/helpers/renderText';
 
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
-import useOldLang from '../../../hooks/useOldLang';
 
 import Avatar from '../../common/Avatar';
 import FullNameTitle from '../../common/FullNameTitle';
@@ -39,12 +39,12 @@ const MiddleSearchResult = ({
   className,
   onClick,
 }: OwnProps) => {
-  const lang = useOldLang();
+  const lang = useLang();
   const hiddenForwardTitle = message.forwardInfo?.hiddenUserName;
 
   const peer = shouldShowChat ? messageChat : senderPeer;
 
-  const senderName = shouldShowChat ? getMessageSenderName(lang, message.chatId, senderPeer) : undefined;
+  const senderName = shouldShowChat && senderPeer ? getMessageSenderName(lang, message.chatId, senderPeer) : undefined;
 
   const handleClick = useLastCallback(() => {
     onClick(message);

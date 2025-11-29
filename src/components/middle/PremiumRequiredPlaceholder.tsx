@@ -1,4 +1,4 @@
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import { getUserFirstOrLastName } from '../../global/helpers';
@@ -32,7 +32,7 @@ function PremiumRequiredPlaceholder({ userName }: StateProps) {
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global, { userId }): StateProps => {
+  (global, { userId }): Complete<StateProps> => {
     const user = selectUser(global, userId);
 
     return {

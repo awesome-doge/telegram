@@ -1,4 +1,4 @@
-import React, { memo } from '../../../../lib/teact/teact';
+import { memo } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type {
@@ -6,7 +6,7 @@ import type {
 } from '../../../../api/types';
 import type { GlobalState } from '../../../../global/types';
 
-import { getPeerTitle } from '../../../../global/helpers';
+import { getPeerTitle } from '../../../../global/helpers/peers';
 import { selectPeer } from '../../../../global/selectors';
 import { formatDateToString } from '../../../../util/dates/dateFormat';
 import { formatInteger } from '../../../../util/textFormat';

@@ -1,4 +1,4 @@
-import React, {
+import {
   memo, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
 
@@ -56,20 +56,21 @@ const ICON_POSITIONS: IconPosition[] = [
 const EMOJI_SIZE = REM;
 const LOTTIE_TINT_OPACITY = 'ff';
 const NON_LOTTIE_TINT_OPACITY = 'bb';
+const EMOJI_SPACE = 0.75 * REM;
 
 type OwnProps = {
   emojiDocumentId: string;
   className?: string;
+  withEmojiSpace?: boolean;
 };
 
 const EmojiIconBackground = ({
   emojiDocumentId,
   className,
+  withEmojiSpace,
 }: OwnProps) => {
-  // eslint-disable-next-line no-null/no-null
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>();
+  const containerRef = useRef<HTMLDivElement>();
 
   const [emojiImage, setEmojiImage] = useState<HTMLImageElement | undefined>();
 
@@ -104,7 +105,8 @@ const EmojiIconBackground = ({
     ICON_POSITIONS.forEach(({
       inline, block, opacity, scale,
     }) => {
-      const x = (lang.isRtl ? inline : width / dpr - inline) * dpr;
+      const xShift = withEmojiSpace ? -EMOJI_SPACE : 0;
+      const x = ((lang.isRtl ? inline : width / dpr - inline) + xShift) * dpr;
       const y = block * dpr;
 
       const emojiSize = EMOJI_SIZE * dpr;
@@ -130,7 +132,7 @@ const EmojiIconBackground = ({
 
   useEffect(() => {
     updateCanvasAfterHeavyAnimation();
-  }, [emojiImage, lang.isRtl, customColor, updateCanvasAfterHeavyAnimation]);
+  }, [emojiImage, lang.isRtl, customColor, updateCanvasAfterHeavyAnimation, withEmojiSpace]);
 
   const updateCanvasSize = useThrottleForHeavyAnimation((parentWidth: number, parentHeight: number) => {
     requestMutation(() => {

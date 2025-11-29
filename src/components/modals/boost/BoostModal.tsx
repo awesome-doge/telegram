@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo } from '../../../lib/teact/teact';
+import { memo, useEffect, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiChatFullInfo, ApiMyBoost } from '../../../api/types';
@@ -314,7 +314,7 @@ const BoostModal = ({
           {renderText(
             oldLang(
               'ChannelBoost.Error.BoostTooOftenText',
-              formatShortDuration(lang, boost!.cooldownUntil - getServerTime()),
+              formatShortDuration(lang, boost.cooldownUntil - getServerTime()),
             ),
             ['simple_markdown', 'emoji'],
           )}
@@ -346,7 +346,7 @@ function areAllBoostsInChannel(myBoosts: ApiMyBoost[], chatId: string) {
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global, { modal }): StateProps => {
+  (global, { modal }): Complete<StateProps> => {
     const chat = modal && selectChat(global, modal?.chatId);
     const chatFullInfo = chat && selectChatFullInfo(global, chat.id);
     const firstBoost = modal?.myBoosts && getFirstAvailableBoost(modal.myBoosts, modal.chatId);

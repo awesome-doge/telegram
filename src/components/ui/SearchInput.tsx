@@ -1,9 +1,10 @@
-import type { RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, {
+import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { ElementRef, FC } from '../../lib/teact/teact';
+import {
   memo, useEffect, useRef,
 } from '../../lib/teact/teact';
 
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import buildClassName from '../../util/buildClassName';
 
 import useFlag from '../../hooks/useFlag';
@@ -20,7 +21,7 @@ import Transition from './Transition';
 import './SearchInput.scss';
 
 type OwnProps = {
-  ref?: RefObject<HTMLInputElement>;
+  ref?: ElementRef<HTMLInputElement>;
   children?: React.ReactNode;
   resultsItemSelector?: string;
   className?: string;
@@ -44,10 +45,11 @@ type OwnProps = {
   onReset?: NoneToVoidFunction;
   onFocus?: NoneToVoidFunction;
   onBlur?: NoneToVoidFunction;
-  onClick?: NoneToVoidFunction;
+  onClick?: (e: ReactMouseEvent<HTMLDivElement, MouseEvent>) => void;
   onUpClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onDownClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onSpinnerClick?: NoneToVoidFunction;
+  onEnter?: NoneToVoidFunction;
 };
 
 const SearchInput: FC<OwnProps> = ({
@@ -79,9 +81,9 @@ const SearchInput: FC<OwnProps> = ({
   onUpClick,
   onDownClick,
   onSpinnerClick,
+  onEnter,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  let inputRef = useRef<HTMLInputElement>(null);
+  let inputRef = useRef<HTMLInputElement>();
   if (ref) {
     inputRef = ref;
   }
@@ -125,8 +127,22 @@ const SearchInput: FC<OwnProps> = ({
   }
 
   const handleKeyDown = useLastCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!resultsItemSelector) return;
-    if (e.key === 'ArrowDown' || e.key === 'Enter') {
+    if (e.key === 'Enter') {
+      if (onEnter) {
+        e.preventDefault();
+        onEnter();
+        return;
+      }
+
+      if (resultsItemSelector) {
+        const element = document.querySelector(resultsItemSelector) as HTMLElement;
+        if (element) {
+          element.focus();
+        }
+      }
+    }
+
+    if (resultsItemSelector && e.key === 'ArrowDown') {
       const element = document.querySelector(resultsItemSelector) as HTMLElement;
       if (element) {
         element.focus();
@@ -142,7 +158,7 @@ const SearchInput: FC<OwnProps> = ({
     <div
       className={buildClassName('SearchInput', className, isInputFocused && 'has-focus')}
       onClick={onClick}
-      dir={oldLang.isRtl ? 'rtl' : undefined}
+      dir={lang.isRtl ? 'rtl' : undefined}
     >
       <Transition
         name="fade"
@@ -170,6 +186,7 @@ const SearchInput: FC<OwnProps> = ({
         value={value}
         disabled={disabled}
         autoComplete={autoComplete}
+        spellCheck={IS_TAURI ? false : undefined}
         onChange={handleChange}
         onFocus={handleFocus}
         onBlur={handleBlur}
@@ -181,24 +198,22 @@ const SearchInput: FC<OwnProps> = ({
           round
           size="tiny"
           color="translucent"
+          iconName="up"
           onClick={onUpClick}
           disabled={!onUpClick}
           ariaLabel={lang('AriaSearchOlderResult')}
-        >
-          <Icon name="up" />
-        </Button>
+        />
       )}
       {hasDownButton && (
         <Button
           round
           size="tiny"
           color="translucent"
+          iconName="down"
           onClick={onDownClick}
           disabled={!onDownClick}
           ariaLabel={lang('AriaSearchNewerResult')}
-        >
-          <Icon name="down" />
-        </Button>
+        />
       )}
       <Transition
         name="fade"
@@ -215,10 +230,9 @@ const SearchInput: FC<OwnProps> = ({
               round
               size="tiny"
               color="translucent"
+              iconName="close"
               onClick={onReset}
-            >
-              <Icon name="close" />
-            </Button>
+            />
           )
         )}
       </Transition>

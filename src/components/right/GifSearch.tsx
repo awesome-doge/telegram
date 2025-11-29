@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
+import { memo, useCallback, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiChat, ApiChatFullInfo, ApiVideo } from '../../api/types';
@@ -16,8 +16,8 @@ import {
   selectIsChatWithSelf, selectThreadInfo,
   selectTopic,
 } from '../../global/selectors';
+import { IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 
 import useHistoryBack from '../../hooks/useHistoryBack';
 import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
@@ -69,8 +69,7 @@ const GifSearch: FC<OwnProps & StateProps> = ({
     setGifSearchQuery,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
   const [requestCalendar, calendar] = useSchedule(canScheduleUntilOnline);
 
@@ -78,7 +77,8 @@ const GifSearch: FC<OwnProps & StateProps> = ({
     observe: observeIntersection,
   } = useIntersectionObserver({ rootRef: containerRef, debounceMs: INTERSECTION_DEBOUNCE });
 
-  const canSendGifs = canPostInChat && getAllowedAttachmentOptions(chat, chatFullInfo, isChatWithBot).canSendGifs;
+  const canSendGifs = canPostInChat
+    && getAllowedAttachmentOptions(chat, chatFullInfo, isChatWithBot, isSavedMessages).canSendGifs;
 
   const handleGifClick = useCallback((gif: ApiVideo, isSilent?: boolean, shouldSchedule?: boolean) => {
     if (canSendGifs) {
@@ -87,11 +87,12 @@ const GifSearch: FC<OwnProps & StateProps> = ({
       }
 
       if (shouldSchedule) {
-        requestCalendar((scheduledAt) => {
+        requestCalendar((scheduledAt, scheduleRepeatPeriod) => {
           sendMessage({
             messageList: currentMessageList,
             gif,
             scheduledAt,
+            scheduleRepeatPeriod,
             isSilent,
           });
         });
@@ -165,7 +166,7 @@ const GifSearch: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const currentSearch = selectCurrentGifSearch(global);
     const { query, results } = currentSearch || {};
     const { chatId, threadId } = selectCurrentMessageList(global) || {};
@@ -183,6 +184,7 @@ export default memo(withGlobal(
       query,
       results,
       chat,
+      chatFullInfo,
       isChatWithBot,
       isSavedMessages,
       canPostInChat,

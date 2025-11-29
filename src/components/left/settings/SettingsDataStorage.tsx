@@ -1,8 +1,8 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ISettings } from '../../../types';
+import type { AccountSettings } from '../../../types';
 
 import { AUTODOWNLOAD_FILESIZE_MB_LIMITS } from '../../../config';
 import { pick } from '../../../util/iteratees';
@@ -18,7 +18,7 @@ type OwnProps = {
   onReset: () => void;
 };
 
-type StateProps = Pick<ISettings, (
+type StateProps = Pick<AccountSettings, (
   'canAutoLoadPhotoFromContacts' |
   'canAutoLoadPhotoInPrivateChats' |
   'canAutoLoadPhotoInGroups' |
@@ -61,8 +61,9 @@ const SettingsDataStorage: FC<OwnProps & StateProps> = ({
   });
 
   const renderFileSizeCallback = useCallback((value: number) => {
+    const size = AUTODOWNLOAD_FILESIZE_MB_LIMITS[value];
     return lang('AutodownloadSizeLimitUpTo', {
-      limit: lang('FileSizeMB', { count: AUTODOWNLOAD_FILESIZE_MB_LIMITS[value] }),
+      limit: lang('MediaSizeMB', { size }, { pluralValue: size }),
     });
   }, [lang]);
 
@@ -103,25 +104,25 @@ const SettingsDataStorage: FC<OwnProps & StateProps> = ({
           label={lang('AutoDownloadSettingsContacts')}
           checked={canAutoLoadFromContacts}
           // TODO rewrite to support `useCallback`
-          // eslint-disable-next-line react/jsx-no-bind
+
           onCheck={(isChecked) => setSettingOption({ [`canAutoLoad${key}FromContacts`]: isChecked })}
         />
         <Checkbox
           label={lang('AutoDownloadSettingsPrivateChats')}
           checked={canAutoLoadInPrivateChats}
-          // eslint-disable-next-line react/jsx-no-bind
+
           onCheck={(isChecked) => setSettingOption({ [`canAutoLoad${key}InPrivateChats`]: isChecked })}
         />
         <Checkbox
           label={lang('AutoDownloadSettingsGroupChats')}
           checked={canAutoLoadInGroups}
-          // eslint-disable-next-line react/jsx-no-bind
+
           onCheck={(isChecked) => setSettingOption({ [`canAutoLoad${key}InGroups`]: isChecked })}
         />
         <Checkbox
           label={lang('AutoDownloadSettingsChannels')}
           checked={canAutoLoadInChannels}
-          // eslint-disable-next-line react/jsx-no-bind
+
           onCheck={(isChecked) => setSettingOption({ [`canAutoLoad${key}InChannels`]: isChecked })}
         />
 
@@ -161,7 +162,7 @@ const SettingsDataStorage: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return pick(global.settings.byKey, [
       'canAutoLoadPhotoFromContacts',
       'canAutoLoadPhotoInPrivateChats',

@@ -1,13 +1,15 @@
-import React, {
+import {
   memo, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiChannelMonetizationStatistics, StatisticsGraph } from '../../../api/types';
+import type { ApiChannelMonetizationStatistics } from '../../../api/types';
 
 import { selectChat, selectChatFullInfo, selectTabState } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
+import { convertTonFromNanos } from '../../../util/formatCurrency';
 import renderText from '../../common/helpers/renderText';
+import { isGraph } from './helpers/isGraph';
 
 import useFlag from '../../../hooks/useFlag';
 import useForceUpdate from '../../../hooks/useForceUpdate';
@@ -26,8 +28,8 @@ import StatisticsOverview from './StatisticsOverview';
 
 import styles from './MonetizationStatistics.module.scss';
 
-type ILovelyChart = { create: Function };
-let lovelyChartPromise: Promise<ILovelyChart>;
+type ILovelyChart = { create: (el: HTMLElement, params: AnyLiteral) => void };
+let lovelyChartPromise: Promise<ILovelyChart> | undefined;
 let LovelyChart: ILovelyChart;
 
 async function ensureLovelyChart() {
@@ -66,10 +68,11 @@ const MonetizationStatistics = ({
   const oldLang = useOldLang();
   const lang = useLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
   const [isReady, setIsReady] = useState(false);
-  const loadedCharts = useRef<string[]>([]);
+  const loadedCharts = useRef<Set<string>>(new Set());
+  const errorCharts = useRef<Set<string>>(new Set());
+
   const forceUpdate = useForceUpdate();
   const [isAboutMonetizationModalOpen, openAboutMonetizationModal, closeAboutMonetizationModal] = useFlag(false);
   const [isConfirmPasswordDialogOpen, openConfirmPasswordDialogOpen, closeConfirmPasswordDialogOpen] = useFlag();
@@ -101,32 +104,38 @@ const MonetizationStatistics = ({
         });
       }
 
-      loadedCharts.current = [];
+      loadedCharts.current.clear();
+      errorCharts.current.clear();
 
       if (!statistics || !containerRef.current) {
         return;
       }
 
       MONETIZATION_GRAPHS.forEach((name, index: number) => {
-        const graph = statistics[name as keyof typeof statistics];
-        const isAsync = typeof graph === 'string';
+        const graph = statistics[name];
+        if (!isGraph(graph)) {
+          return;
+        }
+        const isAsync = graph.graphType === 'async';
+        const isError = graph.graphType === 'error';
 
-        if (isAsync || loadedCharts.current.includes(name)) {
+        if (isAsync || loadedCharts.current.has(name)) {
           return;
         }
 
-        if (!graph) {
-          loadedCharts.current.push(name);
+        if (isError) {
+          loadedCharts.current.add(name);
+          errorCharts.current.add(name);
 
           return;
         }
 
-        LovelyChart.create(containerRef.current!.children[index], {
+        LovelyChart.create(containerRef.current!.children[index] as HTMLElement, {
           title: oldLang((MONETIZATION_GRAPHS_TITLES as Record<string, string>)[name]),
-          ...graph as StatisticsGraph,
+          ...graph,
         });
 
-        loadedCharts.current.push(name);
+        loadedCharts.current.add(name);
 
         containerRef.current!.children[index].classList.remove(styles.hidden);
       });
@@ -136,9 +145,10 @@ const MonetizationStatistics = ({
   }, [isReady, statistics, oldLang, chatId, dcId, forceUpdate]);
 
   function renderAvailableReward() {
-    const [integerTonPart, decimalTonPart] = availableBalance ? availableBalance.toFixed(4).split('.') : [0];
+    const tonAmount = availableBalance ? convertTonFromNanos(availableBalance.amount) : 0;
+    const [integerTonPart, decimalTonPart] = tonAmount.toFixed(4).split('.');
     const [integerUsdPart, decimalUsdPart] = availableBalance
-    && statistics?.usdRate ? (availableBalance * statistics.usdRate).toFixed(2).split('.') : [0];
+      && statistics?.usdRate ? (tonAmount * statistics.usdRate).toFixed(2).split('.') : [0];
 
     return (
       <div className={styles.availableReward}>
@@ -146,13 +156,24 @@ const MonetizationStatistics = ({
           <Icon className={styles.toncoinIcon} name="toncoin" />
           <b className={styles.rewardValue}>
             {integerTonPart}
-            {decimalTonPart ? <span className={styles.decimalPart}>.{decimalTonPart}</span> : undefined}
+            {decimalTonPart ? (
+              <span className={styles.decimalPart}>
+                .
+                {decimalTonPart}
+              </span>
+            ) : undefined}
           </b>
         </div>
         {' '}
         <span className={styles.integer}>
-          ≈ ${integerUsdPart}
-          {decimalUsdPart ? <span className={styles.decimalUsdPart}>.{decimalUsdPart}</span> : undefined}
+          ≈ $
+          {integerUsdPart}
+          {decimalUsdPart ? (
+            <span className={styles.decimalUsdPart}>
+              .
+              {decimalUsdPart}
+            </span>
+          ) : undefined}
         </span>
       </div>
     );
@@ -222,7 +243,7 @@ const MonetizationStatistics = ({
         }
       />
 
-      {!loadedCharts.current.length && <Loading />}
+      {!loadedCharts.current.size && <Loading />}
 
       <div ref={containerRef} className={styles.section}>
         {MONETIZATION_GRAPHS.filter(Boolean).map((graph) => (
@@ -236,7 +257,6 @@ const MonetizationStatistics = ({
         {renderAvailableReward()}
 
         <Button
-          size="smaller"
           type="button"
           onClick={verificationMonetizationHandler}
           disabled={!canWithdraw}
@@ -265,7 +285,7 @@ const MonetizationStatistics = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const tabState = selectTabState(global);
     const {
       settings: {
@@ -282,7 +302,7 @@ export default memo(withGlobal(
 
     const statistics = tabState.statistics.monetization;
 
-    const isChannelRevenueWithdrawalEnabled = global.appConfig?.isChannelRevenueWithdrawalEnabled;
+    const isChannelRevenueWithdrawalEnabled = global.appConfig.isChannelRevenueWithdrawalEnabled;
 
     return {
       chatId: chatId!,

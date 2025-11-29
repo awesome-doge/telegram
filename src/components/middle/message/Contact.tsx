@@ -1,5 +1,4 @@
 import type { FC } from '../../../lib/teact/teact';
-import React from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiContact, ApiCountryCode, ApiUser } from '../../../api/types';
@@ -126,7 +125,7 @@ function getContactName(contact: ApiContact) {
   return '';
 }
 
-export default withGlobal<OwnProps>((global, { contact }): StateProps => {
+export default withGlobal<OwnProps>((global, { contact }): Complete<StateProps> => {
   const {
     countryList: { phoneCodes: phoneCodeList },
   } = global;

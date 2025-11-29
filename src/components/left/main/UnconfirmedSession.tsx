@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useRef } from '../../../lib/teact/teact';
+import { memo, useMemo, useRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiSession } from '../../../api/types';
@@ -16,10 +16,9 @@ type OwnProps = {
   onHeightChange: (height: number) => void;
 };
 
-const UnconfirmedSession = ({ sessions, onHeightChange } : OwnProps) => {
+const UnconfirmedSession = ({ sessions, onHeightChange }: OwnProps) => {
   const { changeSessionSettings, terminateAuthorization, showNotification } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
   const lang = useOldLang();
 
   useResizeObserver(ref, (entry) => {
@@ -58,10 +57,10 @@ const UnconfirmedSession = ({ sessions, onHeightChange } : OwnProps) => {
         {lang('UnconfirmedAuthSingle', locationString)}
       </p>
       <div className={styles.buttons}>
-        <Button fluid isText size="smaller" className={styles.button} onClick={handleAccept}>
+        <Button fluid isText className={styles.button} onClick={handleAccept}>
           {lang('UnconfirmedAuthConfirm')}
         </Button>
-        <Button fluid isText size="smaller" color="danger" onClick={handleReject} className={styles.button}>
+        <Button fluid isText color="danger" onClick={handleReject} className={styles.button}>
           {lang('UnconfirmedAuthDeny')}
         </Button>
       </div>

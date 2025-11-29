@@ -3,7 +3,7 @@ import { PaymentStep } from '../../../types';
 
 import { SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
 import { applyLangPackDifference, getTranslationFn, requestLangPackDifference } from '../../../util/localization';
-import { getPeerTitle } from '../../helpers';
+import { getPeerTitle } from '../../helpers/peers';
 import { addActionHandler, setGlobal } from '../../index';
 import {
   addBlockedUser,
@@ -12,8 +12,10 @@ import {
   addUsers,
   removeBlockedUser,
   removePeerStory,
+  replaceWebPage,
   setConfirmPaymentUrl,
   setPaymentStep,
+  updateFullWebPage,
   updateLastReadStoryForPeer,
   updatePeerStory,
   updatePeersWithStories,
@@ -33,7 +35,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
     case 'updateEntities': {
       const {
-        users, chats, threadInfos, polls,
+        users, chats, threadInfos, polls, webPages,
       } = update;
       if (users) global = addUsers(global, users);
       if (chats) global = addChats(global, chats);
@@ -41,6 +43,15 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       if (polls) {
         polls.forEach((poll) => {
           global = updatePoll(global, poll.id, poll);
+        });
+      }
+      if (webPages) {
+        webPages.forEach((webPage) => {
+          if (webPage.webpageType === 'full') {
+            global = updateFullWebPage(global, webPage.id, webPage);
+          } else {
+            global = replaceWebPage(global, webPage.id, webPage);
+          }
         });
       }
       setGlobal(global);
@@ -153,6 +164,17 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       });
       break;
 
+    case 'updateWebPage': {
+      const { webPage } = update;
+      if (webPage.webpageType === 'full') {
+        global = updateFullWebPage(global, webPage.id, webPage);
+      } else {
+        global = replaceWebPage(global, webPage.id, webPage);
+      }
+      setGlobal(global);
+      break;
+    }
+
     case 'updateStory':
       global = addStoriesForPeer(global, update.peerId, { [update.story.id]: update.story });
       global = updatePeersWithStories(global, { [update.peerId]: selectPeerStories(global, update.peerId)! });
@@ -199,7 +221,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         ...global,
         settings: {
           ...global.settings,
-          paidReactionPrivacy: update.isPrivate,
+          paidReactionPrivacy: update.private,
         },
       };
       setGlobal(global);
@@ -217,15 +239,16 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     }
 
     case 'newMessage': {
-      const actionStarGift = update.message.content?.action?.starGift;
+      const action = update.message.content?.action;
       if (!update.message.isOutgoing && update.message.chatId !== SERVICE_NOTIFICATIONS_USER_ID) return undefined;
-      if (actionStarGift?.type !== 'starGiftUnique') return undefined;
+      if (action?.type !== 'starGiftUnique') return undefined;
+      const actionStarGift = action.gift;
 
       Object.values(global.byTabId).forEach(({ id: tabId }) => {
         const tabState = selectTabState(global, tabId);
         if (tabState.isWaitingForStarGiftUpgrade) {
           actions.openUniqueGiftBySlug({
-            slug: actionStarGift.gift.slug,
+            slug: actionStarGift.slug,
             tabId,
           });
 
@@ -259,8 +282,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
                   gift: {
                     key: 'GiftUnique',
                     variables: {
-                      title: actionStarGift.gift.title,
-                      number: actionStarGift.gift.number,
+                      title: actionStarGift.title,
+                      number: actionStarGift.number,
                     },
                   },
                   peer: getPeerTitle(getTranslationFn(), receiver),
@@ -275,6 +298,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           global = updateTabState(global, {
             isWaitingForStarGiftTransfer: undefined,
           }, tabId);
+
+          actions.reloadPeerSavedGifts({ peerId: global.currentUserId! });
         }
       });
 

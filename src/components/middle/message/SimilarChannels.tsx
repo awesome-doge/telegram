@@ -1,4 +1,4 @@
-import React, {
+import {
   memo, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
@@ -19,6 +19,7 @@ import useTimeout from '../../../hooks/schedulers/useTimeout';
 import useAverageColor from '../../../hooks/useAverageColor';
 import useFlag from '../../../hooks/useFlag';
 import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
@@ -31,6 +32,7 @@ import styles from './SimilarChannels.module.scss';
 
 const DEFAULT_BADGE_COLOR = '#3C3C4399';
 const SHOW_CHANNELS_NUMBER = 10;
+const ANIMATION_DURATION = 150;
 const MIN_SKELETON_DELAY = 300;
 const MAX_SKELETON_DELAY = 2000;
 const AUTO_EXPAND_TIME = 10; // Seconds from joining
@@ -55,12 +57,16 @@ const SimilarChannels = ({
   isCurrentUserPremium,
   channelJoinInfo,
 }: StateProps & OwnProps) => {
-  const lang = useOldLang();
   const { toggleChannelRecommendations, loadChannelRecommendations } = getActions();
+
+  const lang = useOldLang();
+
   const [isShowing, markShowing, markNotShowing] = useFlag(false);
   const [isHiding, markHiding, markNotHiding] = useFlag(false);
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+
+  const ref = useRef<HTMLDivElement>();
+
+  const ignoreAutoScrollRef = useRef(false);
   const similarChannels = useMemo(() => {
     if (!similarChannelIds) {
       return undefined;
@@ -77,8 +83,8 @@ const SimilarChannels = ({
   const isAnimating = isHiding || isShowing;
   const shouldRenderChannels = Boolean(
     !shouldRenderSkeleton
-      && (isExpanded || isAnimating)
-      && areSimilarChannelsPresent,
+    && (isExpanded || isAnimating)
+    && areSimilarChannelsPresent,
   );
 
   useHorizontalScroll(ref, !shouldRenderChannels, true);
@@ -103,35 +109,40 @@ const SimilarChannels = ({
     return undefined;
   }, [similarChannels, isExpanded, shouldRenderSkeleton]);
 
-  const handleToggle = useLastCallback(() => {
-    toggleChannelRecommendations({ chatId });
+  useEffect(() => {
     if (isExpanded) {
-      markNotShowing();
-      markHiding();
-    } else {
       markShowing();
       markNotHiding();
       setShouldRenderSkeleton(!similarChannelIds);
+      if (!ignoreAutoScrollRef.current) {
+        setTimeout(() => {
+          ref.current?.scrollIntoView({ behavior: 'smooth' });
+        }, ANIMATION_DURATION);
+      }
+    } else {
+      markNotShowing();
+      markHiding();
     }
+  }, [isExpanded, similarChannelIds]);
+
+  const handleToggle = useLastCallback(() => {
+    toggleChannelRecommendations({ chatId });
   });
 
   useEffect(() => {
     if (!channelJoinInfo?.joinedDate || isExpanded) return;
     if (getServerTime() - channelJoinInfo.joinedDate <= AUTO_EXPAND_TIME) {
       handleToggle();
+      ignoreAutoScrollRef.current = true;
     }
   }, [channelJoinInfo, isExpanded]);
 
+  if (!shouldRenderChannels && !shouldRenderSkeleton) {
+    return undefined;
+  }
+
   return (
     <div className={buildClassName(styles.root)}>
-      <div className="join-text">
-        <span
-          className={buildClassName(areSimilarChannelsPresent && styles.joinText)}
-          onClick={areSimilarChannelsPresent ? handleToggle : undefined}
-        >
-          {lang('ChannelJoined')}
-        </span>
-      </div>
       {shouldRenderSkeleton && <Skeleton className={styles.skeleton} />}
       {shouldRenderChannels && (
         <div
@@ -164,9 +175,8 @@ const SimilarChannels = ({
                 className={styles.close}
                 color="translucent"
                 onClick={handleToggle}
-              >
-                <Icon name="close" />
-              </Button>
+                iconName="close"
+              />
             </div>
             <div ref={ref} className={buildClassName(styles.channelList, 'no-scrollbar')}>
               {firstSimilarChannels?.map((channel, i) => {
@@ -192,13 +202,15 @@ const SimilarChannels = ({
 function SimilarChannel({ channel }: { channel: ApiChat }) {
   const { openChat } = getActions();
   const color = useAverageColor(channel, DEFAULT_BADGE_COLOR);
+  const lang = useLang();
 
   return (
     <div className={styles.item} onClick={() => openChat({ id: channel.id })}>
       <Avatar className={styles.avatar} key={channel.id} size="large" peer={channel} />
       <div style={`background: ${color}`} className={styles.badge}>
         <Icon name="user-filled" className={styles.icon} />
-        <span className={styles.membersCount}>{formatIntegerCompact(channel?.membersCount || 0)}
+        <span className={styles.membersCount}>
+          {formatIntegerCompact(lang, channel?.membersCount || 0)}
         </span>
       </div>
       <span className={styles.channelTitle}>{channel.title}</span>
@@ -252,7 +264,7 @@ function MoreChannels({
 }
 
 export default memo(
-  withGlobal<OwnProps>((global, { chatId }): StateProps => {
+  withGlobal<OwnProps>((global, { chatId }): Complete<StateProps> => {
     const { similarChannelIds, isExpanded, count } = selectSimilarChannelIds(global, chatId) || {};
     const isCurrentUserPremium = selectIsCurrentUserPremium(global);
     const chatFullInfo = selectChatFullInfo(global, chatId);

@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect,
   useRef,
 } from '../../lib/teact/teact';
@@ -26,6 +26,7 @@ export type OwnProps = {
   needZip?: boolean;
   countryList: ApiCountry[];
   dispatch: FormEditDispatch;
+  isActive?: boolean;
 };
 
 const PaymentInfo: FC<OwnProps> = ({
@@ -36,9 +37,9 @@ const PaymentInfo: FC<OwnProps> = ({
   needZip,
   countryList,
   dispatch,
+  isActive,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const selectCountryRef = useRef<HTMLSelectElement>(null);
+  const selectCountryRef = useRef<HTMLSelectElement>();
 
   useEffect(() => {
     if (selectCountryRef.current
@@ -89,6 +90,7 @@ const PaymentInfo: FC<OwnProps> = ({
           onChange={handleCardNumberChange}
           value={state.cardNumber}
           error={formErrors.cardNumber && lang.withRegular(formErrors.cardNumber)}
+          isActive={isActive}
         />
         {needCardholderName && (
           <InputText

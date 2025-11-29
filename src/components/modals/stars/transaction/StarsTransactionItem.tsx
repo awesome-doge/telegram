@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from '../../../../lib/teact/teact';
+import { memo, useMemo } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type {
@@ -8,15 +8,18 @@ import type {
 import type { GlobalState } from '../../../../global/types';
 import type { CustomPeer } from '../../../../types';
 
-import { getPeerTitle } from '../../../../global/helpers';
-import { buildStarsTransactionCustomPeer, formatStarsTransactionAmount } from '../../../../global/helpers/payments';
+import { STARS_CURRENCY_CODE, TON_CURRENCY_CODE } from '../../../../config';
+import { buildStarsTransactionCustomPeer,
+  formatStarsTransactionAmount,
+  shouldUseCustomPeer } from '../../../../global/helpers/payments';
+import { getPeerTitle } from '../../../../global/helpers/peers';
 import { selectPeer } from '../../../../global/selectors';
 import buildClassName from '../../../../util/buildClassName';
 import { formatDateTimeToString } from '../../../../util/dates/dateFormat';
 import { CUSTOM_PEER_PREMIUM } from '../../../../util/objects/customPeer';
 import { getGiftAttributes, getStickerFromGift } from '../../../common/helpers/gifts';
 import renderText from '../../../common/helpers/renderText';
-import { getTransactionTitle, isNegativeStarsAmount } from '../helpers/transaction';
+import { getTransactionTitle, isNegativeAmount } from '../helpers/transaction';
 
 import useSelector from '../../../../hooks/data/useSelector';
 import useLang from '../../../../hooks/useLang';
@@ -25,6 +28,7 @@ import useOldLang from '../../../../hooks/useOldLang';
 
 import AnimatedIconFromSticker from '../../../common/AnimatedIconFromSticker';
 import Avatar from '../../../common/Avatar';
+import Icon from '../../../common/icons/Icon';
 import StarIcon from '../../../common/icons/StarIcon';
 import RadialPatternBackground from '../../../common/profile/RadialPatternBackground';
 import PaidMediaThumb from './PaidMediaThumb';
@@ -36,7 +40,7 @@ type OwnProps = {
   className?: string;
 };
 
-const UNIQUE_GIFT_STICKER_SIZE = 36;
+const GIFT_STICKER_SIZE = 36;
 
 function selectOptionalPeer(peerId?: string) {
   return (global: GlobalState) => (
@@ -48,7 +52,7 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
   const { openStarsTransactionModal } = getActions();
   const {
     date,
-    stars,
+    amount,
     photo,
     peer: transactionPeer,
     extendedMedia,
@@ -59,27 +63,38 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
 
   const peerId = transactionPeer.type === 'peer' ? transactionPeer.id : undefined;
   const peer = useSelector(selectOptionalPeer(peerId));
-  const uniqueGift = transaction.starGift?.type === 'starGiftUnique' ? transaction.starGift : undefined;
-  const uniqueGiftSticker = uniqueGift && getStickerFromGift(uniqueGift);
+  const starGift = transaction.starGift;
+  const isUniqueGift = starGift?.type === 'starGiftUnique';
+  const giftSticker = starGift && getStickerFromGift(starGift);
 
   const data = useMemo(() => {
-    let title = getTransactionTitle(oldLang, transaction);
+    let title = getTransactionTitle(oldLang, lang, transaction);
     let description;
     let status: string | undefined;
     let avatarPeer: ApiPeer | CustomPeer | undefined;
 
-    if (transaction.peer.type === 'peer') {
+    if (!shouldUseCustomPeer(transaction)) {
       description = peer && getPeerTitle(oldLang, peer);
       avatarPeer = peer || CUSTOM_PEER_PREMIUM;
     } else {
-      const customPeer = buildStarsTransactionCustomPeer(transaction.peer);
+      const customPeer = buildStarsTransactionCustomPeer(transaction);
       title = customPeer.title || oldLang(customPeer.titleKey!);
       description = oldLang(customPeer.subtitleKey!);
       avatarPeer = customPeer;
     }
 
-    if (transaction.isGiftUpgrade && transaction.starGift?.type === 'starGiftUnique') {
-      description = transaction.starGift.title;
+    if ((transaction.isGiftUpgrade || transaction.isDropOriginalDetails)
+      && transaction.starGift?.type === 'starGiftUnique') {
+      description = lang('GiftUnique', { title: transaction.starGift.title, number: transaction.starGift.number });
+    }
+
+    if (transaction.isGiftResale && transaction.starGift?.type === 'starGiftUnique') {
+      description = lang('GiftUnique', { title: transaction.starGift.title, number: transaction.starGift.number });
+    }
+
+    if (transaction.isPostsSearch) {
+      title = getTransactionTitle(oldLang, lang, transaction);
+      description = undefined;
     }
 
     if (transaction.photo) {
@@ -104,11 +119,11 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
       avatarPeer,
       status,
     };
-  }, [oldLang, peer, transaction]);
+  }, [oldLang, lang, peer, transaction]);
 
   const previewContent = useMemo(() => {
-    if (uniqueGiftSticker) {
-      const { backdrop } = getGiftAttributes(uniqueGift)!;
+    if (isUniqueGift) {
+      const { backdrop } = getGiftAttributes(starGift)!;
       const backgroundColors = [backdrop!.centerColor, backdrop!.edgeColor];
 
       return (
@@ -118,12 +133,23 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
             backgroundColors={backgroundColors}
           />
           <AnimatedIconFromSticker
-            className={styles.uniqueGift}
-            sticker={uniqueGiftSticker}
-            size={UNIQUE_GIFT_STICKER_SIZE}
+            className={styles.giftSticker}
+            sticker={giftSticker}
+            size={GIFT_STICKER_SIZE}
             play={false}
           />
         </>
+      );
+    }
+
+    if (giftSticker) {
+      return (
+        <AnimatedIconFromSticker
+          className={styles.giftSticker}
+          sticker={giftSticker}
+          size={GIFT_STICKER_SIZE}
+          play={false}
+        />
       );
     }
 
@@ -139,11 +165,13 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
         )}
       </>
     );
-  }, [extendedMedia, photo, uniqueGiftSticker, subscriptionPeriod, data.avatarPeer, uniqueGift]);
+  }, [isUniqueGift, extendedMedia, photo, data.avatarPeer, subscriptionPeriod, starGift, giftSticker]);
 
   const handleClick = useLastCallback(() => {
     openStarsTransactionModal({ transaction });
   });
+
+  const amountColorClass = isNegativeAmount(amount) ? styles.negative : styles.positive;
 
   return (
     <div className={buildClassName(styles.root, className)} onClick={handleClick}>
@@ -162,11 +190,12 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
       </div>
       <div className={styles.stars}>
         <span
-          className={buildClassName(styles.amount, isNegativeStarsAmount(stars) ? styles.negative : styles.positive)}
+          className={buildClassName(styles.amount, amountColorClass)}
         >
-          {formatStarsTransactionAmount(lang, stars)}
+          {formatStarsTransactionAmount(lang, amount)}
         </span>
-        <StarIcon className={styles.star} type="gold" size="adaptive" />
+        {amount.currency === STARS_CURRENCY_CODE && <StarIcon className={styles.star} type="gold" size="adaptive" />}
+        {amount.currency === TON_CURRENCY_CODE && <Icon name="toncoin" className={amountColorClass} />}
       </div>
     </div>
   );

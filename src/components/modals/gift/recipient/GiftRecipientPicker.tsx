@@ -1,4 +1,4 @@
-import React, {
+import {
   memo, useMemo, useState,
 } from '../../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../../global';
@@ -78,7 +78,7 @@ const GiftRecipientPicker = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>((global): StateProps => {
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
   const { currentUserId } = global;
 
   return {

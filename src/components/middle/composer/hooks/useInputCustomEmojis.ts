@@ -1,3 +1,5 @@
+import type {
+  ElementRef } from '../../../../lib/teact/teact';
 import {
   useEffect, useLayoutEffect, useRef,
 } from '../../../../lib/teact/teact';
@@ -8,14 +10,14 @@ import type { Signal } from '../../../../util/signals';
 
 import { requestMeasure } from '../../../../lib/fasterdom/fasterdom';
 import { ensureRLottie } from '../../../../lib/rlottie/RLottie.async';
-import { selectIsAlwaysHighPriorityEmoji } from '../../../../global/selectors';
+import { selectCustomEmoji, selectIsAlwaysHighPriorityEmoji } from '../../../../global/selectors';
 import AbsoluteVideo from '../../../../util/AbsoluteVideo';
+import { hex2rgbaObj } from '../../../../util/colors.ts';
 import {
   addCustomEmojiInputRenderCallback,
   getCustomEmojiMediaDataForInput,
 } from '../../../../util/emoji/customEmojiManager';
 import { round } from '../../../../util/math';
-import { hexToRgb } from '../../../../util/switchTheme';
 import { REM } from '../../../common/helpers/mediaDimensions';
 
 import useColorFilter from '../../../../hooks/stickers/useColorFilter';
@@ -39,16 +41,16 @@ type CustomEmojiPlayer = {
 
 export default function useInputCustomEmojis(
   getHtml: Signal<string>,
-  inputRef: React.RefObject<HTMLDivElement>,
-  sharedCanvasRef: React.RefObject<HTMLCanvasElement>,
-  sharedCanvasHqRef: React.RefObject<HTMLCanvasElement>,
-  absoluteContainerRef: React.RefObject<HTMLElement>,
+  inputRef: ElementRef<HTMLDivElement>,
+  sharedCanvasRef: ElementRef<HTMLCanvasElement>,
+  sharedCanvasHqRef: ElementRef<HTMLCanvasElement>,
+  absoluteContainerRef: ElementRef<HTMLElement>,
   prefixId: string,
   canPlayAnimatedEmojis: boolean,
   isReady?: boolean,
   isActive?: boolean,
 ) {
-  const customColor = useDynamicColorListener(inputRef, !isReady);
+  const customColor = useDynamicColorListener(inputRef, undefined, !isReady);
   const colorFilter = useColorFilter(customColor, true);
   const dpr = useDevicePixelRatio();
   const playersById = useRef<Map<string, CustomEmojiPlayer>>(new Map());
@@ -95,7 +97,7 @@ export default function useInputCustomEmojis(
         return;
       }
 
-      const customEmoji = global.customEmojis.byId[documentId];
+      const customEmoji = selectCustomEmoji(global, documentId);
       if (!customEmoji) {
         return;
       }
@@ -216,9 +218,9 @@ async function createPlayer({
   colorFilter,
 }: {
   customEmoji: ApiSticker;
-  sharedCanvasRef: React.RefObject<HTMLCanvasElement>;
-  sharedCanvasHqRef: React.RefObject<HTMLCanvasElement>;
-  absoluteContainerRef: React.RefObject<HTMLElement>;
+  sharedCanvasRef: ElementRef<HTMLCanvasElement>;
+  sharedCanvasHqRef: ElementRef<HTMLCanvasElement>;
+  absoluteContainerRef: ElementRef<HTMLElement>;
   renderId: string;
   viewId: string;
   mediaUrl: string;
@@ -228,7 +230,7 @@ async function createPlayer({
   colorFilter?: string;
 }): Promise<CustomEmojiPlayer> {
   if (customEmoji.isLottie) {
-    const color = customEmoji.shouldUseTextColor && textColor ? hexToRgb(textColor) : undefined;
+    const color = customEmoji.shouldUseTextColor && textColor ? hex2rgbaObj(textColor) : undefined;
     const RLottie = await ensureRLottie();
     const lottie = RLottie.init(
       mediaUrl,

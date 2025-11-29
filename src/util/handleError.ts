@@ -15,7 +15,6 @@ if (DEBUG) {
     }
     showError = true;
     if (error) {
-      // eslint-disable-next-line no-alert
       window.alert(getErrorMessage(error));
       error = undefined;
     }
@@ -30,7 +29,6 @@ if (DEBUG) {
 
 const throttleError = throttle((err) => {
   if (showError) {
-    // eslint-disable-next-line no-alert
     window.alert(getErrorMessage(err));
   } else {
     error = err;
@@ -46,9 +44,16 @@ export function handleError(err: Error) {
 }
 
 function handleErrorEvent(e: ErrorEvent | PromiseRejectionEvent) {
-  // https://stackoverflow.com/questions/49384120/resizeobserver-loop-limit-exceeded
-  if (e instanceof ErrorEvent && e.message === 'ResizeObserver loop limit exceeded') {
-    return;
+  if (e instanceof ErrorEvent) {
+    // https://stackoverflow.com/questions/49384120/resizeobserver-loop-limit-exceeded
+    if (e.message === 'ResizeObserver loop limit exceeded') {
+      return;
+    }
+
+    // Flood wait errors
+    if (e.message.includes('A wait of')) {
+      return;
+    }
   }
 
   e.preventDefault();

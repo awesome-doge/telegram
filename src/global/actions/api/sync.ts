@@ -1,5 +1,6 @@
 import { addCallback } from '../../../lib/teact/teactn';
 
+import type { ApiThreadInfo } from '../../../api/types/messages';
 import type { Thread, ThreadId } from '../../../types';
 import type { RequiredGlobalActions } from '../../index';
 import type { ActionReturnType, GlobalState } from '../../types';
@@ -66,7 +67,7 @@ addActionHandler('sync', (global, actions): ActionReturnType => {
   }, RELEASE_STATUS_TIMEOUT);
 
   const {
-    loadAllChats, preloadTopChatMessages, loadAllStories, loadAllHiddenStories,
+    loadAllChats, preloadTopChatMessages,
   } = actions;
 
   initFolderManager();
@@ -91,10 +92,7 @@ addActionHandler('sync', (global, actions): ActionReturnType => {
       }
 
       loadAllChats({ listType: 'archived' });
-      loadAllChats({ listType: 'saved' });
       preloadTopChatMessages();
-      loadAllStories();
-      loadAllHiddenStories();
     },
   });
 });
@@ -108,7 +106,6 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
 
   // Memoize drafts
   const draftChatIds = Object.keys(global.messages.byChatId);
-  /* eslint-disable @typescript-eslint/indent */
   const draftsByChatId = draftChatIds.reduce<Record<string, Record<number, Partial<Thread>>>>((acc, chatId) => {
     acc[chatId] = Object
       .keys(global.messages.byChatId[chatId].threadsById)
@@ -123,7 +120,6 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
       }, {});
     return acc;
   }, {});
-  /* eslint-enable @typescript-eslint/indent */
 
   // Memoize last messages
   const lastMessages = Object.entries(global.chats.lastMessageIds.all || {}).map(([chatId, messageId]) => (
@@ -132,6 +128,19 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
   const savedLastMessages = Object.values(global.chats.lastMessageIds.saved || {}).map((messageId) => (
     selectChatMessage(global, global.currentUserId!, Number(messageId))
   )).filter(Boolean);
+
+  // Memoize thread infos for last messages
+  const lastMessagesThreadInfos: { chatId: string; messageId: number; threadInfo: ApiThreadInfo }[] = [];
+  lastMessages.forEach((message) => {
+    const threadInfo = selectThreadInfo(global, message.chatId, message.id);
+    if (threadInfo) {
+      lastMessagesThreadInfos.push({
+        chatId: message.chatId,
+        messageId: message.id,
+        threadInfo,
+      });
+    }
+  });
 
   for (const { id: tabId } of Object.values(global.byTabId)) {
     global = getGlobal();
@@ -147,7 +156,8 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
           currentChatId,
           activeThreadId,
         ),
-        activeThreadId !== MAIN_THREAD_ID && !getIsSavedDialog(currentChat.id, activeThreadId, global.currentUserId)
+        activeThreadId !== MAIN_THREAD_ID && !currentChat.isForum
+        && !getIsSavedDialog(currentChat.id, activeThreadId, global.currentUserId)
           ? callApi('fetchDiscussionMessage', {
             chat: currentChat,
             messageId: Number(activeThreadId),
@@ -186,7 +196,7 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
               byChatId: {},
             },
           };
-          // eslint-disable-next-line @typescript-eslint/no-loop-func
+
           Object.values(global.byTabId).forEach(({ id: otherTabId }) => {
             global = updateTabState(global, {
               tabThreads: {},
@@ -198,7 +208,6 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
         global = addChatMessagesById(global, currentChatId, byId);
         global = updateListedIds(global, currentChatId, activeThreadId, listedIds);
 
-        // eslint-disable-next-line @typescript-eslint/no-loop-func
         Object.entries(messagesThreadInfos).forEach(([id, thread]) => {
           if (!thread?.threadInfo) return;
           global = updateThreadInfo(global, currentChatId, id, thread.threadInfo);
@@ -209,7 +218,7 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
             ...pick(threadInfo, ['fromChannelId', 'fromMessageId']),
           });
         }
-        // eslint-disable-next-line @typescript-eslint/no-loop-func
+
         Object.values(global.byTabId).forEach(({ id: otherTabId }) => {
           const { chatId: otherChatId, threadId: otherThreadId } = selectCurrentMessageList(global, otherTabId) || {};
           if (otherChatId === currentChatId && otherThreadId === activeThreadId) {
@@ -245,7 +254,7 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
         byChatId: {},
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-loop-func
+
     Object.values(global.byTabId).forEach(({ id: otherTabId }) => {
       global = updateTabState(global, {
         tabThreads: {},
@@ -254,12 +263,20 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
   }
 
   // Restore drafts
-  // eslint-disable-next-line @typescript-eslint/no-loop-func
+
   Object.keys(draftsByChatId).forEach((chatId) => {
     const threads = draftsByChatId[chatId];
     Object.keys(threads).forEach((threadId) => {
       global = updateThread(global, chatId, Number(threadId), draftsByChatId[chatId][Number(threadId)]);
     });
+  });
+
+  // Restore thread infos
+  lastMessagesThreadInfos.forEach(({ chatId, messageId, threadInfo }) => {
+    const memoThreadInfo = selectThreadInfo(global, chatId, messageId);
+    if (!memoThreadInfo) {
+      global = updateThreadInfo(global, chatId, String(messageId), threadInfo);
+    }
   });
 
   // Restore last messages
@@ -305,7 +322,6 @@ addCallback((global: GlobalState) => {
   }
 
   if (connectionState === 'connectionStateReady' && authState === 'authorizationStateReady') {
-    // eslint-disable-next-line eslint-multitab-tt/no-getactions-in-actions
     getActions().sync();
   }
 

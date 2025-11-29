@@ -1,9 +1,9 @@
-import type { RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { getIsHeavyAnimating, memo } from '../../lib/teact/teact';
-import { getActions } from '../../global';
+import type { ElementRef } from '../../lib/teact/teact';
+import { getIsHeavyAnimating, memo } from '../../lib/teact/teact';
+import { getActions, getGlobal } from '../../global';
 
-import type { MessageListType, ThreadId } from '../../types';
+import type { ApiMessage } from '../../api/types';
+import type { IAlbum, MessageListType, ThreadId } from '../../types';
 import type { Signal } from '../../util/signals';
 import type { MessageDateGroup } from './helpers/groupMessages';
 import type { OnIntersectPinnedMessage } from './hooks/usePinnedMessage';
@@ -13,27 +13,40 @@ import { SCHEDULED_WHEN_ONLINE } from '../../config';
 import {
   getMessageHtmlId,
   getMessageOriginalId,
+  getSuggestedChangesActionText,
+  getSuggestedChangesInfo,
   isActionMessage,
   isOwnMessage,
   isServiceNotificationMessage,
 } from '../../global/helpers';
+import { getPeerTitle } from '../../global/helpers/peers';
+import { selectChatMessage, selectSender } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import { formatHumanDate } from '../../util/dates/dateFormat';
+import { formatHumanDate, formatScheduledDateTime } from '../../util/dates/dateFormat';
+import { convertTonFromNanos } from '../../util/formatCurrency';
 import { compact } from '../../util/iteratees';
+import { formatStarsAsText, formatTonAsText } from '../../util/localization/format';
 import { isAlbum } from './helpers/groupMessages';
 import { preventMessageInputBlur } from './helpers/preventMessageInputBlur';
+import { renderPeerLink } from './message/helpers/messageActions';
 
 import useDerivedSignal from '../../hooks/useDerivedSignal';
+import useLang from '../../hooks/useLang';
 import useOldLang from '../../hooks/useOldLang';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 import useMessageObservers from './hooks/useMessageObservers';
 import useScrollHooks from './hooks/useScrollHooks';
 
-import ActionMessage from './ActionMessage';
+import Icon from '../common/icons/Icon';
+import MiniTable, { type TableEntry } from '../common/MiniTable';
+import ActionMessage from './message/ActionMessage';
 import Message from './message/Message';
 import SenderGroupContainer from './message/SenderGroupContainer';
 import SponsoredMessage from './message/SponsoredMessage';
-import MessageListBotInfo from './MessageListBotInfo';
+import MessageListAccountInfo from './MessageListAccountInfo';
+import MessageListBottomMarker from './MessageListBottomMarker';
+
+import actionMessageStyles from './message/ActionMessage.module.scss';
 
 interface OwnProps {
   canShowAds?: boolean;
@@ -46,10 +59,12 @@ interface OwnProps {
   isUnread: boolean;
   withUsers: boolean;
   isChannelChat: boolean | undefined;
+  isChatMonoforum?: boolean;
+  isBotForum?: boolean;
   isEmptyThread?: boolean;
   isComments?: boolean;
   noAvatars: boolean;
-  containerRef: RefObject<HTMLDivElement>;
+  containerRef: ElementRef<HTMLDivElement>;
   anchorIdRef: { current: string | undefined };
   memoUnreadDividerBeforeIdRef: { current: number | undefined };
   memoFirstUnreadIdRef: { current: number | undefined };
@@ -57,17 +72,22 @@ interface OwnProps {
   isReady: boolean;
   hasLinkedChat: boolean | undefined;
   isSchedule: boolean;
-  shouldRenderBotInfo?: boolean;
+  shouldRenderAccountInfo?: boolean;
+  nameChangeDate?: number;
+  photoChangeDate?: number;
   noAppearanceAnimation: boolean;
   isSavedDialog?: boolean;
-  onScrollDownToggle: BooleanToVoidFunction;
-  onNotchToggle: AnyToVoidFunction;
-  onIntersectPinnedMessage: OnIntersectPinnedMessage;
+  isQuickPreview?: boolean;
+  canPost?: boolean;
+  shouldScrollToBottom?: boolean;
+  onScrollDownToggle?: BooleanToVoidFunction;
+  onNotchToggle?: AnyToVoidFunction;
+  onIntersectPinnedMessage?: OnIntersectPinnedMessage;
 }
 
 const UNREAD_DIVIDER_CLASS = 'unread-divider';
 
-const MessageListContent: FC<OwnProps> = ({
+const MessageListContent = ({
   canShowAds,
   chatId,
   threadId,
@@ -80,6 +100,8 @@ const MessageListContent: FC<OwnProps> = ({
   isEmptyThread,
   withUsers,
   isChannelChat,
+  isChatMonoforum,
+  isBotForum,
   noAvatars,
   containerRef,
   anchorIdRef,
@@ -89,50 +111,155 @@ const MessageListContent: FC<OwnProps> = ({
   isReady,
   hasLinkedChat,
   isSchedule,
-  shouldRenderBotInfo,
+  shouldRenderAccountInfo,
+  nameChangeDate,
+  photoChangeDate,
   noAppearanceAnimation,
   isSavedDialog,
+  isQuickPreview,
+  shouldScrollToBottom,
+  canPost,
   onScrollDownToggle,
   onNotchToggle,
   onIntersectPinnedMessage,
-}) => {
+}: OwnProps) => {
   const { openHistoryCalendar } = getActions();
 
   const getIsHeavyAnimating2 = getIsHeavyAnimating;
   const getIsReady = useDerivedSignal(() => isReady && !getIsHeavyAnimating2(), [isReady, getIsHeavyAnimating2]);
 
   const areDatesClickable = !isSavedDialog && !isSchedule;
+  const shouldRenderSponsoredMessage = canShowAds && isViewportNewest;
 
   const {
     observeIntersectionForReading,
     observeIntersectionForLoading,
     observeIntersectionForPlaying,
-  } = useMessageObservers(type, containerRef, memoFirstUnreadIdRef, onIntersectPinnedMessage, chatId);
+  } = useMessageObservers(type, containerRef, memoFirstUnreadIdRef, onIntersectPinnedMessage, chatId, isQuickPreview);
 
   const {
     withHistoryTriggers,
     backwardsTriggerRef,
     forwardsTriggerRef,
     fabTriggerRef,
-  } = useScrollHooks(
+  } = useScrollHooks({
     type,
     containerRef,
     messageIds,
     getContainerHeight,
     isViewportNewest,
     isUnread,
+    isReady,
     onScrollDownToggle,
     onNotchToggle,
-    isReady,
-  );
+  });
 
-  const lang = useOldLang();
+  const oldLang = useOldLang();
+  const lang = useLang();
 
   const unreadDivider = (
     <div className={buildClassName(UNREAD_DIVIDER_CLASS, 'local-action-message')} key="unread-messages">
-      <span>{lang('UnreadMessages')}</span>
+      <span>{oldLang('UnreadMessages')}</span>
     </div>
   );
+  const renderPaidMessageAction = (message: ApiMessage, album?: IAlbum) => {
+    if (message.paidMessageStars) {
+      const messagesLength = album?.messages?.length || 1;
+      const amount = message.paidMessageStars * messagesLength;
+      return (
+        <div
+          className={buildClassName('local-action-message')}
+          key={`paid-messages-action-${message.id}`}
+        >
+          <span>
+            {
+              message.isOutgoing
+                ? lang('ActionPaidOneMessageOutgoing', {
+                  amount: formatStarsAsText(lang, amount),
+                })
+                : (() => {
+                  const sender = selectSender(getGlobal(), message);
+                  const userTitle = sender ? getPeerTitle(lang, sender) : '';
+                  return lang('ActionPaidOneMessageIncoming', {
+                    user: userTitle,
+                    amount: formatStarsAsText(lang, amount),
+                  });
+                })()
+            }
+          </span>
+        </div>
+      );
+    }
+    return undefined;
+  };
+
+  const renderSuggestedPostInfoAction = (message: ApiMessage) => {
+    if (message.suggestedPostInfo) {
+      const { price, scheduleDate } = message.suggestedPostInfo;
+      const sender = selectSender(getGlobal(), message);
+      const userTitle = sender ? getPeerTitle(lang, sender) : '';
+      const userLink = renderPeerLink(sender?.id, userTitle || lang('ActionFallbackUser'));
+
+      const originalMessage = message.replyInfo?.type === 'message' && message.replyInfo.replyToMsgId
+        ? selectChatMessage(getGlobal(), message.chatId, message.replyInfo.replyToMsgId)
+        : undefined;
+      const changesInfo = getSuggestedChangesInfo(message, originalMessage);
+
+      const titleText = changesInfo
+        ? getSuggestedChangesActionText(lang, message, originalMessage, message.isOutgoing, userLink)
+        : message.isOutgoing
+          ? lang('ActionSuggestedPostOutgoing', undefined, { withNodes: true, withMarkdown: true })
+          : lang('ActionSuggestedPostIncoming', { user: userLink }, { withNodes: true, withMarkdown: true });
+
+      const tableData: TableEntry[] = compact([
+        [lang('TitlePrice'), price ? (price.currency === 'TON'
+          ? formatTonAsText(lang, convertTonFromNanos(price.amount))
+          : formatStarsAsText(lang, price.amount)) : lang('SuggestMessageNoPrice')],
+        [lang('TitleTime'),
+          scheduleDate
+            ? formatScheduledDateTime(scheduleDate, lang, oldLang)
+            : lang('SuggestMessageAnytime'),
+        ],
+      ]);
+
+      return (
+        <div
+          className={buildClassName('local-action-message')}
+          key={`suggested-post-action-${message.id}`}
+        >
+          <span className={actionMessageStyles.suggestedPostContainer}>
+            <div
+              className={actionMessageStyles.suggestedPostTitle}
+            >
+              {titleText}
+            </div>
+            {Boolean(tableData.length) && (
+              <MiniTable
+                className={actionMessageStyles.suggestedPostInfo}
+                data={tableData}
+              />
+            )}
+          </span>
+        </div>
+      );
+    }
+    return undefined;
+  };
+
+  const renderBotForumTopicAction = () => {
+    if (!isBotForum || threadId !== MAIN_THREAD_ID) return undefined;
+    return (
+      <div className={buildClassName('local-action-message', actionMessageStyles.root)} key="botforum-new-topic">
+        <div className={actionMessageStyles.contentBox}>
+          <Icon className={actionMessageStyles.botForumTopicIcon} name="topic-new" />
+          <h3 className={actionMessageStyles.botForumTopicTitle}>{lang('BotForumActionNew')}</h3>
+          <span className={actionMessageStyles.botForumTopicDescription}>{lang('BotForumActionNewDescription')}</span>
+          <Icon className={actionMessageStyles.botForumTopicArrow} name="down" />
+        </div>
+      </div>
+    );
+  };
+
   const messageCountToAnimate = noAppearanceAnimation ? 0 : messageGroups.reduce((acc, messageGroup) => {
     return acc + messageGroup.senderGroups.flat().length;
   }, 0);
@@ -155,9 +282,9 @@ const MessageListContent: FC<OwnProps> = ({
         senderGroup.length === 1
         && !isAlbum(senderGroup[0])
         && isActionMessage(senderGroup[0])
-        && !senderGroup[0].content.action?.phoneCall
+        && senderGroup[0].content.action?.type !== 'phoneCall'
       ) {
-        const message = senderGroup[0]!;
+        const message = senderGroup[0];
         const isLastInList = (
           senderGroupIndex === senderGroupsArray.length - 1
           && dateGroupIndex === dateGroupsArray.length - 1
@@ -169,15 +296,14 @@ const MessageListContent: FC<OwnProps> = ({
             key={message.id}
             message={message}
             threadId={threadId}
-            messageListType={type}
-            isInsideTopic={Boolean(threadId && threadId !== MAIN_THREAD_ID && !isSavedDialog)}
-            observeIntersectionForReading={observeIntersectionForReading}
+            observeIntersectionForBottom={observeIntersectionForReading}
             observeIntersectionForLoading={observeIntersectionForLoading}
             observeIntersectionForPlaying={observeIntersectionForPlaying}
             memoFirstUnreadIdRef={memoFirstUnreadIdRef}
             appearanceOrder={messageCountToAnimate - ++appearanceIndex}
             isJustAdded={isLastInList && isNewMessage}
             isLastInList={isLastInList}
+            getIsMessageListReady={getIsReady}
             onIntersectPinnedMessage={onIntersectPinnedMessage}
           />,
         ]);
@@ -201,7 +327,7 @@ const MessageListContent: FC<OwnProps> = ({
 
         const documentGroupId = !isMessageAlbum && message.groupedId ? message.groupedId : undefined;
         const nextDocumentGroupId = nextMessage && !isAlbum(nextMessage) ? nextMessage.groupedId : undefined;
-        const isTopicTopMessage = message.id === threadId;
+        const isThreadTopMessage = message.id === threadId;
 
         const position = {
           isFirstInGroup: messageIndex === 0,
@@ -221,10 +347,12 @@ const MessageListContent: FC<OwnProps> = ({
         // Service notifications saved in cache in previous versions may share the same `previousLocalId`
         const key = isServiceNotificationMessage(message) ? `${message.date}_${originalId}` : originalId;
 
-        const noComments = hasLinkedChat === false || !isChannelChat;
+        const noComments = hasLinkedChat === false || !isChannelChat || Boolean(isChatMonoforum);
 
         return compact([
           message.id === memoUnreadDividerBeforeIdRef.current && unreadDivider,
+          message.paidMessageStars && !withUsers && renderPaidMessageAction(message, album),
+          message.suggestedPostInfo && renderSuggestedPostInfoAction(message),
           <Message
             key={key}
             message={message}
@@ -233,7 +361,7 @@ const MessageListContent: FC<OwnProps> = ({
             observeIntersectionForPlaying={observeIntersectionForPlaying}
             album={album}
             noAvatars={noAvatars}
-            withAvatar={position.isLastInGroup && withUsers && !isOwn && (!isTopicTopMessage || !isComments)}
+            withAvatar={position.isLastInGroup && withUsers && !isOwn && (!isThreadTopMessage || !isComments)}
             withSenderName={position.isFirstInGroup && withUsers && !isOwn}
             threadId={threadId}
             messageListType={type}
@@ -250,13 +378,6 @@ const MessageListContent: FC<OwnProps> = ({
             onIntersectPinnedMessage={onIntersectPinnedMessage}
             getIsMessageListReady={getIsReady}
           />,
-          message.id === threadId && (
-            <div className="local-action-message" key="discussion-started">
-              <span>{lang(isEmptyThread
-                ? (isComments ? 'NoComments' : 'NoReplies') : 'DiscussionStarted')}
-              </span>
-            </div>
-          ),
         ]);
       }).flat();
 
@@ -265,8 +386,9 @@ const MessageListContent: FC<OwnProps> = ({
       const lastMessageOrAlbum = senderGroup[senderGroup.length - 1];
       const lastMessage = isAlbum(lastMessageOrAlbum) ? lastMessageOrAlbum.mainMessage : lastMessageOrAlbum;
       const lastMessageId = getMessageOriginalId(lastMessage);
+      const lastAppearanceOrder = messageCountToAnimate - appearanceIndex;
 
-      const isTopicTopMessage = lastMessage.id === threadId;
+      const isThreadTopMessage = lastMessage.id === threadId;
       const isOwn = isOwnMessage(lastMessage);
 
       const firstMessageOrAlbum = senderGroup[0];
@@ -277,18 +399,28 @@ const MessageListContent: FC<OwnProps> = ({
       const id = (firstMessageId === lastMessageId) ? `message-group-${firstMessageId}`
         : `message-group-${firstMessageId}-${lastMessageId}`;
 
-      const withAvatar = withUsers && !isOwn && (!isTopicTopMessage || !isComments);
-      return (
+      const withAvatar = withUsers && !isOwn && (!isThreadTopMessage || !isComments);
+      return compact([
         <SenderGroupContainer
           key={key}
           id={id}
           message={lastMessage}
           withAvatar={withAvatar}
+          appearanceOrder={lastAppearanceOrder}
+          canPost={canPost}
         >
           {senderGroupElements}
-        </SenderGroupContainer>
-      );
-    });
+        </SenderGroupContainer>,
+        isThreadTopMessage && (
+          <div className="local-action-message" key={`discussion-started-${lastMessageId}`}>
+            <span>
+              {oldLang(isEmptyThread
+                ? (isComments ? 'NoComments' : 'NoReplies') : 'DiscussionStarted')}
+            </span>
+          </div>
+        ),
+      ]);
+    }).flat();
   }
 
   const dateGroups = messageGroups.map((
@@ -300,7 +432,8 @@ const MessageListContent: FC<OwnProps> = ({
 
     return (
       <div
-        className={buildClassName('message-date-group', dateGroupIndex === 0 && 'first-message-date-group')}
+        className={buildClassName('message-date-group', !(nameChangeDate || photoChangeDate)
+        && dateGroupIndex === 0 && 'first-message-date-group')}
         key={dateGroup.datetime}
         onMouseDown={preventMessageInputBlur}
         teactFastList
@@ -313,12 +446,12 @@ const MessageListContent: FC<OwnProps> = ({
         >
           <span dir="auto">
             {isSchedule && dateGroup.originalDate === SCHEDULED_WHEN_ONLINE && (
-              lang('MessageScheduledUntilOnline')
+              oldLang('MessageScheduledUntilOnline')
             )}
             {isSchedule && dateGroup.originalDate !== SCHEDULED_WHEN_ONLINE && (
-              lang('MessageScheduledOn', formatHumanDate(lang, dateGroup.datetime, undefined, true))
+              oldLang('MessageScheduledOn', formatHumanDate(oldLang, dateGroup.datetime, undefined, true))
             )}
-            {!isSchedule && formatHumanDate(lang, dateGroup.datetime)}
+            {!isSchedule && formatHumanDate(oldLang, dateGroup.datetime)}
           </span>
         </div>
         {senderGroups.flat()}
@@ -329,8 +462,10 @@ const MessageListContent: FC<OwnProps> = ({
   return (
     <div className="messages-container" teactFastList>
       {withHistoryTriggers && <div ref={backwardsTriggerRef} key="backwards-trigger" className="backwards-trigger" />}
-      {shouldRenderBotInfo && <MessageListBotInfo isInMessageList key={`bot_info_${chatId}`} chatId={chatId} />}
+      {shouldRenderAccountInfo
+        && <MessageListAccountInfo key={`account_info_${chatId}`} chatId={chatId} hasMessages />}
       {dateGroups.flat()}
+      {isViewportNewest && renderBotForumTopicAction()}
       {withHistoryTriggers && (
         <div
           ref={forwardsTriggerRef}
@@ -343,7 +478,14 @@ const MessageListContent: FC<OwnProps> = ({
         key="fab-trigger"
         className="fab-trigger"
       />
-      {canShowAds && isViewportNewest && (
+      {isViewportNewest && (
+        <MessageListBottomMarker
+          key="bottom-marker"
+          isFocused={shouldScrollToBottom}
+          className={shouldRenderSponsoredMessage ? 'with-sponsored' : undefined}
+        />
+      )}
+      {shouldRenderSponsoredMessage && (
         <SponsoredMessage
           key={chatId}
           chatId={chatId}

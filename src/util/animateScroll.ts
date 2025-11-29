@@ -1,3 +1,4 @@
+import { setExtraStyles } from '@teact/teact-dom';
 import { beginHeavyAnimation } from '../lib/teact/teact';
 import { getGlobal } from '../global';
 
@@ -12,9 +13,9 @@ import {
 } from '../config';
 import { requestMeasure, requestMutation } from '../lib/fasterdom/fasterdom';
 import { selectCanAnimateInterface } from '../global/selectors';
+import { IS_ANDROID } from './browser/windowEnvironment';
 import getOffsetToContainer from './visibility/getOffsetToContainer';
 import { animateSingle, cancelSingleAnimation } from './animation';
-import { IS_ANDROID } from './windowEnvironment';
 
 export type AnimateScrollArgs = {
   container: HTMLElement;
@@ -77,7 +78,7 @@ function createMutateFunction(args: AnimateScrollArgs) {
   }
 
   const { offsetHeight: elementHeight } = element;
-  const { scrollTop: currentScrollTop, offsetHeight: containerHeight, scrollHeight } = container;
+  const { scrollTop: currentScrollTop, clientHeight: containerHeight, scrollHeight } = container;
   const elementTop = getOffsetToContainer(element, container).top;
 
   const targetContainerHeight = forceNormalContainerHeight && container.dataset.normalHeight
@@ -140,6 +141,10 @@ function createMutateFunction(args: AnimateScrollArgs) {
 
     isAnimating = true;
 
+    setExtraStyles(container, {
+      scrollSnapType: 'none',
+    });
+
     const prevOnHeavyAnimationEnd = onHeavyAnimationEnd;
     onHeavyAnimationEnd = beginHeavyAnimation(undefined, true);
     prevOnHeavyAnimationEnd?.();
@@ -155,6 +160,9 @@ function createMutateFunction(args: AnimateScrollArgs) {
 
       if (!isAnimating) {
         currentArgs = undefined;
+        setExtraStyles(container, {
+          scrollSnapType: '',
+        });
 
         onHeavyAnimationEnd?.();
         onHeavyAnimationEnd = undefined;
@@ -170,7 +178,13 @@ export function isAnimatingScroll() {
 }
 
 export function cancelScrollBlockingAnimation() {
-  onHeavyAnimationEnd!();
+  if (currentArgs?.container) {
+    setExtraStyles(currentArgs.container, {
+      scrollSnapType: '',
+    });
+  }
+
+  onHeavyAnimationEnd?.();
   onHeavyAnimationEnd = undefined;
 }
 

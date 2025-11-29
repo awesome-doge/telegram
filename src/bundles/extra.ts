@@ -23,6 +23,8 @@ export { default as StatusPickerMenu } from '../components/left/main/StatusPicke
 export { default as SuggestedStatusModal } from '../components/modals/suggestedStatus/SuggestedStatusModal';
 export { default as BoostModal } from '../components/modals/boost/BoostModal';
 export { default as GiftCodeModal } from '../components/modals/giftcode/GiftCodeModal';
+export { default as DeleteAccountModal } from '../components/modals/deleteAccount/DeleteAccountModal';
+export { default as AgeVerificationModal } from '../components/modals/ageVerification/AgeVerificationModal';
 export { default as ChatlistModal } from '../components/modals/chatlist/ChatlistModal';
 export { default as ChatInviteModal } from '../components/modals/chatInvite/ChatInviteModal';
 
@@ -33,6 +35,12 @@ export { default as EmojiStatusAccessModal } from '../components/modals/emojiSta
 export { default as LocationAccessModal } from '../components/modals/locationAccess/LocationAccessModal';
 export { default as ReportAdModal } from '../components/modals/reportAd/ReportAdModal';
 export { default as ReportModal } from '../components/modals/reportModal/ReportModal';
+export { default as PreparedMessageModal } from '../components/modals/preparedMessage/PreparedMessageModal';
+export { default as SharePreparedMessageModal }
+  from '../components/modals/sharePreparedMessage/SharePreparedMessageModal';
+export { default as SuggestMessageModal } from '../components/modals/suggestMessage/SuggestMessageModal';
+export { default as SuggestedPostApprovalModal }
+  from '../components/modals/suggestedPostApproval/SuggestedPostApprovalModal';
 export { default as CalendarModal } from '../components/common/CalendarModal';
 export { default as DeleteMessageModal } from '../components/common/DeleteMessageModal';
 export { default as PinMessageModal } from '../components/common/PinMessageModal';
@@ -55,8 +63,7 @@ export { default as ChatFolderModal } from '../components/left/ChatFolderModal';
 export { default as MuteChatModal } from '../components/left/MuteChatModal';
 
 export { default as ContextMenuContainer } from '../components/middle/message/ContextMenuContainer';
-export { default as SponsoredMessageContextMenuContainer }
-  from '../components/middle/message/SponsoredMessageContextMenuContainer';
+export { default as SponsoredContextMenuContainer } from '../components/middle/message/SponsoredContextMenuContainer';
 export { default as StickerSetModal } from '../components/common/StickerSetModal';
 export { default as CustomEmojiSetsModal } from '../components/common/CustomEmojiSetsModal';
 export { default as HeaderMenuContainer } from '../components/middle/HeaderMenuContainer';
@@ -95,3 +102,7 @@ export { default as ReceiptModal } from '../components/payment/ReceiptModal';
 export { default as InviteViaLinkModal } from '../components/modals/inviteViaLink/InviteViaLinkModal';
 export { default as OneTimeMediaModal } from '../components/modals/oneTimeMedia/OneTimeMediaModal';
 export { default as WebAppsCloseConfirmationModal } from '../components/main/WebAppsCloseConfirmationModal';
+export { default as FrozenAccountModal } from '../components/modals/frozenAccount/FrozenAccountModal';
+export { default as ProfileRatingModal } from '../components/modals/profileRating/ProfileRatingModal';
+export { default as QuickPreviewModal } from '../components/modals/quickPreview/QuickPreviewModal';
+export { default as StealthModeModal } from '../components/modals/storyStealthMode/StealthModeModal';

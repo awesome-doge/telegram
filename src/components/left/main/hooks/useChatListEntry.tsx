@@ -1,7 +1,6 @@
-import React, {
-  useCallback, useLayoutEffect, useMemo, useRef,
+import {
+  useCallback, useLayoutEffect, useRef,
 } from '../../../../lib/teact/teact';
-import { getGlobal } from '../../../../global';
 
 import type {
   ApiChat, ApiDraft, ApiMessage, ApiPeer, ApiTopic, ApiTypingStatus,
@@ -9,39 +8,31 @@ import type {
 } from '../../../../api/types';
 import type { ObserveFn } from '../../../../hooks/useIntersectionObserver';
 
-import { ANIMATION_END_DELAY, CHAT_HEIGHT_PX } from '../../../../config';
+import { CHAT_HEIGHT_PX } from '../../../../config';
 import { requestMutation } from '../../../../lib/fasterdom/fasterdom';
 import {
-  getExpiredMessageDescription,
   getMessageIsSpoiler,
-  getMessageMediaHash,
-  getMessageMediaThumbDataUri,
   getMessageRoundVideo,
-  getMessageSenderName,
   getMessageSticker,
   getMessageVideo,
-  isActionMessage,
-  isExpiredMessage,
 } from '../../../../global/helpers';
-import { isApiPeerChat } from '../../../../global/helpers/peers';
-import { getMessageReplyInfo } from '../../../../global/helpers/replies';
+import { getMessageSenderName } from '../../../../global/helpers/peers';
+import { waitStartingTransitionsEnd } from '../../../../util/animations/waitTransitionEnd';
 import buildClassName from '../../../../util/buildClassName';
-import { renderActionMessageText } from '../../../common/helpers/renderActionMessageText';
 import renderText from '../../../common/helpers/renderText';
 import { renderTextWithEntities } from '../../../common/helpers/renderTextWithEntities';
 import { ChatAnimationTypes } from './useChatAnimationType';
 
-import useEnsureMessage from '../../../../hooks/useEnsureMessage';
+import useMessageMediaHash from '../../../../hooks/media/useMessageMediaHash';
+import useThumbnail from '../../../../hooks/media/useThumbnail';
 import useEnsureStory from '../../../../hooks/useEnsureStory';
+import useLang from '../../../../hooks/useLang';
 import useMedia from '../../../../hooks/useMedia';
-import useOldLang from '../../../../hooks/useOldLang';
 
 import ChatForumLastMessage from '../../../common/ChatForumLastMessage';
 import Icon from '../../../common/icons/Icon';
 import MessageSummary from '../../../common/MessageSummary';
 import TypingStatus from '../../../common/TypingStatus';
-
-const ANIMATION_DURATION = 200;
 
 export default function useChatListEntry({
   chat,
@@ -51,11 +42,8 @@ export default function useChatListEntry({
   chatId,
   typingStatus,
   draft,
-  actionTargetMessage,
-  actionTargetUserIds,
   lastMessageTopic,
   lastMessageSender,
-  actionTargetChatId,
   observeIntersection,
   animationType,
   orderDiff,
@@ -63,6 +51,8 @@ export default function useChatListEntry({
   isTopic,
   isSavedDialog,
   isPreview,
+  hasTags,
+  onReorderAnimationEnd,
 }: {
   chat?: ApiChat;
   topics?: Record<number, ApiTopic>;
@@ -71,28 +61,21 @@ export default function useChatListEntry({
   chatId: string;
   typingStatus?: ApiTypingStatus;
   draft?: ApiDraft;
-  actionTargetMessage?: ApiMessage;
-  actionTargetUserIds?: string[];
   lastMessageTopic?: ApiTopic;
   lastMessageSender?: ApiPeer;
-  actionTargetChatId?: string;
   observeIntersection?: ObserveFn;
   isTopic?: boolean;
   isSavedDialog?: boolean;
   isPreview?: boolean;
+  hasTags?: boolean;
 
   animationType: ChatAnimationTypes;
   orderDiff: number;
   withInterfaceAnimations?: boolean;
+  onReorderAnimationEnd?: NoneToVoidFunction;
 }) {
-  const oldLang = useOldLang();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
-
-  const isAction = lastMessage && isActionMessage(lastMessage);
-
-  const replyToMessageId = lastMessage && getMessageReplyInfo(lastMessage)?.replyToMsgId;
-  useEnsureMessage(chatId, isAction ? replyToMessageId : undefined, actionTargetMessage);
+  const lang = useLang();
+  const ref = useRef<HTMLDivElement>();
 
   const storyData = lastMessage?.content.storyData;
   const shouldTryLoadingStory = statefulMediaContent && !statefulMediaContent.story;
@@ -102,23 +85,16 @@ export default function useChatListEntry({
   const mediaContent = statefulMediaContent?.story || lastMessage;
   const mediaHasPreview = mediaContent && !getMessageSticker(mediaContent);
 
-  const mediaThumbnail = mediaHasPreview ? getMessageMediaThumbDataUri(mediaContent) : undefined;
-  const mediaBlobUrl = useMedia(mediaHasPreview ? getMessageMediaHash(mediaContent, 'micro') : undefined);
+  const thumbDataUri = useThumbnail(mediaContent);
+
+  const mediaThumbnail = mediaHasPreview ? thumbDataUri : undefined;
+  const mediaHash = useMessageMediaHash(mediaContent, 'micro');
+  const mediaBlobUrl = useMedia(mediaHasPreview ? mediaHash : undefined);
   const isRoundVideo = Boolean(lastMessage && getMessageRoundVideo(lastMessage));
-
-  const actionTargetUsers = useMemo(() => {
-    if (!actionTargetUserIds) {
-      return undefined;
-    }
-
-    // No need for expensive global updates on users, so we avoid them
-    const usersById = getGlobal().users.byId;
-    return actionTargetUserIds.map((userId) => usersById[userId]).filter(Boolean);
-  }, [actionTargetUserIds]);
 
   const renderLastMessageOrTyping = useCallback(() => {
     if (!isSavedDialog && !isPreview
-        && typingStatus && lastMessage && typingStatus.timestamp > lastMessage.date * 1000) {
+      && typingStatus && lastMessage && typingStatus.timestamp > lastMessage.date * 1000) {
       return <TypingStatus typingStatus={typingStatus} />;
     }
 
@@ -130,14 +106,16 @@ export default function useChatListEntry({
 
     if (canDisplayDraft) {
       return (
-        <p className="last-message" dir={oldLang.isRtl ? 'auto' : 'ltr'}>
-          <span className="draft">{oldLang('Draft')}</span>
-          {renderTextWithEntities({
-            text: draft.text?.text || '',
-            entities: draft.text?.entities,
-            isSimple: true,
-            withTranslucentThumbs: true,
-          })}
+        <p className="last-message" dir={lang.isRtl ? 'auto' : 'ltr'}>
+          <span className="draft">{lang('ChatDraftPrefix')}</span>
+          <span className="last-message-summary" dir="auto">
+            {renderTextWithEntities({
+              text: draft.text?.text || '',
+              entities: draft.text?.entities,
+              asPreview: true,
+              withTranslucentThumbs: true,
+            })}
+          </span>
         </p>
       );
     }
@@ -146,38 +124,12 @@ export default function useChatListEntry({
       return undefined;
     }
 
-    if (isExpiredMessage(lastMessage)) {
-      return (
-        <p className="last-message shared-canvas-container" dir={oldLang.isRtl ? 'auto' : 'ltr'}>
-          {getExpiredMessageDescription(oldLang, lastMessage)}
-        </p>
-      );
-    }
-
-    if (isAction) {
-      return (
-        <p className="last-message shared-canvas-container" dir={oldLang.isRtl ? 'auto' : 'ltr'}>
-          {renderActionMessageText(
-            oldLang,
-            lastMessage,
-            lastMessageSender && !isApiPeerChat(lastMessageSender) ? lastMessageSender : undefined,
-            lastMessageSender && isApiPeerChat(lastMessageSender) ? lastMessageSender : chat,
-            actionTargetUsers,
-            actionTargetMessage,
-            actionTargetChatId,
-            lastMessageTopic,
-            { isEmbedded: true },
-            undefined,
-            undefined,
-          )}
-        </p>
-      );
-    }
-
-    const senderName = getMessageSenderName(oldLang, chatId, lastMessageSender);
+    const senderName = lastMessageSender
+      ? getMessageSenderName(lang, chatId, lastMessageSender)
+      : undefined;
 
     return (
-      <p className="last-message shared-canvas-container" dir={oldLang.isRtl ? 'auto' : 'ltr'}>
+      <p className="last-message shared-canvas-container" dir={lang.isRtl ? 'auto' : 'ltr'}>
         {senderName && (
           <>
             <span className="sender-name">{renderText(senderName)}</span>
@@ -186,13 +138,14 @@ export default function useChatListEntry({
         )}
         {!isSavedDialog && lastMessage.forwardInfo && (<Icon name="share-filled" className="chat-prefix-icon" />)}
         {lastMessage.replyInfo?.type === 'story' && (<Icon name="story-reply" className="chat-prefix-icon" />)}
-        {renderSummary(lastMessage, observeIntersection, mediaBlobUrl || mediaThumbnail, isRoundVideo)}
+        <span className="last-message-summary" dir="auto">
+          {renderSummary(lastMessage, observeIntersection, mediaBlobUrl || mediaThumbnail, isRoundVideo)}
+        </span>
       </p>
     );
   }, [
-    actionTargetChatId, actionTargetMessage, actionTargetUsers, chat, chatId, draft, isAction,
-    isRoundVideo, isTopic, oldLang, lastMessage, lastMessageSender, lastMessageTopic, mediaBlobUrl, mediaThumbnail,
-    observeIntersection, typingStatus, isSavedDialog, isPreview,
+    chat, chatId, draft, isRoundVideo, isTopic, lang, lastMessage, lastMessageSender, lastMessageTopic,
+    mediaBlobUrl, mediaThumbnail, observeIntersection, typingStatus, isSavedDialog, isPreview,
   ]);
 
   function renderSubtitle() {
@@ -203,6 +156,7 @@ export default function useChatListEntry({
           renderLastMessage={renderLastMessageOrTyping}
           observeIntersection={observeIntersection}
           topics={topics}
+          hasTags={hasTags}
         />
       );
     }
@@ -218,6 +172,18 @@ export default function useChatListEntry({
       return;
     }
 
+    let isCancelled = false;
+
+    const notifyAnimationEnd = () => {
+      if (isCancelled) return;
+      requestMutation(() => {
+        element.classList.remove('animate-opacity', 'animate-transform');
+        element.style.opacity = '';
+        element.style.transform = '';
+      });
+      onReorderAnimationEnd?.();
+    };
+
     // TODO Refactor animation: create `useListAnimation` that owns `orderDiff` and `animationType`
     if (animationType === ChatAnimationTypes.Opacity) {
       element.style.opacity = '0';
@@ -225,6 +191,8 @@ export default function useChatListEntry({
       requestMutation(() => {
         element.classList.add('animate-opacity');
         element.style.opacity = '1';
+
+        waitStartingTransitionsEnd(element).then(notifyAnimationEnd);
       });
     } else if (animationType === ChatAnimationTypes.Move) {
       element.style.transform = `translate3d(0, ${-orderDiff * CHAT_HEIGHT_PX}px, 0)`;
@@ -232,19 +200,17 @@ export default function useChatListEntry({
       requestMutation(() => {
         element.classList.add('animate-transform');
         element.style.transform = '';
+
+        waitStartingTransitionsEnd(element).then(notifyAnimationEnd);
       });
     } else {
       return;
     }
 
-    setTimeout(() => {
-      requestMutation(() => {
-        element.classList.remove('animate-opacity', 'animate-transform');
-        element.style.opacity = '';
-        element.style.transform = '';
-      });
-    }, ANIMATION_DURATION + ANIMATION_END_DELAY);
-  }, [withInterfaceAnimations, orderDiff, animationType]);
+    return () => {
+      isCancelled = true;
+    };
+  }, [withInterfaceAnimations, orderDiff, animationType, onReorderAnimationEnd]);
 
   return {
     renderSubtitle,

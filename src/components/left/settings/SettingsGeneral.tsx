@@ -1,58 +1,54 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useState,
+import {
+  memo, useCallback,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ISettings, TimeFormat } from '../../../types';
+import type { SharedSettings } from '../../../global/types';
+import type { ThemeKey, TimeFormat } from '../../../types';
 import type { IRadioOption } from '../../ui/RadioGroup';
 import { SettingsScreens } from '../../../types';
 
-import { pick } from '../../../util/iteratees';
+import { selectSharedSettings } from '../../../global/selectors/sharedState';
+import {
+  IS_ANDROID, IS_IOS, IS_MAC_OS,
+} from '../../../util/browser/windowEnvironment';
 import { setTimeFormat } from '../../../util/oldLangProvider';
 import { getSystemTheme } from '../../../util/systemTheme';
-import {
-  IS_ANDROID, IS_ELECTRON, IS_IOS, IS_MAC_OS, IS_WINDOWS,
-} from '../../../util/windowEnvironment';
 
 import useAppLayout from '../../../hooks/useAppLayout';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
 
-import Checkbox from '../../ui/Checkbox';
 import ListItem from '../../ui/ListItem';
 import RadioGroup from '../../ui/RadioGroup';
 import RangeSlider from '../../ui/RangeSlider';
 
 type OwnProps = {
   isActive?: boolean;
-  onScreenSelect: (screen: SettingsScreens) => void;
   onReset: () => void;
 };
 
 type StateProps =
-  Pick<ISettings, (
+  Pick<SharedSettings, (
     'messageTextSize' |
-    'animationLevel' |
     'messageSendKeyCombo' |
-    'timeFormat'
-  )> & {
-    theme: ISettings['theme'];
-    shouldUseSystemTheme: boolean;
-  };
+    'timeFormat' |
+    'theme' |
+    'shouldUseSystemTheme'
+  )>;
 
 const SettingsGeneral: FC<OwnProps & StateProps> = ({
   isActive,
-  onScreenSelect,
-  onReset,
   messageTextSize,
   messageSendKeyCombo,
   timeFormat,
   theme,
   shouldUseSystemTheme,
+  onReset,
 }) => {
   const {
-    setSettingOption,
+    setSharedSettingOption, openSettingsScreen,
   } = getActions();
 
   const lang = useLang();
@@ -96,34 +92,25 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
     document.documentElement.style.setProperty('--message-text-size', `${newSize}px`);
     document.documentElement.setAttribute('data-message-text-size', newSize.toString());
 
-    setSettingOption({ messageTextSize: newSize });
-  }, [setSettingOption]);
-
-  const handleAppearanceThemeChange = useCallback((value: string) => {
-    const newTheme = value === 'auto' ? getSystemTheme() : value as ISettings['theme'];
-
-    setSettingOption({ theme: newTheme });
-    setSettingOption({ shouldUseSystemTheme: value === 'auto' });
-  }, [setSettingOption]);
-
-  const handleTimeFormatChange = useCallback((newTimeFormat: string) => {
-    setSettingOption({ timeFormat: newTimeFormat as TimeFormat });
-    setSettingOption({ wasTimeFormatSetManually: true });
-
-    setTimeFormat(newTimeFormat as TimeFormat);
-  }, [setSettingOption]);
-
-  const handleMessageSendComboChange = useCallback((newCombo: string) => {
-    setSettingOption({ messageSendKeyCombo: newCombo as ISettings['messageSendKeyCombo'] });
-  }, [setSettingOption]);
-
-  const [isTrayIconEnabled, setIsTrayIconEnabled] = useState(false);
-  useEffect(() => {
-    window.electron?.getIsTrayIconEnabled().then(setIsTrayIconEnabled);
+    setSharedSettingOption({ messageTextSize: newSize });
   }, []);
 
-  const handleIsTrayIconEnabledChange = useCallback((isChecked: boolean) => {
-    window.electron?.setIsTrayIconEnabled(isChecked);
+  const handleAppearanceThemeChange = useCallback((value: string) => {
+    const newTheme = value === 'auto' ? getSystemTheme() : value as ThemeKey;
+
+    setSharedSettingOption({ theme: newTheme });
+    setSharedSettingOption({ shouldUseSystemTheme: value === 'auto' });
+  }, []);
+
+  const handleTimeFormatChange = useCallback((newTimeFormat: string) => {
+    setSharedSettingOption({ timeFormat: newTimeFormat as TimeFormat });
+    setSharedSettingOption({ wasTimeFormatSetManually: true });
+
+    setTimeFormat(newTimeFormat as TimeFormat);
+  }, []);
+
+  const handleMessageSendComboChange = useCallback((newCombo: string) => {
+    setSharedSettingOption({ messageSendKeyCombo: newCombo as SharedSettings['messageSendKeyCombo'] });
   }, []);
 
   useHistoryBack({
@@ -133,7 +120,7 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="settings-content custom-scroll">
-      <div className="settings-item pt-3">
+      <div className="settings-item">
         <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{lang('Settings')}</h4>
 
         <RangeSlider
@@ -147,19 +134,11 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
         <ListItem
           icon="photo"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.GeneralChatBackground)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.GeneralChatBackground })}
         >
           {lang('ChatBackground')}
         </ListItem>
-
-        {IS_ELECTRON && IS_WINDOWS && (
-          <Checkbox
-            label={lang('SettingsTray')}
-            checked={Boolean(isTrayIconEnabled)}
-            onCheck={handleIsTrayIconEnabledChange}
-          />
-        )}
       </div>
 
       <div className="settings-item">
@@ -203,18 +182,19 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
-    const { theme, shouldUseSystemTheme } = global.settings.byKey;
+  (global): Complete<StateProps> => {
+    const {
+      theme,
+      shouldUseSystemTheme,
+      messageSendKeyCombo,
+      messageTextSize,
+      timeFormat,
+    } = selectSharedSettings(global);
 
     return {
-      ...pick(global.settings.byKey, [
-        'messageTextSize',
-        'animationLevel',
-        'messageSendKeyCombo',
-        'isSensitiveEnabled',
-        'canChangeSensitive',
-        'timeFormat',
-      ]),
+      messageSendKeyCombo,
+      messageTextSize,
+      timeFormat,
       theme,
       shouldUseSystemTheme,
     };

@@ -1,4 +1,4 @@
-import React, { memo, useState } from '../../lib/teact/teact';
+import { memo, useState } from '../../lib/teact/teact';
 
 import type { OwnProps as AnimatedStickerProps } from './AnimatedSticker';
 
@@ -36,7 +36,7 @@ function AnimatedIcon(props: OwnProps) {
     onLoad?.();
   });
 
-  const [playKey, setPlayKey] = useState(String(Math.random()));
+  const [playKey, setPlayKey] = useState(() => String(Math.random()));
 
   const handleClick = useLastCallback(() => {
     if (play === true) {
@@ -54,7 +54,7 @@ function AnimatedIcon(props: OwnProps) {
       noLoop={noLoop}
       onClick={!nonInteractive ? handleClick : undefined}
       onLoad={handleLoad}
-      /* eslint-disable-next-line react/jsx-props-no-spreading */
+
       {...otherProps}
     />
   );

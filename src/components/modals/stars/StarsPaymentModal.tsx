@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo } from '../../../lib/teact/teact';
+import { memo, useEffect, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type {
@@ -87,7 +87,7 @@ const StarPaymentModal = ({
     if (paidMediaMessage) {
       const extendedMedia = paidMediaMessage.content.paidMedia!.extendedMedia as ApiMediaExtendedPreview[];
       const areAllPhotos = extendedMedia.every((media) => !media.duration);
-      const areAllVideos = extendedMedia.every((media) => !!media.duration);
+      const areAllVideos = extendedMedia.every((media) => Boolean(media.duration));
 
       const mediaText = areAllPhotos ? oldLang('Stars.Transfer.Photos', extendedMedia.length)
         : areAllVideos ? oldLang('Stars.Transfer.Videos', extendedMedia.length)
@@ -170,7 +170,7 @@ const StarPaymentModal = ({
       onClose={closeStarsPaymentModal}
     >
       <BalanceBlock balance={starsBalanceState?.balance} className={styles.modalBalance} />
-      <div className={styles.paymentImages} dir={oldLang.isRtl ? 'ltr' : 'rtl'}>
+      <div className={styles.paymentImages} dir={lang.isRtl ? 'ltr' : 'rtl'}>
         {paidMediaMessage ? (
           <PaidMediaThumb media={paidMediaMessage.content.paidMedia!.extendedMedia} />
         ) : inviteCustomPeer ? (
@@ -198,14 +198,14 @@ const StarPaymentModal = ({
       <div className={styles.description}>
         {renderText(descriptionText, ['simple_markdown', 'emoji'])}
       </div>
-      <Button className={styles.paymentButton} size="smaller" onClick={handlePayment} isLoading={isLoading}>
+      <Button className={styles.paymentButton} onClick={handlePayment} isLoading={isLoading}>
         {lang(isBotSubscription ? 'StarsSubscribeBotButtonMonth' : 'StarsPay', {
           amount: formatStarsAsIcon(lang, amount!, { asFont: true }),
         }, {
           withNodes: true,
         })}
       </Button>
-      {disclaimerText && (
+      {Boolean(disclaimerText) && (
         <div className={buildClassName(styles.disclaimer, styles.smallerText)}>
           {disclaimerText}
         </div>
@@ -215,7 +215,7 @@ const StarPaymentModal = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { modal }): StateProps => {
+  (global, { modal }): Complete<StateProps> => {
     const bot = modal?.form?.botId ? selectUser(global, modal.form.botId) : undefined;
 
     const messageInputInvoice = modal?.inputInvoice?.type === 'message' ? modal.inputInvoice : undefined;

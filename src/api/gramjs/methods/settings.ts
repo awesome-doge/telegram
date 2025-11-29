@@ -1,4 +1,3 @@
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
 import { RPCError } from '../../../lib/gramjs/errors';
 
@@ -6,9 +5,11 @@ import type { LANG_PACKS } from '../../../config';
 import type {
   ApiAppConfig,
   ApiConfig,
+  ApiDisallowedGiftsSettings,
   ApiInputPrivacyRules,
   ApiLanguage,
-  ApiNotifyException,
+  ApiNotifyPeerType,
+  ApiPeerNotifySettings,
   ApiPhoto,
   ApiPrivacyKey,
   ApiUser,
@@ -16,20 +17,20 @@ import type {
 
 import {
   ACCEPTABLE_USERNAME_ERRORS,
-  BLOCKED_LIST_LIMIT,
   LANG_PACK,
-  MAX_INT_32,
+  MUTE_INDEFINITE_TIMESTAMP,
+  UNMUTE_TIMESTAMP,
 } from '../../../config';
 import { buildCollectionByKey } from '../../../util/iteratees';
-import { getServerTime } from '../../../util/serverTime';
+import { toJSNumber } from '../../../util/numbers';
+import { BLOCKED_LIST_LIMIT } from '../../../limits';
 import { buildAppConfig } from '../apiBuilders/appConfig';
 import { buildApiPhoto, buildPrivacyRules } from '../apiBuilders/common';
+import { buildApiDisallowedGiftsSettings } from '../apiBuilders/gifts';
 import {
   buildApiConfig,
   buildApiCountryList,
   buildApiLanguage,
-  buildApiNotifyException,
-  buildApiPeerColors,
   buildApiSession,
   buildApiTimezone,
   buildApiWallpaper,
@@ -37,11 +38,20 @@ import {
   buildLangStrings,
   oldBuildLangPack,
 } from '../apiBuilders/misc';
-import { getApiChatIdFromMtpPeer } from '../apiBuilders/peers';
 import {
-  buildInputEntity, buildInputPeer, buildInputPhoto,
+  buildApiPeerColors,
+  buildApiPeerNotifySettings,
+  buildApiPeerProfileColors,
+  getApiChatIdFromMtpPeer,
+} from '../apiBuilders/peers';
+import {
+  buildDisallowedGiftsSettings,
+  buildInputChannel,
+  buildInputPeer, buildInputPhoto,
   buildInputPrivacyKey,
   buildInputPrivacyRules,
+  buildInputUser,
+  DEFAULT_PRIMITIVES,
 } from '../gramjsBuilders';
 import { addPhotoToLocalDb } from '../helpers/localDb';
 import localDb from '../localDb';
@@ -59,9 +69,9 @@ export function updateProfile({
   about?: string;
 }) {
   return invokeRequest(new GramJs.account.UpdateProfile({
-    firstName: firstName || '',
-    lastName: lastName || '',
-    about: about || '',
+    firstName,
+    lastName,
+    about,
   }), {
     shouldReturnTrue: true,
   });
@@ -95,9 +105,9 @@ export function updateUsername(username: string) {
 }
 
 export async function updateProfilePhoto(photo?: ApiPhoto, isFallback?: boolean) {
-  const photoId = photo ? buildInputPhoto(photo) : new GramJs.InputPhotoEmpty();
+  const photoId = photo && buildInputPhoto(photo);
   const result = await invokeRequest(new GramJs.photos.UpdateProfilePhoto({
-    id: photoId,
+    id: photoId || new GramJs.InputPhotoEmpty(),
     ...(isFallback ? { fallback: true } : undefined),
   }));
   if (!result) return undefined;
@@ -116,7 +126,7 @@ export async function uploadProfilePhoto(
 ) {
   const inputFile = await uploadFile(file);
   const result = await invokeRequest(new GramJs.photos.UploadProfilePhoto({
-    ...(bot ? { bot: buildInputPeer(bot.id, bot.accessHash) } : undefined),
+    ...(bot ? { bot: buildInputUser(bot.id, bot.accessHash) } : undefined),
     ...(isVideo ? { video: inputFile, videoStartTs: videoTs } : { file: inputFile }),
     ...(isFallback ? { fallback: true } : undefined),
   }));
@@ -141,7 +151,7 @@ export async function uploadContactProfilePhoto({
 }) {
   const inputFile = file ? await uploadFile(file) : undefined;
   const result = await invokeRequest(new GramJs.photos.UploadContactProfilePhoto({
-    userId: buildInputEntity(user.id, user.accessHash) as GramJs.InputUser,
+    userId: buildInputUser(user.id, user.accessHash),
     file: inputFile,
     ...(isSuggest ? { suggest: true } : { save: true }),
   }));
@@ -230,6 +240,7 @@ export async function fetchBlockedUsers({
 }) {
   const result = await invokeRequest(new GramJs.contacts.GetBlocked({
     myStoriesFrom: isOnlyStories,
+    offset: DEFAULT_PRIMITIVES.INT,
     limit: BLOCKED_LIST_LIMIT,
   }));
   if (!result) {
@@ -323,20 +334,26 @@ export async function fetchNotificationExceptions() {
       return acc;
     }
 
-    acc.push(buildApiNotifyException(update.notifySettings, update.peer.peer));
+    const peerId = getApiChatIdFromMtpPeer(update.peer.peer);
+
+    acc[peerId] = buildApiPeerNotifySettings(update.notifySettings);
 
     return acc;
-  }, [] as ApiNotifyException[]);
+  }, {} as Record<string, ApiPeerNotifySettings>);
 }
 
-export async function fetchNotificationSettings() {
+export async function fetchContactSignUpSetting() {
+  const hasContactJoinedNotifications = await invokeRequest(new GramJs.account.GetContactSignUpNotification());
+
+  return hasContactJoinedNotifications;
+}
+
+export async function fetchNotifyDefaultSettings() {
   const [
-    isMutedContactSignUpNotification,
-    privateContactNotificationsSettings,
-    groupNotificationsSettings,
-    broadcastNotificationsSettings,
+    usersSettings,
+    groupsSettings,
+    channelsSettings,
   ] = await Promise.all([
-    invokeRequest(new GramJs.account.GetContactSignUpNotification()),
     invokeRequest(new GramJs.account.GetNotifySettings({
       peer: new GramJs.InputNotifyUsers(),
     })),
@@ -348,37 +365,14 @@ export async function fetchNotificationSettings() {
     })),
   ]);
 
-  if (!privateContactNotificationsSettings || !groupNotificationsSettings || !broadcastNotificationsSettings) {
-    return false;
+  if (!usersSettings || !groupsSettings || !channelsSettings) {
+    return undefined;
   }
 
-  const {
-    silent: privateSilent, muteUntil: privateMuteUntil, showPreviews: privateShowPreviews,
-  } = privateContactNotificationsSettings;
-  const {
-    silent: groupSilent, muteUntil: groupMuteUntil, showPreviews: groupShowPreviews,
-  } = groupNotificationsSettings;
-  const {
-    silent: broadcastSilent, muteUntil: broadcastMuteUntil, showPreviews: broadcastShowPreviews,
-  } = broadcastNotificationsSettings;
-
   return {
-    hasContactJoinedNotifications: !isMutedContactSignUpNotification,
-    hasPrivateChatsNotifications: !(
-      privateSilent
-      || (typeof privateMuteUntil === 'number' && getServerTime() < privateMuteUntil)
-    ),
-    hasPrivateChatsMessagePreview: privateShowPreviews,
-    hasGroupNotifications: !(
-      groupSilent || (typeof groupMuteUntil === 'number'
-        && getServerTime() < groupMuteUntil)
-    ),
-    hasGroupMessagePreview: groupShowPreviews,
-    hasBroadcastNotifications: !(
-      broadcastSilent || (typeof broadcastMuteUntil === 'number'
-        && getServerTime() < broadcastMuteUntil)
-    ),
-    hasBroadcastMessagePreview: broadcastShowPreviews,
+    users: buildApiPeerNotifySettings(usersSettings),
+    groups: buildApiPeerNotifySettings(groupsSettings),
+    channels: buildApiPeerNotifySettings(channelsSettings),
   };
 }
 
@@ -386,17 +380,17 @@ export function updateContactSignUpNotification(isSilent: boolean) {
   return invokeRequest(new GramJs.account.SetContactSignUpNotification({ silent: isSilent }));
 }
 
-export function updateNotificationSettings(peerType: 'contact' | 'group' | 'broadcast', {
-  isSilent,
+export function updateNotificationSettings(peerType: ApiNotifyPeerType, {
+  isMuted,
   shouldShowPreviews,
 }: {
-  isSilent?: boolean;
+  isMuted?: boolean;
   shouldShowPreviews?: boolean;
 }) {
   let peer: GramJs.TypeInputNotifyPeer;
-  if (peerType === 'contact') {
+  if (peerType === 'users') {
     peer = new GramJs.InputNotifyUsers();
-  } else if (peerType === 'group') {
+  } else if (peerType === 'groups') {
     peer = new GramJs.InputNotifyChats();
   } else {
     peer = new GramJs.InputNotifyBroadcasts();
@@ -404,8 +398,7 @@ export function updateNotificationSettings(peerType: 'contact' | 'group' | 'broa
 
   const settings = {
     showPreviews: shouldShowPreviews,
-    silent: isSilent,
-    muteUntil: isSilent ? MAX_INT_32 : 0,
+    muteUntil: isMuted ? MUTE_INDEFINITE_TIMESTAMP : UNMUTE_TIMESTAMP,
   };
 
   return invokeRequest(new GramJs.account.UpdateNotifySettings({
@@ -536,6 +529,8 @@ export async function oldFetchLangPack({ sourceLangPacks, langCode }: {
 
 export async function fetchPrivacySettings(privacyKey: ApiPrivacyKey) {
   const key = buildInputPrivacyKey(privacyKey);
+  if (!key) return undefined;
+
   const result = await invokeRequest(new GramJs.account.GetPrivacy({ key }));
 
   if (!result) {
@@ -549,7 +544,7 @@ export async function fetchPrivacySettings(privacyKey: ApiPrivacyKey) {
 
 export function registerDevice(token: string) {
   const client = getClient();
-  const secret = client.session.getAuthKey().getKey();
+  const secret = client.session.getAuthKey().getKey()!;
   return invokeRequest(new GramJs.account.RegisterDevice({
     tokenType: 10,
     secret,
@@ -572,6 +567,7 @@ export async function setPrivacySettings(
 ) {
   const key = buildInputPrivacyKey(privacyKey);
   const privacyRules = buildInputPrivacyRules(rules);
+  if (!key) return undefined;
 
   const result = await invokeRequest(new GramJs.account.SetPrivacy({ key, rules: privacyRules }));
 
@@ -607,7 +603,7 @@ export function updateContentSettings(isEnabled: boolean) {
 }
 
 export async function fetchAppConfig(hash?: number): Promise<ApiAppConfig | undefined> {
-  const result = await invokeRequest(new GramJs.help.GetAppConfig({ hash }));
+  const result = await invokeRequest(new GramJs.help.GetAppConfig({ hash: hash ?? DEFAULT_PRIMITIVES.INT }));
   if (!result || result instanceof GramJs.help.AppConfigNotModified) return undefined;
 
   const { config, hash: resultHash } = result;
@@ -623,7 +619,7 @@ export async function fetchConfig(): Promise<ApiConfig | undefined> {
 
 export async function fetchPeerColors(hash?: number) {
   const result = await invokeRequest(new GramJs.help.GetPeerColors({
-    hash,
+    hash: hash ?? DEFAULT_PRIMITIVES.INT,
   }));
   if (!result) return undefined;
 
@@ -638,9 +634,26 @@ export async function fetchPeerColors(hash?: number) {
   };
 }
 
+export async function fetchPeerProfileColors(hash?: number) {
+  const result = await invokeRequest(new GramJs.help.GetPeerProfileColors({
+    hash: hash ?? DEFAULT_PRIMITIVES.INT,
+  }));
+  if (!result) return undefined;
+
+  const colors = buildApiPeerProfileColors(result);
+  if (!colors) return undefined;
+
+  const newHash = result instanceof GramJs.help.PeerColors ? result.hash : undefined;
+
+  return {
+    colors,
+    hash: newHash,
+  };
+}
+
 export async function fetchTimezones(hash?: number) {
   const result = await invokeRequest(new GramJs.help.GetTimezonesList({
-    hash,
+    hash: hash ?? DEFAULT_PRIMITIVES.INT,
   }));
   if (!result || result instanceof GramJs.help.TimezonesListNotModified) return undefined;
 
@@ -655,6 +668,7 @@ export async function fetchTimezones(hash?: number) {
 export async function fetchCountryList({ langCode = 'en' }: { langCode?: string }) {
   const countryList = await invokeRequest(new GramJs.help.GetCountriesList({
     langCode,
+    hash: DEFAULT_PRIMITIVES.INT,
   }));
 
   if (!(countryList instanceof GramJs.help.CountriesList)) {
@@ -674,6 +688,9 @@ export async function fetchGlobalPrivacySettings() {
     shouldArchiveAndMuteNewNonContact: Boolean(result.archiveAndMuteNewNoncontactPeers),
     shouldHideReadMarks: Boolean(result.hideReadMarks),
     shouldNewNonContactPeersRequirePremium: Boolean(result.newNoncontactPeersRequirePremium),
+    nonContactPeersPaidStars: toJSNumber(result.noncontactPeersPaidStars),
+    shouldDisplayGiftsButton: Boolean(result.displayGiftsButton),
+    disallowedGifts: result.disallowedGifts && buildApiDisallowedGiftsSettings(result.disallowedGifts),
   };
 }
 
@@ -681,16 +698,25 @@ export async function updateGlobalPrivacySettings({
   shouldArchiveAndMuteNewNonContact,
   shouldHideReadMarks,
   shouldNewNonContactPeersRequirePremium,
+  nonContactPeersPaidStars,
+  shouldDisplayGiftsButton,
+  disallowedGifts,
 }: {
   shouldArchiveAndMuteNewNonContact?: boolean;
   shouldHideReadMarks?: boolean;
   shouldNewNonContactPeersRequirePremium?: boolean;
+  nonContactPeersPaidStars?: number | null;
+  shouldDisplayGiftsButton?: boolean;
+  disallowedGifts?: ApiDisallowedGiftsSettings;
 }) {
   const result = await invokeRequest(new GramJs.account.SetGlobalPrivacySettings({
     settings: new GramJs.GlobalPrivacySettings({
       ...(shouldArchiveAndMuteNewNonContact && { archiveAndMuteNewNoncontactPeers: true }),
       ...(shouldHideReadMarks && { hideReadMarks: true }),
       ...(shouldNewNonContactPeersRequirePremium && { newNoncontactPeersRequirePremium: true }),
+      displayGiftsButton: shouldDisplayGiftsButton || undefined,
+      noncontactPeersPaidStars: BigInt(nonContactPeersPaidStars || 0),
+      disallowedGifts: disallowedGifts && buildDisallowedGiftsSettings(disallowedGifts),
     }),
   }));
 
@@ -702,6 +728,9 @@ export async function updateGlobalPrivacySettings({
     shouldArchiveAndMuteNewNonContact: Boolean(result.archiveAndMuteNewNoncontactPeers),
     shouldHideReadMarks: Boolean(result.hideReadMarks),
     shouldNewNonContactPeersRequirePremium: Boolean(result.newNoncontactPeersRequirePremium),
+    nonContactPeersPaidStars: toJSNumber(result.noncontactPeersPaidStars),
+    shouldDisplayGiftsButton,
+    disallowedGifts,
   };
 }
 
@@ -715,7 +744,7 @@ export function toggleUsername({
 }) {
   if (chatId) {
     return invokeRequest(new GramJs.channels.ToggleUsername({
-      channel: buildInputEntity(chatId, accessHash) as GramJs.InputChannel,
+      channel: buildInputChannel(chatId, accessHash),
       username,
       active: isActive,
     }));
@@ -734,7 +763,7 @@ export function reorderUsernames({ chatId, accessHash, usernames }: {
 }) {
   if (chatId) {
     return invokeRequest(new GramJs.channels.ReorderUsernames({
-      channel: buildInputEntity(chatId, accessHash) as GramJs.InputChannel,
+      channel: buildInputChannel(chatId, accessHash),
       order: usernames,
     }));
   }

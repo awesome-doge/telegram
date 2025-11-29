@@ -1,5 +1,5 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, {
+import {
   memo,
   useMemo, useRef,
 } from '../../../../lib/teact/teact';
@@ -39,10 +39,7 @@ type StateProps = {
   availableReactions?: ApiAvailableReaction[];
   topReactions: ApiReaction[];
   isWithPaidReaction?: boolean;
-  canAnimate?: boolean;
-  isSavedMessages?: boolean;
   reactionsLimit?: number;
-  isCurrentUserPremium?: boolean;
 };
 
 const REACTION_SIZE = 36;
@@ -65,17 +62,15 @@ const ReactionPickerLimited: FC<OwnProps & StateProps> = ({
   onReactionSelect,
   onReactionContext,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const sharedCanvasRef = useRef<HTMLCanvasElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const sharedCanvasHqRef = useRef<HTMLCanvasElement>(null);
+  const sharedCanvasRef = useRef<HTMLCanvasElement>();
+  const sharedCanvasHqRef = useRef<HTMLCanvasElement>();
   const { width: windowWidth } = useWindowSize();
   const { isTouchScreen } = useAppLayout();
 
   const currentReactions = message?.reactions?.results;
 
   const shouldUseCurrentReactions = reactionsLimit && currentReactions
-   && currentReactions.length >= reactionsLimit;
+    && currentReactions.length >= reactionsLimit;
 
   const allAvailableReactions = useMemo(() => {
     if (shouldUseCurrentReactions) {
@@ -98,7 +93,7 @@ const ReactionPickerLimited: FC<OwnProps & StateProps> = ({
       return sortReactions(reactionsToSort, topReactions);
     }
 
-    const reactionsToSort: ApiReactionWithPaid[] = enabledReactions.allowed;
+    const reactionsToSort: ApiReactionWithPaid[] = enabledReactions.allowed.slice();
     if (isWithPaidReaction) {
       reactionsToSort.unshift({ type: 'paid' });
     }
@@ -138,7 +133,7 @@ const ReactionPickerLimited: FC<OwnProps & StateProps> = ({
                 isSelected={isSelected}
                 loadAndPlay={loadAndPlay}
                 availableReactions={availableReactions}
-                onClick={onReactionSelect!}
+                onClick={onReactionSelect}
                 onContextMenu={onReactionContext}
                 sharedCanvasRef={sharedCanvasRef}
                 sharedCanvasHqRef={sharedCanvasHqRef}
@@ -152,10 +147,10 @@ const ReactionPickerLimited: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const { availableReactions, topReactions } = global.reactions;
 
-    const { maxUniqueReactions } = global.appConfig || {};
+    const { maxUniqueReactions } = global.appConfig;
     const { enabledReactions, isPaidReactionAvailable } = selectChatFullInfo(global, chatId) || {};
 
     return {

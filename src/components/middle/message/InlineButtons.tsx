@@ -1,13 +1,12 @@
-import type { FC, TeactNode } from '../../../lib/teact/teact';
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import type { TeactNode } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 
-import type { ApiKeyboardButton, ApiMessage } from '../../../api/types';
-import type { ActionPayloads } from '../../../global/types';
+import type { ApiKeyboardButton } from '../../../api/types';
 
-import { RE_TME_LINK } from '../../../config';
+import { RE_TME_LINK, TME_LINK_PREFIX } from '../../../config';
 import renderKeyboardButtonText from '../composer/helpers/renderKeyboardButtonText';
 
-import useOldLang from '../../../hooks/useOldLang';
+import useLang from '../../../hooks/useLang';
 
 import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
@@ -15,21 +14,26 @@ import Button from '../../ui/Button';
 import './InlineButtons.scss';
 
 type OwnProps = {
-  message: ApiMessage;
-  onClick: (payload: ActionPayloads['clickBotInlineButton']) => void;
+  inlineButtons: ApiKeyboardButton[][];
+  onClick: (payload: ApiKeyboardButton) => void;
 };
 
-const InlineButtons: FC<OwnProps> = ({ message, onClick }) => {
-  const lang = useOldLang();
+const InlineButtons = ({ inlineButtons, onClick }: OwnProps) => {
+  const lang = useLang();
 
   const renderIcon = (button: ApiKeyboardButton) => {
     const { type } = button;
     switch (type) {
       case 'url': {
-        if (!RE_TME_LINK.test(button.url)) {
+        const { url } = button;
+
+        if (url.startsWith(TME_LINK_PREFIX) && url.includes('?startapp')) {
+          return <Icon className="corner-icon" name="webapp" />;
+        } else if (!RE_TME_LINK.test(url)) {
           return <Icon className="corner-icon" name="arrow-right" />;
         }
-        break;
+
+        return;
       }
       case 'urlAuth':
         return <Icon className="corner-icon" name="arrow-right" />;
@@ -43,34 +47,46 @@ const InlineButtons: FC<OwnProps> = ({ message, onClick }) => {
         return <Icon className="corner-icon" name="webapp" />;
       case 'copy':
         return <Icon className="corner-icon" name="copy" />;
+      case 'suggestedMessage':
+        if (button.buttonType === 'suggestChanges') {
+          return <Icon className="left-icon" name="edit" />;
+        }
+        if (button.buttonType === 'approve') {
+          return <Icon className="left-icon" name="check" />;
+        }
+        if (button.buttonType === 'decline') {
+          return <Icon className="left-icon" name="close" />;
+        }
+        break;
     }
-    return undefined;
+
+    return;
   };
 
   const buttonTexts = useMemo(() => {
     const texts: TeactNode[][] = [];
-    message.inlineButtons!.forEach((row) => {
+    inlineButtons.forEach((row) => {
       texts.push(row.map((button) => renderKeyboardButtonText(lang, button)));
     });
     return texts;
-  }, [lang, message.inlineButtons]);
+  }, [lang, inlineButtons]);
 
   return (
     <div className="InlineButtons">
-      {message.inlineButtons!.map((row, i) => (
+      {inlineButtons.map((row, i) => (
         <div className="row">
           {row.map((button, j) => (
             <Button
               size="tiny"
               ripple
-              disabled={button.type === 'unsupported'}
-              // eslint-disable-next-line react/jsx-no-bind
-              onClick={() => onClick({ chatId: message.chatId, messageId: message.id, button })}
+              disabled={button.type === 'unsupported' || (button.type === 'suggestedMessage' && button.disabled)}
+
+              onClick={() => onClick(button)}
             >
+              {renderIcon(button)}
               <span className="inline-button-text">
                 {buttonTexts[i][j]}
               </span>
-              {renderIcon(button)}
             </Button>
           ))}
         </div>

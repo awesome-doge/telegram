@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react';
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { memo, useCallback, useState } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
@@ -76,7 +77,7 @@ const AuthRegister: FC<StateProps> = ({
             autoComplete="family-name"
           />
           {isButtonShown && (
-            <Button size="smaller" type="submit" ripple isLoading={authIsLoading}>{lang('Next')}</Button>
+            <Button type="submit" ripple isLoading={authIsLoading}>{lang('Next')}</Button>
           )}
         </form>
       </div>
@@ -85,5 +86,7 @@ const AuthRegister: FC<StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => pick(global, ['authIsLoading', 'authErrorKey']),
+  (global): Complete<StateProps> => (
+    pick(global, ['authIsLoading', 'authErrorKey']) as Complete<StateProps>
+  ),
 )(AuthRegister));

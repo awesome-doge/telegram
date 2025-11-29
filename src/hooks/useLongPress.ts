@@ -1,4 +1,6 @@
-import { useCallback, useRef, useUnmountCleanup } from '../lib/teact/teact';
+import { useRef, useUnmountCleanup } from '../lib/teact/teact';
+
+import useLastCallback from './useLastCallback';
 
 const DEFAULT_THRESHOLD = 250;
 
@@ -14,7 +16,7 @@ function useLongPress({
   const isPressed = useRef(false);
   const timerId = useRef<number | undefined>(undefined);
 
-  const start = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+  const start = useLastCallback((e: React.MouseEvent | React.TouchEvent) => {
     const canProcessEvent = ('button' in e && e.button === 0) || ('touches' in e && e.touches.length > 0);
     if (isPressed.current || !canProcessEvent) {
       return;
@@ -25,9 +27,9 @@ function useLongPress({
       onStart?.();
       isLongPressActive.current = true;
     }, threshold);
-  }, [onStart, threshold]);
+  });
 
-  const cancel = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+  const end = useLastCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isPressed.current) return;
 
     if (isLongPressActive.current) {
@@ -36,10 +38,14 @@ function useLongPress({
       onClick?.(e);
     }
 
+    cancel();
+  });
+
+  const cancel = useLastCallback(() => {
     isLongPressActive.current = false;
     isPressed.current = false;
     window.clearTimeout(timerId.current);
-  }, [onEnd, onClick]);
+  });
 
   useUnmountCleanup(() => {
     window.clearTimeout(timerId.current);
@@ -47,10 +53,10 @@ function useLongPress({
 
   return {
     onMouseDown: start,
-    onMouseUp: cancel,
-    onMouseLeave: cancel,
+    onMouseUp: end,
+    onMouseLeave: end,
     onTouchStart: start,
-    onTouchEnd: cancel,
+    onTouchEnd: end,
   };
 }
 

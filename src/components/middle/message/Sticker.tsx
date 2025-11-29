@@ -1,14 +1,14 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { useEffect, useRef } from '../../../lib/teact/teact';
-import { getActions } from '../../../global';
+import { memo, useEffect, useRef, useState } from '../../../lib/teact/teact';
+import { getActions, withGlobal } from '../../../global';
 
 import type { ApiMessage } from '../../../api/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import { ApiMediaFormat } from '../../../api/types';
 
-import { getStickerMediaHash } from '../../../global/helpers';
+import { getMediaThumbUri, getStickerMediaHash } from '../../../global/helpers';
+import { IS_WEBM_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
-import { IS_WEBM_SUPPORTED } from '../../../util/windowEnvironment';
 import { getStickerDimensions } from '../../common/helpers/mediaDimensions';
 
 import useAppLayout from '../../../hooks/useAppLayout';
@@ -20,6 +20,8 @@ import useOldLang from '../../../hooks/useOldLang';
 import useOverlayPosition from './hooks/useOverlayPosition';
 
 import AnimatedSticker from '../../common/AnimatedSticker';
+import MediaSpoiler from '../../common/MediaSpoiler';
+import SensitiveContentConfirmModal from '../../common/SensitiveContentConfirmModal';
 import StickerView from '../../common/StickerView';
 import Portal from '../../ui/Portal';
 
@@ -30,35 +32,68 @@ const EFFECT_SIZE_MULTIPLIER = 1 + 0.245 * 2;
 
 type OwnProps = {
   message: ApiMessage;
-  observeIntersection: ObserveFn;
-  observeIntersectionForPlaying: ObserveFn;
   shouldLoop?: boolean;
   shouldPlayEffect?: boolean;
   withEffect?: boolean;
+  isMediaNsfw?: boolean;
+  observeIntersection: ObserveFn;
+  observeIntersectionForPlaying: ObserveFn;
   onStopEffect?: VoidFunction;
 };
 
-const Sticker: FC<OwnProps> = ({
-  message, observeIntersection, observeIntersectionForPlaying, shouldLoop,
-  shouldPlayEffect, withEffect, onStopEffect,
+type StateProps = {
+  needsAgeVerification?: boolean;
+};
+
+const Sticker: FC<OwnProps & StateProps> = ({
+  message,
+  shouldLoop,
+  shouldPlayEffect,
+  withEffect,
+  isMediaNsfw,
+  onStopEffect,
+  observeIntersection,
+  observeIntersectionForPlaying,
+  needsAgeVerification,
 }) => {
-  const { showNotification, openStickerSet } = getActions();
+  const { showNotification, openStickerSet, updateContentSettings, openAgeVerificationModal } = getActions();
 
   const lang = useOldLang();
   const { isMobile } = useAppLayout();
 
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
 
-  // eslint-disable-next-line no-null/no-null
-  const effectRef = useRef<HTMLDivElement>(null);
+  const effectRef = useRef<HTMLDivElement>();
 
   const sticker = message.content.sticker!;
   const { stickerSetInfo, isVideo, hasEffect } = sticker;
   const isMirrored = !message.isOutgoing;
 
+  const [isNsfwModalOpen, openNsfwModal, closeNsfwModal] = useFlag();
+  const [shouldAlwaysShowNsfw, setShouldAlwaysShowNsfw] = useState(false);
+
+  const shouldShowSpoiler = isMediaNsfw;
+  const [isSpoilerShown, showSpoiler, hideSpoiler] = useFlag(shouldShowSpoiler);
+
+  useEffect(() => {
+    if (shouldShowSpoiler) {
+      showSpoiler();
+    } else {
+      hideSpoiler();
+    }
+  }, [shouldShowSpoiler]);
+
+  const handleNsfwConfirm = useLastCallback(() => {
+    closeNsfwModal();
+    hideSpoiler();
+
+    if (shouldAlwaysShowNsfw) {
+      updateContentSettings({ isSensitiveEnabled: true });
+    }
+  });
+
   const mediaHash = sticker.isPreloadedGlobally ? undefined : (
-    getStickerMediaHash(sticker, isVideo && !IS_WEBM_SUPPORTED ? 'pictogram' : 'inline')!
+    getStickerMediaHash(sticker, isVideo && !IS_WEBM_SUPPORTED ? 'pictogram' : 'inline')
   );
 
   const canLoad = useIsIntersecting(ref, observeIntersection);
@@ -70,6 +105,8 @@ const Sticker: FC<OwnProps> = ({
     ApiMediaFormat.BlobUrl,
   );
   const [isPlayingEffect, startPlayingEffect, stopPlayingEffect] = useFlag();
+
+  const thumbDataUri = getMediaThumbUri(sticker);
 
   const handleEffectEnded = useLastCallback(() => {
     stopPlayingEffect();
@@ -97,6 +134,19 @@ const Sticker: FC<OwnProps> = ({
   });
 
   const handleClick = useLastCallback(() => {
+    if (isSpoilerShown) {
+      if (isMediaNsfw) {
+        if (needsAgeVerification) {
+          openAgeVerificationModal();
+          return;
+        }
+        openNsfwModal();
+        return;
+      }
+      hideSpoiler();
+      return;
+    }
+
     if (hasEffect) {
       if (isPlayingEffect || !withEffect) {
         showNotification({
@@ -145,6 +195,15 @@ const Sticker: FC<OwnProps> = ({
         noPlay={!canPlay}
         withSharedAnimation
       />
+      <MediaSpoiler
+        isVisible={isSpoilerShown}
+        withAnimation
+        thumbDataUri={thumbDataUri}
+        width={width}
+        height={height}
+        className="media-spoiler"
+        isNsfw={isMediaNsfw}
+      />
       {shouldRenderEffect && (
         <Portal>
           <AnimatedSticker
@@ -160,8 +219,22 @@ const Sticker: FC<OwnProps> = ({
           />
         </Portal>
       )}
+      <SensitiveContentConfirmModal
+        isOpen={isNsfwModalOpen}
+        onClose={closeNsfwModal}
+        shouldAlwaysShow={shouldAlwaysShowNsfw}
+        onAlwaysShowChanged={setShouldAlwaysShowNsfw}
+        confirmHandler={handleNsfwConfirm}
+      />
     </div>
   );
 };
 
-export default Sticker;
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
+  const appConfig = global.appConfig;
+  const needsAgeVerification = appConfig.needAgeVideoVerification;
+
+  return {
+    needsAgeVerification,
+  };
+})(Sticker));

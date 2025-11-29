@@ -1,10 +1,16 @@
 import type { API_CHAT_TYPES } from '../../config';
 import type { ApiBotInfo } from './bots';
 import type { ApiBusinessIntro, ApiBusinessLocation, ApiBusinessWorkHours } from './business';
-import type { ApiPeerColor } from './chats';
-import type { ApiDocument, ApiPhoto } from './messages';
-import type { ApiBotVerification } from './misc';
-import type { ApiSavedStarGift } from './payments';
+import type { ApiDocument, ApiFormattedText, ApiPhoto } from './messages';
+import type {
+  ApiBotVerification,
+  ApiEmojiStatusType,
+  ApiFakeType,
+  ApiPeerSettings,
+  ApiProfileTab,
+  ApiTypePeerColor,
+} from './peers';
+import type { ApiSavedStarGift, ApiStarsRating } from './stars';
 
 export interface ApiUser {
   id: string;
@@ -20,6 +26,7 @@ export interface ApiUser {
   lastName?: string;
   noStatus?: boolean;
   usernames?: ApiUsername[];
+  hasUsername?: boolean;
   phoneNumber: string;
   accessHash?: string;
   hasVideoAvatar?: boolean;
@@ -33,11 +40,14 @@ export interface ApiUser {
   hasStories?: boolean;
   hasUnreadStories?: boolean;
   maxStoryId?: number;
-  color?: ApiPeerColor;
+  color?: ApiTypePeerColor;
+  profileColor?: ApiTypePeerColor;
   canEditBot?: boolean;
   hasMainMiniApp?: boolean;
   botActiveUsers?: number;
   botVerificationIconId?: string;
+  paidMessagesStars?: number;
+  isBotForum?: boolean;
 }
 
 export interface ApiUserFullInfo {
@@ -50,11 +60,12 @@ export interface ApiUserFullInfo {
   fallbackPhoto?: ApiPhoto;
   personalPhoto?: ApiPhoto;
   noVoiceMessages?: boolean;
-  premiumGifts?: ApiPremiumGiftOption[];
   isTranslationDisabled?: true;
   areAdsEnabled?: boolean;
   hasPinnedStories?: boolean;
   isContactRequirePremium?: boolean;
+  shouldDisplayGiftsButton?: boolean;
+  disallowedGifts?: ApiDisallowedGifts;
   birthday?: ApiBirthday;
   personalChannelId?: string;
   personalChannelMessageId?: number;
@@ -62,13 +73,18 @@ export interface ApiUserFullInfo {
   businessWorkHours?: ApiBusinessWorkHours;
   businessIntro?: ApiBusinessIntro;
   starGiftCount?: number;
+  starsRating?: ApiStarsRating;
+  starsMyPendingRating?: ApiStarsRating;
+  starsMyPendingRatingDate?: number;
   isBotCanManageEmojiStatus?: boolean;
   isBotAccessEmojiGranted?: boolean;
   hasScheduledMessages?: boolean;
   botVerification?: ApiBotVerification;
+  paidMessagesStars?: number;
+  settings?: ApiPeerSettings;
+  mainTab?: ApiProfileTab;
+  note?: ApiFormattedText;
 }
-
-export type ApiFakeType = 'fake' | 'scam';
 
 export type ApiUserType = 'userTypeBot' | 'userTypeRegular' | 'userTypeDeleted' | 'userTypeUnknown';
 
@@ -103,9 +119,11 @@ export interface ApiUsername {
 export type ApiChatType = typeof API_CHAT_TYPES[number];
 export type ApiAttachMenuPeerType = 'self' | ApiChatType;
 
+export type ApiInlineQueryPeerType = 'self' | 'supergroups' | ApiChatType;
+
 type ApiAttachBotForMenu = {
   isForAttachMenu: true;
-  attachMenuPeerTypes: ApiAttachMenuPeerType[];
+  attachMenuPeerTypes?: ApiAttachMenuPeerType[];
 };
 
 type ApiAttachBotBase = {
@@ -125,37 +143,15 @@ export interface ApiAttachBotIcon {
   document: ApiDocument;
 }
 
-export interface ApiPremiumGiftOption {
-  months: number;
-  currency: string;
-  amount: number;
-  botUrl: string;
-}
-
-export type ApiEmojiStatusType = ApiEmojiStatus | ApiEmojiStatusCollectible;
-
-export interface ApiEmojiStatus {
-  type: 'regular';
-  documentId: string;
-  until?: number;
-}
-
-export interface ApiEmojiStatusCollectible {
-  type: 'collectible';
-  collectibleId: string;
-  documentId: string;
-  title: string;
-  slug: string;
-  patternDocumentId: string;
-  centerColor: string;
-  edgeColor: string;
-  patternColor: string;
-  textColor: string;
-  until?: number;
-}
-
 export interface ApiBirthday {
   day: number;
   month: number;
   year?: number;
+}
+
+export interface ApiDisallowedGifts {
+  shouldDisallowUnlimitedStarGifts?: boolean;
+  shouldDisallowLimitedStarGifts?: boolean;
+  shouldDisallowUniqueStarGifts?: boolean;
+  shouldDisallowPremiumGifts?: boolean;
 }

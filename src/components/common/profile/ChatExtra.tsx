@@ -1,8 +1,7 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useMemo,
+import {
+  memo, useMemo, useRef,
 } from '../../../lib/teact/teact';
-import { getActions, withGlobal } from '../../../global';
+import { getActions, getGlobal, withGlobal } from '../../../global';
 
 import type {
   ApiBotVerification,
@@ -12,29 +11,35 @@ import type {
   ApiUserFullInfo,
   ApiUsername,
 } from '../../../api/types';
-import type { BotAppPermissions } from '../../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
+import { type BotAppPermissions, ManagementScreens } from '../../../types';
 
-import { FRAGMENT_PHONE_CODE, FRAGMENT_PHONE_LENGTH } from '../../../config';
+import {
+  FRAGMENT_PHONE_CODE, FRAGMENT_PHONE_LENGTH, MUTE_INDEFINITE_TIMESTAMP, UNMUTE_TIMESTAMP,
+} from '../../../config';
 import {
   buildStaticMapHash,
   getChatLink,
   getHasAdminRight,
+  isChatAdmin,
   isChatChannel,
   isUserRightBanned,
-  selectIsChatMuted,
 } from '../../../global/helpers';
+import { getIsChatMuted } from '../../../global/helpers/notifications';
 import {
   selectBotAppPermissions,
   selectChat,
   selectChatFullInfo,
   selectCurrentMessageList,
-  selectNotifyExceptions,
-  selectNotifySettings,
+  selectIsChatRestricted,
+  selectNotifyDefaults,
+  selectNotifyException,
   selectTopicLink,
   selectUser,
   selectUserFullInfo,
 } from '../../../global/selectors';
+import { VTT_PROFILE_NOTE_COLLAPSE, VTT_PROFILE_NOTE_EXPAND } from '../../../util/animations/viewTransitionTypes';
+import buildClassName from '../../../util/buildClassName';
 import { copyTextToClipboard } from '../../../util/clipboard';
 import { formatPhoneNumberWithCode } from '../../../util/phoneNumber';
 import stopEvent from '../../../util/stopEvent';
@@ -42,7 +47,11 @@ import { extractCurrentThemeParams } from '../../../util/themeStyle';
 import { ChatAnimationTypes } from '../../left/main/hooks';
 import formatUsername from '../helpers/formatUsername';
 import renderText from '../helpers/renderText';
+import { renderTextWithEntities } from '../helpers/renderTextWithEntities';
 
+import { useViewTransition } from '../../../hooks/animations/useViewTransition';
+import { useVtn } from '../../../hooks/animations/useVtn';
+import useCollapsibleLines from '../../../hooks/element/useCollapsibleLines';
 import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -56,6 +65,7 @@ import ListItem from '../../ui/ListItem';
 import Skeleton from '../../ui/placeholder/Skeleton';
 import Switcher from '../../ui/Switcher';
 import CustomEmoji from '../CustomEmoji';
+import Icon from '../icons/Icon';
 import SafeLink from '../SafeLink';
 import BusinessHours from './BusinessHours';
 import UserBirthday from './UserBirthday';
@@ -64,8 +74,10 @@ import styles from './ChatExtra.module.scss';
 
 type OwnProps = {
   chatOrUserId: string;
+  isOwnProfile?: boolean;
   isSavedDialog?: boolean;
   isInSettings?: boolean;
+  className?: string;
 };
 
 type StateProps = {
@@ -85,6 +97,7 @@ type StateProps = {
   isBotCanManageEmojiStatus?: boolean;
   botAppPermissions?: BotAppPermissions;
   botVerification?: ApiBotVerification;
+  canViewSubscribers?: boolean;
 };
 
 const DEFAULT_MAP_CONFIG = {
@@ -94,13 +107,14 @@ const DEFAULT_MAP_CONFIG = {
 };
 
 const BOT_VERIFICATION_ICON_SIZE = 16;
+const NOTE_MAX_LINES = 3;
 
-const ChatExtra: FC<OwnProps & StateProps> = ({
+const ChatExtra = ({
   chatOrUserId,
   user,
   chat,
   userFullInfo,
-  isInSettings,
+  isOwnProfile,
   canInviteUsers,
   isMuted,
   phoneCodeList,
@@ -114,7 +128,10 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
   isBotCanManageEmojiStatus,
   botAppPermissions,
   botVerification,
-}) => {
+  className,
+  isInSettings,
+  canViewSubscribers,
+}: OwnProps & StateProps) => {
   const {
     showNotification,
     updateChatMutedState,
@@ -126,6 +143,7 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
     requestMainWebView,
     toggleUserEmojiStatusPermission,
     toggleUserLocationPermission,
+    requestNextManagementScreen,
   } = getActions();
 
   const {
@@ -141,9 +159,28 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
     businessWorkHours,
     personalChannelMessageId,
     birthday,
+    note,
   } = userFullInfo || {};
   const oldLang = useOldLang();
   const lang = useLang();
+
+  const { startViewTransition } = useViewTransition();
+  const { createVtnStyle } = useVtn();
+
+  const noteTextRef = useRef<HTMLDivElement>();
+
+  const shouldRenderNote = Boolean(note);
+
+  const {
+    isCollapsed: isNoteCollapsed,
+    isCollapsible: isNoteCollapsible,
+    setIsCollapsed: setIsNoteCollapsed,
+  } = useCollapsibleLines(
+    noteTextRef,
+    NOTE_MAX_LINES,
+    undefined,
+    !shouldRenderNote,
+  );
 
   useEffectWithPrevDeps(([prevPeerId]) => {
     if (!peerId || prevPeerId === peerId) return;
@@ -201,15 +238,16 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
     openMapModal({ geoPoint: geo, zoom });
   });
 
-  const handleNotificationChange = useLastCallback(() => {
+  const handleToggleNotifications = useLastCallback(() => {
+    const mutedUntil = isMuted ? UNMUTE_TIMESTAMP : MUTE_INDEFINITE_TIMESTAMP;
     if (isTopicInfo) {
       updateTopicMutedState({
         chatId: chatId!,
         topicId: topicId!,
-        isMuted: !isMuted,
+        mutedUntil,
       });
     } else {
-      updateChatMutedState({ chatId: chatId!, isMuted: !isMuted });
+      updateChatMutedState({ chatId: chatId!, mutedUntil });
     }
   });
 
@@ -225,6 +263,21 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
 
   const handleOpenSavedDialog = useLastCallback(() => {
     openSavedDialog({ chatId: chatOrUserId });
+  });
+
+  const canExpandNote = isNoteCollapsible && isNoteCollapsed;
+
+  const handleExpandNote = useLastCallback(() => {
+    startViewTransition(VTT_PROFILE_NOTE_EXPAND, () => {
+      setIsNoteCollapsed(false);
+    });
+  });
+
+  const handleToggleNote = useLastCallback(() => {
+    const isCollapsed = isNoteCollapsed;
+    startViewTransition(isCollapsed ? VTT_PROFILE_NOTE_EXPAND : VTT_PROFILE_NOTE_COLLAPSE, () => {
+      setIsNoteCollapsed(() => !isCollapsed);
+    });
   });
 
   function copy(text: string, entity: string) {
@@ -250,6 +303,10 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
     copy(formatUsername(username.username, isChat), oldLang(isChat ? 'Link' : 'Username'));
   });
 
+  const handleOpenSubscribers = useLastCallback(() => {
+    requestNextManagementScreen({ screen: ManagementScreens.ChannelSubscribers });
+  });
+
   const handleOpenApp = useLastCallback(() => {
     const botId = user?.id;
     if (!botId) {
@@ -273,7 +330,8 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
     ),
   }, { withNodes: true });
 
-  if (chat?.isRestricted || (isSelf && !isInSettings)) {
+  const isRestricted = chatId ? selectIsChatRestricted(getGlobal(), chatId) : false;
+  if (isRestricted || (isSelf && !isOwnProfile && !isInSettings)) {
     return undefined;
   }
 
@@ -281,7 +339,7 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
     const [mainUsername, ...otherUsernames] = usernameList;
 
     const usernameLinks = otherUsernames.length
-      ? (oldLang('UsernameAlso', '%USERNAMES%') as string)
+      ? (oldLang('UsernameAlso', '%USERNAMES%'))
         .split('%')
         .map((s) => {
           return (s === 'USERNAMES' ? (
@@ -316,7 +374,7 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
         multiline
         narrow
         ripple
-        // eslint-disable-next-line react/jsx-no-bind
+
         onClick={() => {
           handleUsernameClick(mainUsername, isChat);
         }}
@@ -333,9 +391,9 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
   }
 
   return (
-    <div className="ChatExtra">
+    <div className={buildClassName('ChatExtra', className)} style={createVtnStyle('chatExtra')}>
       {personalChannel && (
-        <div className={styles.personalChannel}>
+        <div className={styles.personalChannel} style={createVtnStyle('personalChannel')}>
           <h3 className={styles.personalChannelTitle}>{oldLang('ProfileChannel')}</h3>
           <span className={styles.personalChannelSubscribers}>
             {oldLang('Subscribers', personalChannel.membersCount, 'i')}
@@ -351,8 +409,15 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
         </div>
       )}
       {Boolean(formattedNumber?.length) && (
-        // eslint-disable-next-line react/jsx-no-bind
-        <ListItem icon="phone" multiline narrow ripple onClick={handlePhoneClick}>
+        <ListItem
+          icon="phone"
+          className={styles.phone}
+          multiline
+          narrow
+          ripple
+          onClick={handlePhoneClick}
+          style={createVtnStyle('phone')}
+        >
           <span className="title" dir={lang.isRtl ? 'rtl' : undefined}>{formattedNumber}</span>
           <span className="subtitle">{oldLang('Phone')}</span>
         </ListItem>
@@ -361,10 +426,12 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
       {description && Boolean(description.length) && (
         <ListItem
           icon="info"
+          className={styles.description}
           multiline
           narrow
           isStatic
           allowSelection
+          style={createVtnStyle('description')}
         >
           <span className="title word-break allow-selection" dir={lang.isRtl ? 'rtl' : undefined}>
             {
@@ -383,10 +450,11 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
         <ListItem
           icon="link"
           multiline
+          className={styles.link}
           narrow
           ripple
-          // eslint-disable-next-line react/jsx-no-bind
           onClick={() => copy(link, oldLang('SetUrlPlaceholder'))}
+          style={createVtnStyle('link')}
         >
           <div className="title">{link}</div>
           <span className="subtitle">{oldLang('SetUrlPlaceholder')}</span>
@@ -395,15 +463,16 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
       {birthday && (
         <UserBirthday key={peerId} birthday={birthday} user={user!} isInSettings={isInSettings} />
       )}
-      { hasMainMiniApp && (
+      {hasMainMiniApp && (
         <ListItem
           multiline
+          className={styles.miniapp}
           isStatic
           narrow
+          style={createVtnStyle('miniapp')}
         >
           <Button
             className={styles.openAppButton}
-            size="smaller"
             onClick={handleOpenApp}
           >
             {oldLang('ProfileBotOpenApp')}
@@ -413,13 +482,20 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
           </div>
         </ListItem>
       )}
-      {!isInSettings && (
-        <ListItem icon="unmute" narrow ripple onClick={handleNotificationChange}>
-          <span>{oldLang('Notifications')}</span>
+      {!isOwnProfile && !isInSettings && (
+        <ListItem
+          icon={isMuted ? 'mute' : 'unmute'}
+          className={styles.notifications}
+          narrow
+          ripple
+          onClick={handleToggleNotifications}
+          style={createVtnStyle('notifications')}
+        >
+          <span>{lang('Notifications')}</span>
           <Switcher
             id="group-notifications"
-            label={userId ? 'Toggle User Notifications' : 'Toggle Chat Notifications'}
-            checked={isMuted}
+            label={lang(userId ? 'AriaToggleUserNotifications' : 'AriaToggleChatNotifications')}
+            checked={!isMuted}
             inactive
           />
         </ListItem>
@@ -433,6 +509,8 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
           ripple
           multiline
           narrow
+          className={styles.location}
+          style={createVtnStyle('location')}
           rightElement={locationRightComponent}
           onClick={handleClickLocation}
         >
@@ -440,13 +518,74 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
           <span className="subtitle">{oldLang('BusinessProfileLocation')}</span>
         </ListItem>
       )}
-      {hasSavedMessages && !isInSettings && (
-        <ListItem icon="saved-messages" narrow ripple onClick={handleOpenSavedDialog}>
+      {shouldRenderNote && (
+        <ListItem
+          icon="note"
+          iconClassName={styles.noteListItemIcon}
+          multiline
+          narrow
+          isStatic
+          allowSelection
+          className={styles.note}
+          style={createVtnStyle('note')}
+        >
+          <div
+            ref={noteTextRef}
+            className={buildClassName(
+              'title',
+              'word-break',
+              'allow-selection',
+              styles.noteText,
+              isNoteCollapsed && styles.noteTextCollapsed,
+            )}
+            style={createVtnStyle('noteText', true)}
+            dir={lang.isRtl ? 'rtl' : undefined}
+            onClick={canExpandNote ? handleExpandNote : undefined}
+          >
+            {renderTextWithEntities({
+              text: note.text,
+              entities: note.entities,
+            })}
+          </div>
+          <div className={buildClassName('subtitle', styles.noteSubtitle)} style={createVtnStyle('noteSubtitle')}>
+            <span>{lang('UserNoteTitle')}</span>
+
+            <span className={styles.noteHint}>{lang('UserNoteHint')}</span>
+            {isNoteCollapsible && (
+              <Icon
+                className={buildClassName(
+                  styles.noteExpandIcon,
+                  styles.clickable,
+                )}
+                style={createVtnStyle('noteExpandIcon', true)}
+                onClick={handleToggleNote}
+                name={isNoteCollapsed ? 'down' : 'up'}
+              />
+            )}
+          </div>
+        </ListItem>
+      )}
+      {hasSavedMessages && !isOwnProfile && !isInSettings && (
+        <ListItem
+          icon="saved-messages"
+          className={styles.savedMessages}
+          narrow
+          ripple
+          onClick={handleOpenSavedDialog}
+          style={createVtnStyle('savedMessages')}
+        >
           <span>{oldLang('SavedMessagesTab')}</span>
         </ListItem>
       )}
       {userFullInfo && 'isBotAccessEmojiGranted' in userFullInfo && (
-        <ListItem icon="user" narrow ripple onClick={manageEmojiStatusChange}>
+        <ListItem
+          icon="user"
+          className={styles.botEmojiStatus}
+          narrow
+          ripple
+          onClick={manageEmojiStatusChange}
+          style={createVtnStyle('botEmojiStatus')}
+        >
           <span>{oldLang('BotProfilePermissionEmojiStatus')}</span>
           <Switcher
             label={oldLang('BotProfilePermissionEmojiStatus')}
@@ -456,7 +595,14 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
         </ListItem>
       )}
       {botAppPermissions?.geolocation !== undefined && (
-        <ListItem icon="location" narrow ripple onClick={handleLocationPermissionChange}>
+        <ListItem
+          icon="location"
+          className={styles.botLocation}
+          narrow
+          ripple
+          onClick={handleLocationPermissionChange}
+          style={createVtnStyle('botLocation')}
+        >
           <span>{oldLang('BotProfilePermissionLocation')}</span>
           <Switcher
             label={oldLang('BotProfilePermissionLocation')}
@@ -465,8 +611,22 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
           />
         </ListItem>
       )}
+      {canViewSubscribers && (
+        <ListItem
+          icon="group"
+          narrow
+          multiline
+          ripple
+          className={styles.subscribers}
+          onClick={handleOpenSubscribers}
+          style={createVtnStyle('subscribers')}
+        >
+          <div className="title">{lang('ProfileItemSubscribers')}</div>
+          <span className="subtitle">{lang.number(chat?.membersCount || 0)}</span>
+        </ListItem>
+      )}
       {botVerification && (
-        <div className={styles.botVerificationSection}>
+        <div className={styles.botVerificationSection} style={createVtnStyle('botVerification')}>
           <CustomEmoji
             className={styles.botVerificationIcon}
             documentId={botVerification.iconId}
@@ -480,14 +640,14 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatOrUserId, isSavedDialog }): StateProps => {
+  (global, { chatOrUserId, isSavedDialog }): Complete<StateProps> => {
     const { countryList: { phoneCodes: phoneCodeList } } = global;
 
     const chat = chatOrUserId ? selectChat(global, chatOrUserId) : undefined;
     const user = chatOrUserId ? selectUser(global, chatOrUserId) : undefined;
     const botAppPermissions = chatOrUserId ? selectBotAppPermissions(global, chatOrUserId) : undefined;
     const isForum = chat?.isForum;
-    const isMuted = chat && selectIsChatMuted(chat, selectNotifySettings(global), selectNotifyExceptions(global));
+    const isMuted = chat && getIsChatMuted(chat, selectNotifyDefaults(global), selectNotifyException(global, chat.id));
     const { threadId } = selectCurrentMessageList(global) || {};
     const topicId = isForum && threadId ? Number(threadId) : undefined;
 
@@ -499,6 +659,7 @@ export default memo(withGlobal<OwnProps>(
     const chatInviteLink = chatFullInfo?.inviteLink;
     const description = userFullInfo?.bio || chatFullInfo?.about;
 
+    const canViewSubscribers = chat && isChatChannel(chat) && isChatAdmin(chat);
     const canInviteUsers = chat && !user && (
       (!isChatChannel(chat) && !isUserRightBanned(chat, 'inviteUsers'))
       || getHasAdminRight(chat, 'inviteUsers')
@@ -531,6 +692,7 @@ export default memo(withGlobal<OwnProps>(
       hasMainMiniApp,
       isBotCanManageEmojiStatus: userFullInfo?.isBotCanManageEmojiStatus,
       botVerification,
+      canViewSubscribers,
     };
   },
 )(ChatExtra));

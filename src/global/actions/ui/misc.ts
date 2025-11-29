@@ -6,7 +6,10 @@ import type { ActionReturnType, GlobalState } from '../../types';
 import {
   ANIMATION_WAVE_MIN_INTERVAL,
   DEBUG, GLOBAL_STATE_CACHE_CUSTOM_EMOJI_LIMIT, INACTIVE_MARKER, PAGE_TITLE,
+  PAGE_TITLE_TAURI,
 } from '../../../config';
+import { IS_TAURI } from '../../../util/browser/globalEnvironment';
+import { IS_WAVE_TRANSFORM_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import { getAllMultitabTokens, getCurrentTabId, reestablishMasterToSelf } from '../../../util/establishMultitabRole';
 import { getAllNotificationsCount } from '../../../util/folderManager';
 import generateUniqueId from '../../../util/generateUniqueId';
@@ -17,7 +20,6 @@ import { refreshFromCache } from '../../../util/localization';
 import * as langProvider from '../../../util/oldLangProvider';
 import updateIcon from '../../../util/updateIcon';
 import { setPageTitle, setPageTitleInstant } from '../../../util/updatePageTitle';
-import { IS_ELECTRON, IS_WAVE_TRANSFORM_SUPPORTED } from '../../../util/windowEnvironment';
 import { getAllowedAttachmentOptions, getChatTitle } from '../../helpers';
 import {
   addActionHandler, getActions, getGlobal, setGlobal,
@@ -30,12 +32,16 @@ import {
   selectChatMessage,
   selectCurrentChat,
   selectCurrentMessageList,
+  selectIsChatWithBot,
+  selectIsChatWithSelf,
   selectIsCurrentUserPremium,
   selectIsTrustedBot,
+  selectPeerPaidMessagesStars,
   selectSender,
   selectTabState,
   selectTopic,
 } from '../../selectors';
+import { selectSharedSettings } from '../../selectors/sharedState';
 
 import { getIsMobile, getIsTablet } from '../../../hooks/useAppLayout';
 
@@ -45,10 +51,18 @@ const MAX_STORED_EMOJIS = 8 * 4; // Represents four rows of recent emojis
 
 addActionHandler('toggleChatInfo', (global, actions, payload): ActionReturnType => {
   const { force, tabId = getCurrentTabId() } = payload || {};
-  const isChatInfoShown = force !== undefined ? force : !selectTabState(global, tabId).isChatInfoShown;
+  const chatInfo = selectTabState(global, tabId).chatInfo;
+  const willChatInfoBeShown = force !== undefined ? force : !chatInfo.isOpen;
 
-  global = updateTabState(global, { isChatInfoShown }, tabId);
-  global = { ...global, lastIsChatInfoShown: isChatInfoShown };
+  if (willChatInfoBeShown !== chatInfo.isOpen) {
+    global = updateTabState(global, {
+      chatInfo: {
+        ...chatInfo,
+        isOpen: willChatInfoBeShown,
+      },
+    }, tabId);
+  }
+  global = { ...global, lastIsChatInfoShown: willChatInfoBeShown };
 
   return global;
 });
@@ -150,15 +164,24 @@ addActionHandler('processOpenChatOrThread', (global, actions, payload): ActionRe
   }, tabId);
 });
 
-addActionHandler('resetNextProfileTab', (global, actions, payload): ActionReturnType => {
-  const { tabId = getCurrentTabId() } = payload || {};
+addActionHandler('changeProfileTab', (global, actions, payload): ActionReturnType => {
+  const { profileTab, shouldScrollTo, tabId = getCurrentTabId() } = payload;
   const { chatId } = selectCurrentMessageList(global, tabId) || {};
 
   if (!chatId) {
     return undefined;
   }
 
-  return updateTabState(global, { nextProfileTab: undefined, forceScrollProfileTab: false }, tabId);
+  const chatInfo = selectTabState(global, tabId).chatInfo;
+
+  return updateTabState(global, {
+    chatInfo: {
+      ...chatInfo,
+      isOpen: true,
+      profileTab,
+      forceScrollProfileTab: shouldScrollTo,
+    },
+  }, tabId);
 });
 
 addActionHandler('toggleStatistics', (global, actions, payload): ActionReturnType => {
@@ -180,7 +203,9 @@ addActionHandler('toggleMessageStatistics', (global, actions, payload): ActionRe
     statistics: {
       ...selectTabState(global, tabId).statistics,
       currentMessageId: messageId,
+      currentMessage: undefined,
       currentStoryId: undefined,
+      currentStory: undefined,
     },
   }, tabId);
 });
@@ -192,6 +217,8 @@ addActionHandler('toggleStoryStatistics', (global, actions, payload): ActionRetu
       ...selectTabState(global, tabId).statistics,
       currentStoryId: storyId,
       currentMessageId: undefined,
+      currentMessage: undefined,
+      currentStory: undefined,
     },
   }, tabId);
 });
@@ -325,16 +352,30 @@ addActionHandler('showNotification', (global, actions, payload): ActionReturnTyp
 });
 
 addActionHandler('showAllowedMessageTypesNotification', (global, actions, payload): ActionReturnType => {
-  const { chatId, tabId = getCurrentTabId() } = payload;
+  const { chatId, messageListType, tabId = getCurrentTabId() } = payload;
+
+  const paidMessagesStars = selectPeerPaidMessagesStars(global, chatId);
+
+  if (paidMessagesStars && messageListType === 'scheduled') {
+    actions.showNotification({
+      message: {
+        key: 'DescriptionScheduledPaidMessagesNotAllowed',
+      },
+      tabId,
+    });
+    return;
+  }
 
   const chat = selectChat(global, chatId);
   if (!chat) return;
   const chatFullInfo = selectChatFullInfo(global, chatId);
+  const isSavedMessages = chatId ? selectIsChatWithSelf(global, chatId) : undefined;
+  const isChatWithBot = chatId ? selectIsChatWithBot(global, chat) : undefined;
 
   const {
     canSendPlainText, canSendPhotos, canSendVideos, canSendDocuments, canSendAudios,
     canSendStickers, canSendRoundVideos, canSendVoices,
-  } = getAllowedAttachmentOptions(chat, chatFullInfo);
+  } = getAllowedAttachmentOptions(chat, chatFullInfo, isChatWithBot, isSavedMessages);
   const allowedContent = compact([
     canSendPlainText ? 'Chat.SendAllowedContentTypeText' : undefined,
     canSendPhotos ? 'Chat.SendAllowedContentTypePhoto' : undefined,
@@ -374,7 +415,7 @@ addActionHandler('dismissNotification', (global, actions, payload): ActionReturn
 });
 
 addActionHandler('showDialog', (global, actions, payload): ActionReturnType => {
-  const { data, tabId = getCurrentTabId() } = payload!;
+  const { data, tabId = getCurrentTabId() } = payload;
 
   // Filter out errors that we don't want to show to the user
   if ('message' in data && data.hasErrorKey && !getReadableErrorText(data)) {
@@ -511,17 +552,32 @@ addActionHandler('requestWave', (global, actions, payload): ActionReturnType => 
 });
 
 addActionHandler('updateAttachmentSettings', (global, actions, payload): ActionReturnType => {
-  const {
-    shouldCompress, shouldSendGrouped, isInvertedMedia, webPageMediaSize,
-  } = payload;
+  return {
+    ...global,
+    attachmentSettings: {
+      ...global.attachmentSettings,
+      ...payload,
+    },
+  };
+});
+
+addActionHandler('updateShouldSaveAttachmentsCompression', (global, actions, payload): ActionReturnType => {
+  const { shouldSave, tabId = getCurrentTabId() } = payload;
+
+  return updateTabState(global, {
+    shouldSaveAttachmentsCompression: shouldSave,
+  }, tabId);
+});
+
+addActionHandler('applyDefaultAttachmentsCompression', (global): ActionReturnType => {
+  const { defaultAttachmentCompression } = global.attachmentSettings;
+  const shouldCompress = defaultAttachmentCompression === 'compress';
 
   return {
     ...global,
     attachmentSettings: {
-      shouldCompress: shouldCompress ?? global.attachmentSettings.shouldCompress,
-      shouldSendGrouped: shouldSendGrouped ?? global.attachmentSettings.shouldSendGrouped,
-      isInvertedMedia,
-      webPageMediaSize,
+      ...global.attachmentSettings,
+      shouldCompress,
     },
   };
 });
@@ -540,6 +596,21 @@ addActionHandler('hideEffectInComposer', (global, actions, payload): ActionRetur
   return updateTabState(global, {
     shouldPlayEffectInComposer: undefined,
   }, tabId);
+});
+
+addActionHandler('setPaidMessageAutoApprove', (global): ActionReturnType => {
+  global = {
+    ...global,
+    settings: {
+      ...global.settings,
+      byKey: {
+        ...global.settings.byKey,
+        shouldPaidMessageAutoApprove: true,
+      },
+    },
+  };
+
+  return global;
 });
 
 addActionHandler('setReactionEffect', (global, actions, payload): ActionReturnType => {
@@ -723,15 +794,6 @@ addActionHandler('checkAppVersion', (global): ActionReturnType => {
     });
 });
 
-addActionHandler('setIsElectronUpdateAvailable', (global, action, payload): ActionReturnType => {
-  global = getGlobal();
-  global = {
-    ...global,
-    isElectronUpdateAvailable: Boolean(payload),
-  };
-  setGlobal(global);
-});
-
 addActionHandler('afterHangUp', (global): ActionReturnType => {
   if (!selectTabState(global, getCurrentTabId()).multitabNextAction) return;
   reestablishMasterToSelf();
@@ -769,18 +831,21 @@ addActionHandler('onTabFocusChange', (global, actions, payload): ActionReturnTyp
 
 addActionHandler('updatePageTitle', (global, actions, payload): ActionReturnType => {
   const { tabId = getCurrentTabId() } = payload || {};
-  const { canDisplayChatInTitle } = global.settings.byKey;
+  const { canDisplayChatInTitle } = selectSharedSettings(global);
   const currentUserId = global.currentUserId;
   const isTestServer = global.config?.isTestServer;
   const prefix = isTestServer ? '[T] ' : '';
 
+  const defaultTitle = IS_TAURI ? PAGE_TITLE_TAURI : PAGE_TITLE;
+
   if (document.title.includes(INACTIVE_MARKER)) {
     updateIcon(false);
-    setPageTitleInstant(`${prefix}${PAGE_TITLE} ${INACTIVE_MARKER}`);
+    setPageTitleInstant(`${prefix}${defaultTitle} ${INACTIVE_MARKER}`);
     return;
   }
 
-  if (global.initialUnreadNotifications && Math.round(Date.now() / 1000) % 2 === 0) {
+  // Show blinking title in browser tab
+  if (!IS_TAURI && global.initialUnreadNotifications && Math.round(Date.now() / 1000) % 2 === 0) {
     const notificationCount = getAllNotificationsCount();
 
     const newUnread = notificationCount - global.initialUnreadNotifications;
@@ -812,7 +877,7 @@ addActionHandler('updatePageTitle', (global, actions, payload): ActionReturnType
     }
   }
 
-  setPageTitleInstant(IS_ELECTRON ? '' : `${prefix}${PAGE_TITLE}`);
+  setPageTitleInstant(`${prefix}${defaultTitle}`);
 });
 
 addActionHandler('closeInviteViaLinkModal', (global, actions, payload): ActionReturnType => {
@@ -846,7 +911,7 @@ addActionHandler('processPremiumFloodWait', (global, actions, payload): ActionRe
     bandwidthPremiumDownloadSpeedup,
     bandwidthPremiumUploadSpeedup,
     bandwidthPremiumNotifyPeriod,
-  } = global.appConfig || {};
+  } = global.appConfig;
   const { lastPremiumBandwithNotificationDate: lastNotifiedAt } = global.settings;
 
   if (!bandwidthPremiumDownloadSpeedup || !bandwidthPremiumUploadSpeedup || !bandwidthPremiumNotifyPeriod) {
@@ -882,7 +947,6 @@ let prevBlurredTabsCount: number = 0;
 let onlineTimeout: number | undefined;
 const ONLINE_TIMEOUT = 100;
 addCallback((global: GlobalState) => {
-  // eslint-disable-next-line eslint-multitab-tt/no-getactions-in-actions
   const { updatePageTitle, updateIsOnline } = getActions();
 
   const isLockedUpdated = global.passcode.isScreenLocked !== prevIsScreenLocked;
@@ -899,7 +963,7 @@ addCallback((global: GlobalState) => {
     onlineTimeout = window.setTimeout(() => {
       global = getGlobal();
       const newBlurredTabsCount = Object.values(global.byTabId).filter((l) => l.isBlurred).length;
-      updateIsOnline(newBlurredTabsCount !== getAllMultitabTokens().length);
+      updateIsOnline({ isOnline: newBlurredTabsCount !== getAllMultitabTokens().length });
     }, ONLINE_TIMEOUT);
   }
 

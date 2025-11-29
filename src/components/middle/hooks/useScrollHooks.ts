@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { ElementRef } from '../../../lib/teact/teact';
 import { useEffect, useMemo, useRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
@@ -7,8 +7,8 @@ import type { Signal } from '../../../util/signals';
 import { LoadMoreDirection } from '../../../types';
 
 import { requestMeasure } from '../../../lib/fasterdom/fasterdom';
+import { MESSAGE_LIST_SENSITIVE_AREA } from '../../../util/browser/windowEnvironment';
 import { debounce } from '../../../util/schedulers';
-import { MESSAGE_LIST_SENSITIVE_AREA } from '../../../util/windowEnvironment';
 
 import { useDebouncedSignal } from '../../../hooks/useAsyncResolvers';
 import { useIntersectionObserver, useOnIntersect } from '../../../hooks/useIntersectionObserver';
@@ -21,17 +21,27 @@ const NOTCH_THRESHOLD = 1; // Notch has zero height so we at least need a 1px ma
 const CONTAINER_HEIGHT_DEBOUNCE = 200;
 const TOOLS_FREEZE_TIMEOUT = 350; // Approximate message sending animation duration
 
-export default function useScrollHooks(
-  type: MessageListType,
-  containerRef: RefObject<HTMLDivElement>,
-  messageIds: number[],
-  getContainerHeight: Signal<number | undefined>,
-  isViewportNewest: boolean,
-  isUnread: boolean,
-  onScrollDownToggle: BooleanToVoidFunction,
-  onNotchToggle: BooleanToVoidFunction,
-  isReady: boolean,
-) {
+export default function useScrollHooks({
+  type,
+  containerRef,
+  messageIds,
+  getContainerHeight,
+  isViewportNewest,
+  isUnread,
+  isReady,
+  onScrollDownToggle,
+  onNotchToggle,
+}: {
+  type: MessageListType;
+  containerRef: ElementRef<HTMLDivElement>;
+  messageIds: number[];
+  getContainerHeight: Signal<number | undefined>;
+  isViewportNewest: boolean;
+  isUnread: boolean;
+  isReady: boolean;
+  onScrollDownToggle: BooleanToVoidFunction | undefined;
+  onNotchToggle: AnyToVoidFunction | undefined;
+}) {
   const { loadViewportMessages } = getActions();
 
   const [loadMoreBackwards, loadMoreForwards] = useMemo(
@@ -43,25 +53,24 @@ export default function useScrollHooks(
     [loadViewportMessages, messageIds],
   );
 
-  // eslint-disable-next-line no-null/no-null
-  const backwardsTriggerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const forwardsTriggerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const fabTriggerRef = useRef<HTMLDivElement>(null);
+  const backwardsTriggerRef = useRef<HTMLDivElement>();
+  const forwardsTriggerRef = useRef<HTMLDivElement>();
+  const fabTriggerRef = useRef<HTMLDivElement>();
 
   const toggleScrollTools = useLastCallback(() => {
     if (!isReady) return;
 
     if (!messageIds?.length) {
-      onScrollDownToggle(false);
-      onNotchToggle(false);
+      onScrollDownToggle?.(false);
+      onNotchToggle?.(false);
+
       return;
     }
 
     if (!isViewportNewest) {
-      onScrollDownToggle(true);
-      onNotchToggle(true);
+      onScrollDownToggle?.(true);
+      onNotchToggle?.(true);
+
       return;
     }
 
@@ -77,8 +86,8 @@ export default function useScrollHooks(
 
     if (scrollHeight === 0) return;
 
-    onScrollDownToggle(isUnread ? !isAtBottom : !isNearBottom);
-    onNotchToggle(!isAtBottom);
+    onScrollDownToggle?.(isUnread ? !isAtBottom : !isNearBottom);
+    onNotchToggle?.(!isAtBottom);
   });
 
   const {
@@ -137,7 +146,18 @@ export default function useScrollHooks(
     if (isReady) {
       toggleScrollTools();
     }
-  }, [isReady, toggleScrollTools]);
+  }, [isReady]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener('scrollend', toggleScrollTools);
+
+    return () => {
+      container.removeEventListener('scrollend', toggleScrollTools);
+    };
+  }, [containerRef]);
 
   const freezeShortly = useLastCallback(() => {
     freezeForFab();

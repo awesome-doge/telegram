@@ -1,5 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useEffect, useMemo, useRef,
   useState,
 } from '../../lib/teact/teact';
@@ -20,6 +21,7 @@ import { formatIntegerCompact } from '../../util/textFormat';
 
 import useFlag from '../../hooks/useFlag';
 import useInfiniteScroll from '../../hooks/useInfiniteScroll';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 
@@ -67,7 +69,8 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
   const chatsById = getGlobal().chats.byId;
   const usersById = getGlobal().users.byId;
 
-  const lang = useOldLang();
+  const oldLang = useOldLang();
+  const lang = useLang();
   const [isClosing, startClosing, stopClosing] = useFlag(false);
   const [chosenTab, setChosenTab] = useState<ApiReaction | undefined>(undefined);
   const canShowFilters = reactors && reactions && reactors.count >= MIN_REACTIONS_COUNT_FOR_FILTERS
@@ -143,7 +146,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
       isOpen={isOpen && !isClosing}
       onClose={handleClose}
       className="ReactorListModal narrow"
-      title={lang('Reactions')}
+      title={oldLang('Reactions')}
       onCloseAnimationEnd={handleCloseAnimationEnd}
     >
       {canShowFilters && (
@@ -152,11 +155,10 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
             className={buildClassName(!chosenTab && 'chosen')}
             size="tiny"
             ripple
-            // eslint-disable-next-line react/jsx-no-bind
+            iconName="heart"
             onClick={() => setChosenTab(undefined)}
           >
-            <Icon name="heart" />
-            {Boolean(reactors?.count) && formatIntegerCompact(reactors.count)}
+            {Boolean(reactors?.count) && formatIntegerCompact(lang, reactors.count)}
           </Button>
           {allReactions.map((reaction) => {
             const count = reactions?.results
@@ -167,7 +169,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
                 className={buildClassName(isSameReaction(chosenTab, reaction) && 'chosen')}
                 size="tiny"
                 ripple
-                // eslint-disable-next-line react/jsx-no-bind
+
                 onClick={() => setChosenTab(reaction)}
               >
                 <ReactionStaticEmoji
@@ -175,7 +177,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
                   className="reaction-filter-emoji"
                   availableReactions={availableReactions}
                 />
-                {Boolean(count) && formatIntegerCompact(count)}
+                {Boolean(count) && formatIntegerCompact(lang, count)}
               </Button>
             );
           })}
@@ -204,7 +206,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
                     <ListItem
                       key={`${peerId}-${getReactionKey(r.reaction)}`}
                       className="chat-item-clickable reactors-list-item"
-                      // eslint-disable-next-line react/jsx-no-bind
+
                       onClick={() => handleClick(peerId)}
                     >
                       <Avatar peer={peer} size="medium" />
@@ -212,7 +214,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
                         <FullNameTitle peer={peer} withEmojiStatus />
                         <span className="status" dir="auto">
                           <Icon name="heart-outline" className="status-icon" />
-                          {formatDateAtTime(lang, r.addedDate * 1000)}
+                          {formatDateAtTime(oldLang, r.addedDate * 1000)}
                         </span>
                       </div>
                       {r.reaction && (
@@ -231,14 +233,14 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
                     <ListItem
                       key={`${peerId}-seen-by`}
                       className="chat-item-clickable scroll-item small-icon"
-                      // eslint-disable-next-line react/jsx-no-bind
+
                       onClick={() => handleClick(peerId)}
                     >
                       <PrivateChatInfo
                         userId={peerId}
                         noStatusOrTyping
                         avatarSize="medium"
-                        status={seenByUser ? formatDateAtTime(lang, seenByUser * 1000) : undefined}
+                        status={seenByUser ? formatDateAtTime(oldLang, seenByUser * 1000) : undefined}
                         statusIcon="message-read"
                       />
                     </ListItem>,
@@ -255,14 +257,14 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
         isText
         onClick={handleClose}
       >
-        {lang('Close')}
+        {oldLang('Close')}
       </Button>
     </Modal>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { chatId, messageId } = selectTabState(global).reactorModal || {};
     const message = chatId && messageId ? selectChatMessage(global, chatId, messageId) : undefined;
 

@@ -1,23 +1,17 @@
-import React, {
-  memo, useMemo, useRef, useState,
-} from '../../../lib/teact/teact';
+import { memo, useMemo, useRef, useState } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiBoost, ApiBoostStatistics, ApiTypePrepaidGiveaway } from '../../../api/types';
 import type { TabState } from '../../../global/types';
-import type { CustomPeer } from '../../../types';
+import type { AnimationLevel, CustomPeer } from '../../../types';
 
-import {
-  GIVEAWAY_BOOST_PER_PREMIUM,
-} from '../../../config';
+import { GIVEAWAY_BOOST_PER_PREMIUM } from '../../../config';
 import { isChatChannel } from '../../../global/helpers';
-import {
-  selectChat,
-  selectIsGiveawayGiftsPurchaseAvailable,
-  selectTabState,
-} from '../../../global/selectors';
+import { selectChat, selectIsGiveawayGiftsPurchaseAvailable, selectTabState } from '../../../global/selectors';
+import { selectSharedSettings } from '../../../global/selectors/sharedState.ts';
 import buildClassName from '../../../util/buildClassName';
 import { formatDateAtTime } from '../../../util/dates/dateFormat';
+import { resolveTransitionName } from '../../../util/resolveTransitionName.ts';
 import { formatInteger } from '../../../util/textFormat';
 import { getBoostProgressInfo } from '../../common/helpers/boostInfo';
 
@@ -48,9 +42,10 @@ type StateProps = {
   chatId: string;
   giveawayBoostsPerPremium?: number;
   isChannel?: boolean;
+  animationLevel: AnimationLevel;
 };
 
-const GIVEAWAY_IMG_LIST: { [key: number]: string } = {
+const GIVEAWAY_IMG_LIST: Partial<Record<number, string>> = {
   3: GiftGreenRound,
   6: GiftBlueRound,
   12: GiftRedRound,
@@ -75,13 +70,13 @@ const BoostStatistics = ({
   chatId,
   giveawayBoostsPerPremium,
   isChannel,
+  animationLevel,
 }: StateProps) => {
   const {
     openChat, loadMoreBoosters, closeBoostStatistics, openGiveawayModal, showNotification,
   } = getActions();
   const lang = useOldLang();
-  // eslint-disable-next-line no-null/no-null
-  const transitionRef = useRef<HTMLDivElement>(null);
+  const transitionRef = useRef<HTMLDivElement>();
 
   const isLoaded = boostStatistics?.boostStatus;
   const status = isLoaded ? boostStatistics.boostStatus : undefined;
@@ -190,8 +185,9 @@ const BoostStatistics = ({
           styles.floatingBadgeButton)}
         >
           <Icon name="gift" className={styles.floatingBadgeIcon} />
-          <div className={styles.floatingBadgeValue}>{lang(boost.isFromGiveaway
-            ? 'BoostingGiveaway' : 'BoostingGift')}
+          <div className={styles.floatingBadgeValue}>
+            {lang(boost.isFromGiveaway
+              ? 'BoostingGiveaway' : 'BoostingGift')}
           </div>
         </div>
       </div>
@@ -226,8 +222,7 @@ const BoostStatistics = ({
 
     return (
       <ListItem
-        className="chat-item-clickable"
-        // eslint-disable-next-line react/jsx-no-bind
+        className={buildClassName(styles.boostInfo, 'chat-item-clickable')}
         onClick={() => handleBoosterClick(boost.userId)}
       >
         <PrivateChatInfo
@@ -279,14 +274,14 @@ const BoostStatistics = ({
   }
 
   return (
-    <div className={buildClassName(styles.root, 'custom-scroll')}>
+    <div className={buildClassName(styles.root, 'panel-content custom-scroll')}>
       {!isLoaded && <Loading />}
       {isLoaded && statsOverview && (
         <>
           <div className={styles.section}>
             <PremiumProgress
-              leftText={lang('BoostsLevel', currentLevel!)}
-              rightText={hasNextLevel ? lang('BoostsLevel', currentLevel! + 1) : undefined}
+              leftText={lang('BoostsLevel', currentLevel)}
+              rightText={hasNextLevel ? lang('BoostsLevel', currentLevel + 1) : undefined}
               progress={levelProgress}
               floatingBadgeText={formatInteger(boosts)}
               floatingBadgeIcon="boost"
@@ -305,7 +300,7 @@ const BoostStatistics = ({
                   <ListItem
                     key={prepaidGiveaway.id}
                     className="chat-item-clickable"
-                    // eslint-disable-next-line react/jsx-no-bind
+
                     onClick={() => launchPrepaidGiveawayHandler(prepaidGiveaway)}
                   >
                     <div className={buildClassName(styles.status, 'status-clickable')}>
@@ -319,7 +314,7 @@ const BoostStatistics = ({
                             />
                           ) : (
                             <img
-                              src={GIVEAWAY_IMG_LIST[prepaidGiveaway.months]}
+                              src={GIVEAWAY_IMG_LIST[prepaidGiveaway.months] || GIVEAWAY_IMG_LIST[3]}
                               className={styles.giveawayIcon}
                               alt={lang('Giveaway')}
                             />
@@ -331,10 +326,11 @@ const BoostStatistics = ({
                             ? lang('Giveaway.Stars.Prepaid.Title', prepaidGiveaway.stars)
                             : lang('BoostingTelegramPremiumCountPlural', prepaidGiveaway.quantity)}
                         </h3>
-                        <p className={styles.month}>{
-                          isStarsGiveaway ? lang('Giveaway.Stars.Prepaid.Desc', prepaidGiveaway.quantity)
-                            : lang('PrepaidGiveawayMonths', prepaidGiveaway.months)
-                        }
+                        <p className={styles.month}>
+                          {
+                            isStarsGiveaway ? lang('Giveaway.Stars.Prepaid.Desc', prepaidGiveaway.quantity)
+                              : lang('PrepaidGiveawayMonths', prepaidGiveaway.months)
+                          }
                         </p>
                       </div>
                       <div className={styles.quantity}>
@@ -363,7 +359,7 @@ const BoostStatistics = ({
               >
                 <Transition
                   ref={transitionRef}
-                  name={lang.isRtl ? 'slideOptimizedRtl' : 'slideOptimized'}
+                  name={resolveTransitionName('slideOptimized', animationLevel, undefined, lang.isRtl)}
                   activeKey={activeKey}
                   renderCount={tabs.length}
                   shouldRestoreHeight
@@ -378,7 +374,8 @@ const BoostStatistics = ({
                   {lang('BoostingBoostsCount', boostStatistics?.boosts?.count)}
                 </h4>
                 {!boostStatistics?.boosts?.list?.length && (
-                  <div className={styles.noResults}>{lang(isChannel ? 'NoBoostersHint' : 'NoBoostersGroupHint')}
+                  <div className={styles.noResults}>
+                    {lang(isChannel ? 'NoBoostersHint' : 'NoBoostersGroupHint')}
                   </div>
                 )}
                 {boostStatistics?.boosts?.list?.map((boost) => renderBoostList(boost))}
@@ -411,9 +408,10 @@ const BoostStatistics = ({
               >
                 {lang('BoostingGetBoostsViaGifts')}
               </ListItem>
-              <p className="text-muted hint" key="links-hint">{lang(
-                isChannel ? 'BoostingGetMoreBoosts' : 'BoostingGetMoreBoostsGroup',
-              )}
+              <p className="text-muted hint" key="links-hint">
+                {lang(
+                  isChannel ? 'BoostingGetMoreBoosts' : 'BoostingGetMoreBoostsGroup',
+                )}
               </p>
             </div>
           )}
@@ -424,14 +422,15 @@ const BoostStatistics = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const tabState = selectTabState(global);
     const boostStatistics = tabState.boostStatistics;
     const isGiveawayAvailable = selectIsGiveawayGiftsPurchaseAvailable(global);
     const chatId = boostStatistics && boostStatistics.chatId;
     const chat = chatId ? selectChat(global, chatId) : undefined;
     const isChannel = chat && isChatChannel(chat);
-    const giveawayBoostsPerPremium = global.appConfig?.giveawayBoostsPerPremium;
+    const giveawayBoostsPerPremium = global.appConfig.giveawayBoostsPerPremium;
+    const { animationLevel } = selectSharedSettings(global);
 
     return {
       boostStatistics,
@@ -439,6 +438,7 @@ export default memo(withGlobal(
       chatId: chatId!,
       giveawayBoostsPerPremium,
       isChannel,
+      animationLevel,
     };
   },
 )(BoostStatistics));

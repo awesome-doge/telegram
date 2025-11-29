@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from '../../../lib/teact/teact';
+import type React from '../../../lib/teact/teact';
+import { memo, useEffect, useRef, useState } from '../../../lib/teact/teact';
+import { getActions, withGlobal } from '../../../global';
 
 import type { ApiMediaExtendedPreview, ApiPhoto } from '../../../api/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
-import type { ISettings } from '../../../types';
+import type { ThemeKey } from '../../../types';
 import type { IMediaDimensions } from './helpers/calculateAlbumLayout';
 
 import { CUSTOM_APPENDIX_ATTRIBUTE, MESSAGE_CONTENT_SELECTOR } from '../../../config';
@@ -21,12 +23,14 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useLayoutEffectWithPrevDeps from '../../../hooks/useLayoutEffectWithPrevDeps';
 import useMediaTransition from '../../../hooks/useMediaTransition';
 import useMediaWithLoadProgress from '../../../hooks/useMediaWithLoadProgress';
+import usePrevious from '../../../hooks/usePrevious';
 import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
 import useShowTransition from '../../../hooks/useShowTransition';
 import useBlurredMediaThumbRef from './hooks/useBlurredMediaThumbRef';
 
 import Icon from '../../common/icons/Icon';
 import MediaSpoiler from '../../common/MediaSpoiler';
+import SensitiveContentConfirmModal from '../../common/SensitiveContentConfirmModal';
 import ProgressSpinner from '../../ui/ProgressSpinner';
 
 export type OwnProps<T> = {
@@ -35,7 +39,6 @@ export type OwnProps<T> = {
   isInWebPage?: boolean;
   messageText?: string;
   isOwn?: boolean;
-  observeIntersection?: ObserveFn;
   noAvatars?: boolean;
   canAutoLoad?: boolean;
   isInSelectMode?: boolean;
@@ -49,20 +52,24 @@ export type OwnProps<T> = {
   nonInteractive?: boolean;
   isDownloading?: boolean;
   isProtected?: boolean;
-  theme: ISettings['theme'];
+  theme: ThemeKey;
   className?: string;
   clickArg?: T;
+  isMediaNsfw?: boolean;
+  observeIntersection?: ObserveFn;
   onClick?: (arg: T, e: React.MouseEvent<HTMLElement>) => void;
   onCancelUpload?: (arg: T) => void;
 };
 
-// eslint-disable-next-line @typescript-eslint/comma-dangle
+type StateProps = {
+  needsAgeVerification?: boolean;
+};
+
 const Photo = <T,>({
   id,
   photo,
   messageText,
   isOwn,
-  observeIntersection,
   noAvatars,
   canAutoLoad,
   isInSelectMode,
@@ -80,11 +87,13 @@ const Photo = <T,>({
   isInWebPage,
   clickArg,
   className,
+  isMediaNsfw,
+  observeIntersection,
   onClick,
   onCancelUpload,
-}: OwnProps<T>) => {
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  needsAgeVerification,
+}: OwnProps<T> & StateProps) => {
+  const ref = useRef<HTMLDivElement>();
   const isPaidPreview = photo.mediaType === 'extendedMediaPreview';
 
   const localBlobUrl = !isPaidPreview ? photo.blobUrl : undefined;
@@ -97,25 +106,45 @@ const Photo = <T,>({
   const {
     mediaData, loadProgress,
   } = useMediaWithLoadProgress(!isPaidPreview ? getPhotoMediaHash(photo, size) : undefined, !shouldLoad);
+  const prevMediaData = usePrevious(mediaData);
   const fullMediaData = localBlobUrl || mediaData;
+
+  const { ref: fullMediaRef, shouldRender: shouldRenderFullMedia } = useMediaTransition<HTMLImageElement>({
+    hasMediaData: Boolean(fullMediaData),
+    withShouldRender: true,
+  });
 
   const withBlurredBackground = Boolean(forcedWidth);
   const [withThumb] = useState(!fullMediaData);
   const noThumb = Boolean(fullMediaData);
   const thumbRef = useBlurredMediaThumbRef(photo, noThumb);
-  useMediaTransition(!noThumb, { ref: thumbRef });
+  useMediaTransition({ ref: thumbRef, hasMediaData: !noThumb });
   const blurredBackgroundRef = useBlurredMediaThumbRef(photo, !withBlurredBackground);
   const thumbDataUri = getMediaThumbUri(photo);
 
-  const [isSpoilerShown, showSpoiler, hideSpoiler] = useFlag(isPaidPreview || photo.isSpoiler);
+  const { updateContentSettings, openAgeVerificationModal } = getActions();
+  const [isNsfwModalOpen, openNsfwModal, closeNsfwModal] = useFlag();
+  const [shouldAlwaysShowNsfw, setShouldAlwaysShowNsfw] = useState(false);
+
+  const shouldShowSpoiler = isPaidPreview || photo.isSpoiler || isMediaNsfw;
+  const [isSpoilerShown, showSpoiler, hideSpoiler] = useFlag(shouldShowSpoiler);
 
   useEffect(() => {
-    if (isPaidPreview || photo.isSpoiler) {
+    if (shouldShowSpoiler) {
       showSpoiler();
     } else {
       hideSpoiler();
     }
-  }, [isPaidPreview, photo]);
+  }, [shouldShowSpoiler]);
+
+  const handleNsfwConfirm = useLastCallback(() => {
+    closeNsfwModal();
+    hideSpoiler();
+
+    if (shouldAlwaysShowNsfw) {
+      updateContentSettings({ isSensitiveEnabled: true });
+    }
+  });
 
   const {
     loadProgress: downloadProgress,
@@ -150,6 +179,14 @@ const Photo = <T,>({
     isOpen: !fullMediaData && !isLoadAllowed,
     withShouldRender: true,
   });
+  const {
+    ref: transferProgressRef,
+    shouldRender: shouldRenderTransferProgress,
+  } = useShowTransition({
+    isOpen: isTransferring,
+    noMountTransition: wasLoadDisabled,
+    withShouldRender: true,
+  });
 
   const handleClick = useLastCallback((e: React.MouseEvent<HTMLElement>) => {
     if (isUploading) {
@@ -163,6 +200,14 @@ const Photo = <T,>({
     }
 
     if (isSpoilerShown) {
+      if (isMediaNsfw) {
+        if (needsAgeVerification) {
+          openAgeVerificationModal();
+          return;
+        }
+        openNsfwModal();
+        return;
+      }
       hideSpoiler();
       return;
     }
@@ -225,9 +270,10 @@ const Photo = <T,>({
       {withBlurredBackground && (
         <canvas ref={blurredBackgroundRef} className="thumbnail blurred-bg" />
       )}
-      {fullMediaData && (
+      {shouldRenderFullMedia && (
         <img
-          src={fullMediaData}
+          ref={fullMediaRef}
+          src={fullMediaData || prevMediaData}
           className={buildClassName('full-media', withBlurredBackground && 'with-blurred-bg')}
           alt=""
           style={forcedWidth ? `width: ${forcedWidth}px` : undefined}
@@ -251,12 +297,29 @@ const Photo = <T,>({
         width={width}
         height={height}
         className="media-spoiler"
+        isNsfw={isMediaNsfw}
       />
-      {isTransferring && (
-        <span className="message-transfer-progress">{Math.round(transferProgress * 100)}%</span>
+      {shouldRenderTransferProgress && (
+        <span ref={transferProgressRef} className="message-transfer-progress">
+          {`${Math.round(transferProgress * 100)}%`}
+        </span>
       )}
+      <SensitiveContentConfirmModal
+        isOpen={isNsfwModalOpen}
+        onClose={closeNsfwModal}
+        shouldAlwaysShow={shouldAlwaysShowNsfw}
+        onAlwaysShowChanged={setShouldAlwaysShowNsfw}
+        confirmHandler={handleNsfwConfirm}
+      />
     </div>
   );
 };
 
-export default Photo;
+export default memo(withGlobal((global): Complete<StateProps> => {
+  const appConfig = global.appConfig;
+  const needsAgeVerification = appConfig.needAgeVideoVerification;
+
+  return {
+    needsAgeVerification,
+  };
+})(Photo));

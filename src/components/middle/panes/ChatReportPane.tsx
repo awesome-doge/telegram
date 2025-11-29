@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useEffect, useState } from '../../../lib/teact/teact';
+import { memo, useEffect, useState } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiPeer } from '../../../api/types';
@@ -17,7 +17,6 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 import useHeaderPane, { type PaneState } from '../hooks/useHeaderPane';
 
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import Checkbox from '../../ui/Checkbox';
 import ConfirmDialog from '../../ui/ConfirmDialog';
@@ -59,7 +58,7 @@ const ChatReportPane: FC<OwnProps & StateProps> = ({
     deleteChatUser,
     deleteHistory,
     toggleChatArchived,
-    hideChatReportPane,
+    hidePeerSettingsBar,
   } = getActions();
 
   const lang = useOldLang();
@@ -96,7 +95,7 @@ const ChatReportPane: FC<OwnProps & StateProps> = ({
   });
 
   const handleCloseReportPane = useLastCallback(() => {
-    hideChatReportPane({ chatId });
+    hidePeerSettingsBar({ peerId: chatId });
   });
 
   const handleChatReportSpam = useLastCallback(() => {
@@ -175,9 +174,8 @@ const ChatReportPane: FC<OwnProps & StateProps> = ({
         color="translucent"
         onClick={handleCloseReportPane}
         ariaLabel={lang('Close')}
-      >
-        <Icon name="close" />
-      </Button>
+        iconName="close"
+      />
       <ConfirmDialog
         isOpen={isBlockUserModalOpen}
         onClose={closeBlockUserModal}
@@ -211,7 +209,7 @@ const ChatReportPane: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => ({
+  (global, { chatId }): Complete<StateProps> => ({
     currentUserId: global.currentUserId,
     peer: selectPeer(global, chatId),
   }),

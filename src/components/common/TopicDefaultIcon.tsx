@@ -1,5 +1,7 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
+
+import type { ThreadId } from '../../types';
 
 import { GENERAL_TOPIC_ID } from '../../config';
 import buildClassName from '../../util/buildClassName';
@@ -14,7 +16,7 @@ import styles from './TopicDefaultIcon.module.scss';
 type OwnProps = {
   className?: string;
   letterClassName?: string;
-  topicId: number;
+  topicId: ThreadId;
   iconColor?: number;
   title: string;
   onClick?: NoneToVoidFunction;

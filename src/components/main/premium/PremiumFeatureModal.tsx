@@ -1,5 +1,6 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { toggleExtraClass } from '../../../lib/teact/teact-dom';
@@ -11,6 +12,7 @@ import type {
   ApiPremiumSubscriptionOption,
 } from '../../../api/types';
 import type { GlobalState } from '../../../global/types';
+import type { LangPair } from '../../../types/language';
 
 import { PREMIUM_BOTTOM_VIDEOS, PREMIUM_FEATURE_SECTIONS, PREMIUM_LIMITS_ORDER } from '../../../config';
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
@@ -20,11 +22,11 @@ import { formatCurrency } from '../../../util/formatCurrency';
 import renderText from '../../common/helpers/renderText';
 
 import useFlag from '../../../hooks/useFlag';
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
 
-import Icon from '../../common/icons/Icon';
 import SliderDots from '../../common/SliderDots';
 import Button from '../../ui/Button';
 import PremiumLimitPreview from './common/PremiumLimitPreview';
@@ -53,6 +55,7 @@ export const PREMIUM_FEATURE_TITLES: Record<ApiPremiumSection, string> = {
   last_seen: 'PremiumPreviewLastSeen',
   message_privacy: 'PremiumPreviewMessagePrivacy',
   effects: 'Premium.MessageEffects',
+  todo: 'PremiumPreviewTodo',
 };
 
 export const PREMIUM_FEATURE_DESCRIPTIONS: Record<ApiPremiumSection, string> = {
@@ -74,6 +77,7 @@ export const PREMIUM_FEATURE_DESCRIPTIONS: Record<ApiPremiumSection, string> = {
   last_seen: 'PremiumPreviewLastSeenDescription',
   message_privacy: 'PremiumPreviewMessagePrivacyDescription',
   effects: 'Premium.MessageEffectsInfo',
+  todo: 'PremiumPreviewTodoDescription',
 };
 
 const LIMITS_TITLES: Record<ApiLimitTypeForPromo, string> = {
@@ -87,6 +91,7 @@ const LIMITS_TITLES: Record<ApiLimitTypeForPromo, string> = {
   dialogFilters: 'FoldersLimitTitle',
   dialogFiltersChats: 'ChatPerFolderLimitTitle',
   recommendedChannels: 'SimilarChannelsLimitTitle',
+  moreAccounts: 'ConnectedAccountsLimitTitle',
 };
 
 const LIMITS_DESCRIPTIONS: Record<ApiLimitTypeForPromo, string> = {
@@ -100,6 +105,7 @@ const LIMITS_DESCRIPTIONS: Record<ApiLimitTypeForPromo, string> = {
   dialogFilters: 'FoldersLimitSubtitle',
   dialogFiltersChats: 'ChatPerFolderLimitSubtitle',
   recommendedChannels: 'SimilarChannelsLimitSubtitle',
+  moreAccounts: 'ConnectedAccountsLimitSubtitle',
 };
 
 const BORDER_THRESHOLD = 20;
@@ -125,9 +131,9 @@ const PremiumFeatureModal: FC<OwnProps> = ({
   onBack,
   onClickSubscribe,
 }) => {
-  const lang = useOldLang();
-  // eslint-disable-next-line no-null/no-null
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const oldLang = useOldLang();
+  const lang = useLang();
+  const scrollContainerRef = useRef<HTMLDivElement>();
   const [currentSlideIndex, setCurrentSlideIndex] = useState(PREMIUM_FEATURE_SECTIONS.indexOf(initialSection));
   const [reverseAnimationSlideIndex, setReverseAnimationSlideIndex] = useState(0);
   const [isScrolling, startScrolling, stopScrolling] = useFlag();
@@ -148,7 +154,9 @@ const PremiumFeatureModal: FC<OwnProps> = ({
     const { amount, months, currency } = subscriptionOption;
     const perMonthPrice = Math.floor(amount / months);
 
-    return isPremium ? lang('OK') : lang('SubscribeToPremium', formatCurrency(perMonthPrice, currency, lang.code));
+    return isPremium
+      ? lang('OK')
+      : lang('SubscribeToPremium', { price: formatCurrency(lang, perMonthPrice, currency) }, { withNodes: true });
   }, [isPremium, lang, subscriptionOption]);
 
   const handleClick = useLastCallback(() => {
@@ -212,18 +220,20 @@ const PremiumFeatureModal: FC<OwnProps> = ({
     stopScrolling();
   });
 
+  const currentSection = filteredSections[currentSlideIndex];
+  const hasHeaderBackdrop = currentSection !== 'double_limits' && currentSection !== 'stories';
+
   return (
     <div className={styles.root}>
       <Button
         round
         size="smaller"
-        className={buildClassName(styles.backButton, currentSlideIndex !== 0 && styles.whiteBackButton)}
-        color={currentSlideIndex === 0 ? 'translucent' : 'translucent-white'}
+        className={buildClassName(styles.backButton, hasHeaderBackdrop && styles.whiteBackButton)}
+        color={hasHeaderBackdrop ? 'translucent-white' : 'translucent'}
         onClick={onBack}
-        ariaLabel={lang('Back')}
-      >
-        <Icon name="arrow-left" />
-      </Button>
+        ariaLabel={oldLang('Back')}
+        iconName="arrow-left"
+      />
 
       <div className={styles.preview} />
 
@@ -234,7 +244,7 @@ const PremiumFeatureModal: FC<OwnProps> = ({
             return (
               <div className={buildClassName(styles.slide, styles.limits)}>
                 <h2 className={buildClassName(styles.header, isScrolledToTop && styles.noHeaderBorder)}>
-                  {lang(PREMIUM_FEATURE_TITLES.double_limits)}
+                  {oldLang(PREMIUM_FEATURE_TITLES.double_limits)}
                 </h2>
                 <div className={buildClassName(styles.limitsContent, 'custom-scroll')} onScroll={handleLimitsScroll}>
                   {PREMIUM_LIMITS_ORDER.map((limit, i) => {
@@ -242,8 +252,8 @@ const PremiumFeatureModal: FC<OwnProps> = ({
                     const premiumLimit = limits?.[limit][1].toString();
                     return (
                       <PremiumLimitPreview
-                        title={lang(LIMITS_TITLES[limit])}
-                        description={lang(LIMITS_DESCRIPTIONS[limit], premiumLimit)}
+                        title={oldLang(LIMITS_TITLES[limit])}
+                        description={oldLang(LIMITS_DESCRIPTIONS[limit], premiumLimit)}
                         leftValue={defaultLimit}
                         rightValue={premiumLimit}
                         colorStepProgress={i / (PREMIUM_LIMITS_ORDER.length - 1)}
@@ -262,10 +272,10 @@ const PremiumFeatureModal: FC<OwnProps> = ({
                   <PremiumFeaturePreviewStickers isActive={currentSlideIndex === index} />
                 </div>
                 <h1 className={styles.title}>
-                  {lang(PREMIUM_FEATURE_TITLES.premium_stickers)}
+                  {oldLang(PREMIUM_FEATURE_TITLES.premium_stickers)}
                 </h1>
                 <div className={styles.description}>
-                  {renderText(lang(PREMIUM_FEATURE_DESCRIPTIONS.premium_stickers), ['br'])}
+                  {renderText(oldLang(PREMIUM_FEATURE_DESCRIPTIONS.premium_stickers), ['br'])}
                 </div>
               </div>
             );
@@ -281,6 +291,7 @@ const PremiumFeatureModal: FC<OwnProps> = ({
 
           const i = promo.videoSections.indexOf(section);
           if (i === -1) return undefined;
+          const shouldUseNewLang = promo.videoSections[i] === 'todo';
           return (
             <div className={styles.slide}>
               <div className={styles.frame}>
@@ -294,10 +305,23 @@ const PremiumFeatureModal: FC<OwnProps> = ({
                 />
               </div>
               <h1 className={styles.title}>
-                {lang(PREMIUM_FEATURE_TITLES[promo.videoSections[i]!])}
+                {shouldUseNewLang
+                  ? lang(
+                    PREMIUM_FEATURE_TITLES[promo.videoSections[i]] as keyof LangPair,
+                    undefined,
+                    { withNodes: true, renderTextFilters: ['br'] },
+                  )
+                  : oldLang(PREMIUM_FEATURE_TITLES[promo.videoSections[i]])}
               </h1>
               <div className={styles.description}>
-                {renderText(lang(PREMIUM_FEATURE_DESCRIPTIONS[promo.videoSections[i]!]), ['br'])}
+                {renderText(shouldUseNewLang
+                  ? lang(
+                    PREMIUM_FEATURE_DESCRIPTIONS[promo.videoSections[i]] as keyof LangPair,
+                    undefined,
+                    { withNodes: true, renderTextFilters: ['br'] },
+                  )
+                  : oldLang(PREMIUM_FEATURE_DESCRIPTIONS[promo.videoSections[i]]), ['br'],
+                )}
               </div>
             </div>
           );
@@ -316,7 +340,7 @@ const PremiumFeatureModal: FC<OwnProps> = ({
           active={currentSlideIndex}
           onSelectSlide={handleSelectSlide}
         />
-        {subscriptionButtonText && (
+        {Boolean(subscriptionButtonText) && (
           <Button
             className={buildClassName(styles.button)}
             isShiny={!isPremium}

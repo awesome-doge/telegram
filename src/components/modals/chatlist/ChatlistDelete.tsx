@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../../lib/teact/teact';
+import { memo, useCallback, useState } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiChatFolder } from '../../../api/types';
@@ -76,7 +76,6 @@ const ChatlistDelete: FC<OwnProps> = ({
         </>
       )}
       <Button
-        size="smaller"
         onClick={handleButtonClick}
       >
         <div className={styles.buttonText}>

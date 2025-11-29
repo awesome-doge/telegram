@@ -1,11 +1,12 @@
 import type {
+  ApiFormattedText,
   ApiMessage, ApiPoll, ApiPollResult, ApiQuickReply, ApiSponsoredMessage, ApiThreadInfo,
+  ApiWebPage,
+  ApiWebPageFull,
 } from '../../api/types';
 import type {
-  FocusDirection,
   MessageList,
   MessageListType,
-  ScrollTargetPosition,
   TabThread,
   Thread,
   ThreadId,
@@ -19,9 +20,10 @@ import {
   IS_MOCKED_CLIENT, IS_TEST, MESSAGE_LIST_SLICE, MESSAGE_LIST_VIEWPORT_LIMIT, TMP_CHAT_ID,
 } from '../../config';
 import { areDeepEqual } from '../../util/areDeepEqual';
+import { addTimestampEntities } from '../../util/dates/timestamp';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
 import {
-  areSortedArraysEqual, excludeSortedArray, omit, pick, pickTruthy, unique,
+  areSortedArraysEqual, excludeSortedArray, omit, omitUndefined, pick, pickTruthy, unique,
 } from '../../util/iteratees';
 import { isLocalMessageId, type MessageKey } from '../../util/keys/messageKey';
 import {
@@ -45,7 +47,9 @@ import {
   selectTabState,
   selectThreadIdFromMessage,
   selectThreadInfo,
+  selectThreadParam,
   selectViewportIds,
+  selectWebPage,
 } from '../selectors';
 import { removeIdFromSearchResults } from './middleSearch';
 import { updateTabState } from './tabs';
@@ -253,31 +257,37 @@ export function updateChatMessage<T extends GlobalState>(
   if (message && messageUpdate.isMediaUnread === false && hasMessageTtl(message)) {
     if (message.content.voice) {
       messageUpdate.content = {
-        ...messageUpdate.content,
-        voice: undefined,
-        isExpiredVoice: true,
+        action: {
+          mediaType: 'action',
+          type: 'expired',
+          isVoice: true,
+        },
       };
     } else if (message.content.video?.isRound) {
       messageUpdate.content = {
-        ...messageUpdate.content,
-        video: undefined,
-        isExpiredRoundVideo: true,
+        action: {
+          mediaType: 'action',
+          type: 'expired',
+          isRoundVideo: true,
+        },
       };
     }
   }
 
-  let emojiOnlyCount = message?.emojiOnlyCount;
+  let text = message?.content?.text;
   if (messageUpdate.content) {
-    emojiOnlyCount = getEmojiOnlyCountForMessage(
+    const emojiOnlyCount = getEmojiOnlyCountForMessage(
       messageUpdate.content, message?.groupedId || messageUpdate.groupedId,
     );
+    text = messageUpdate.content.text ? addTimestampEntities(messageUpdate.content.text) : text;
+    if (text) text.emojiOnlyCount = emojiOnlyCount;
   }
 
-  const updatedMessage = {
+  const updatedMessage = omitUndefined({
     ...message,
     ...messageUpdate,
-    emojiOnlyCount,
-  };
+    text,
+  });
 
   if (!updatedMessage.id) {
     return global;
@@ -294,17 +304,19 @@ export function updateScheduledMessage<T extends GlobalState>(
 ): T {
   const message = selectScheduledMessage(global, chatId, messageId)!;
 
-  let emojiOnlyCount = message?.emojiOnlyCount;
+  let text = message?.content?.text;
   if (messageUpdate.content) {
-    emojiOnlyCount = getEmojiOnlyCountForMessage(
+    const emojiOnlyCount = getEmojiOnlyCountForMessage(
       messageUpdate.content, message?.groupedId || messageUpdate.groupedId,
     );
+    text = messageUpdate.content.text ? addTimestampEntities(messageUpdate.content.text) : text;
+    if (text) text.emojiOnlyCount = emojiOnlyCount;
   }
 
   const updatedMessage = {
     ...message,
     ...messageUpdate,
-    emojiOnlyCount,
+    text,
   };
 
   if (!updatedMessage.id) {
@@ -707,37 +719,16 @@ export function updateQuickReplyMessages<T extends GlobalState>(
 }
 
 export function updateFocusedMessage<T extends GlobalState>(
-  {
-    global,
-    chatId,
-    messageId,
-    threadId = MAIN_THREAD_ID,
-    noHighlight = false,
-    isResizingContainer = false,
-    quote,
-    scrollTargetPosition,
-  }: {
-    global: T;
-    chatId?: string;
-    messageId?: number;
-    threadId?: ThreadId;
-    noHighlight?: boolean;
-    isResizingContainer?: boolean;
-    quote?: string;
-    scrollTargetPosition?: ScrollTargetPosition;
-  },
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
+  global: T, update: Partial<TabState['focusedMessage']> | undefined, ...[tabId = getCurrentTabId()]: TabArgs<T>
 ): T {
+  if (!update) {
+    return updateTabState(global, { focusedMessage: undefined }, tabId);
+  }
+
   return updateTabState(global, {
     focusedMessage: {
       ...selectTabState(global, tabId).focusedMessage,
-      chatId,
-      threadId,
-      messageId,
-      noHighlight,
-      isResizingContainer,
-      quote,
-      scrollTargetPosition,
+      ...update,
     },
   }, tabId);
 }
@@ -772,18 +763,6 @@ export function deleteSponsoredMessage<T extends GlobalState>(
       sponsoredByChatId: omit(byChatId, [chatId]),
     },
   };
-}
-
-export function updateFocusDirection<T extends GlobalState>(
-  global: T, direction?: FocusDirection,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-): T {
-  return updateTabState(global, {
-    focusedMessage: {
-      ...selectTabState(global, tabId).focusedMessage,
-      direction,
-    },
-  }, tabId);
 }
 
 export function enterMessageSelectMode<T extends GlobalState>(
@@ -963,6 +942,40 @@ export function deleteQuickReply<T extends GlobalState>(
   };
 }
 
+export function updateFullWebPage<T extends GlobalState>(
+  global: T,
+  webPageId: string,
+  update: Partial<ApiWebPageFull>,
+) {
+  const webpage = selectWebPage(global, webPageId);
+  const updatedWebpage = webpage?.webpageType === 'full'
+    ? { ...webpage, ...update }
+    : { webpageType: 'full', mediaType: 'webpage', ...update };
+
+  if (!updatedWebpage.id) {
+    return global;
+  }
+
+  return replaceWebPage(global, webPageId, updatedWebpage as ApiWebPageFull);
+}
+
+export function replaceWebPage<T extends GlobalState>(
+  global: T,
+  webPageId: string,
+  webPage: ApiWebPage,
+) {
+  return {
+    ...global,
+    messages: {
+      ...global.messages,
+      webPageById: {
+        ...global.messages.webPageById,
+        [webPageId]: webPage,
+      },
+    },
+  };
+}
+
 export function updatePoll<T extends GlobalState>(
   global: T,
   pollId: string,
@@ -1052,4 +1065,25 @@ export function updatePollVote<T extends GlobalState>(
       results: newResults,
     },
   });
+}
+
+export function updateTypingDraft<T extends GlobalState>(
+  global: T,
+  chatId: string,
+  threadId: ThreadId | undefined = MAIN_THREAD_ID,
+  randomId: string,
+  text: ApiFormattedText,
+) {
+  const typingDraftStore = selectThreadParam(global, chatId, threadId, 'typingDraftIdByRandomId');
+  const messageId = typingDraftStore?.[randomId];
+  if (!messageId) {
+    return global;
+  }
+
+  global = updateChatMessage(global, chatId, messageId, {
+    content: {
+      text,
+    },
+  });
+  return global;
 }

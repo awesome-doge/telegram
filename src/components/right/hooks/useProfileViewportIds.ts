@@ -35,7 +35,7 @@ export default function useProfileViewportIds({
   archiveStoryIds,
   similarChannels,
   similarBots,
-} : {
+}: {
   loadMoreMembers: AnyToVoidFunction;
   loadCommonChats: AnyToVoidFunction;
   searchMessages: AnyToVoidFunction;
@@ -87,6 +87,10 @@ export default function useProfileViewportIds({
 
   const [mediaViewportIds, getMoreMedia, noProfileInfoForMedia] = useInfiniteScrollForSharedMedia(
     'media', resultType, searchMessages, chatMessages, foundIds, threadId,
+  );
+
+  const [gifViewportIds, getMoreGifs, noProfileInfoForGifs] = useInfiniteScrollForSharedMedia(
+    'gif', resultType, searchMessages, chatMessages, foundIds, threadId,
   );
 
   const [documentViewportIds, getMoreDocuments, noProfileInfoForDocuments] = useInfiniteScrollForSharedMedia(
@@ -152,6 +156,11 @@ export default function useProfileViewportIds({
       viewportIds = mediaViewportIds;
       getMore = getMoreMedia;
       noProfileInfo = noProfileInfoForMedia;
+      break;
+    case 'gif':
+      viewportIds = gifViewportIds;
+      getMore = getMoreGifs;
+      noProfileInfo = noProfileInfoForGifs;
       break;
     case 'documents':
       viewportIds = documentViewportIds;

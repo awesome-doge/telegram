@@ -1,4 +1,3 @@
-import bigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
 
 import type { SizeType, TelegramClient } from '../../../lib/gramjs';
@@ -15,10 +14,11 @@ import {
   MEDIA_CACHE_NAME_AVATARS,
 } from '../../../config';
 import * as cacheApi from '../../../util/cacheApi';
+import { toJSNumber } from '../../../util/numbers';
 import { getEntityTypeById } from '../gramjsBuilders';
 import localDb from '../localDb';
 
-const MEDIA_ENTITY_TYPES: Set<EntityType> = new Set([
+const MEDIA_ENTITY_TYPES = new Set<EntityType>([
   'sticker', 'wallpaper', 'photo', 'webDocument', 'document',
 ]);
 
@@ -42,7 +42,7 @@ export default async function downloadMedia(
     return undefined;
   }
 
-  const parsed = await parseMedia(data, mediaFormat, mimeType);
+  const parsed = parseMedia(data, mediaFormat, mimeType);
   if (!parsed) {
     return undefined;
   }
@@ -89,7 +89,7 @@ async function download(
   } = parsed;
 
   if (entityType === 'staticMap') {
-    const accessHash = bigInt(entityId);
+    const accessHash = BigInt(entityId);
     const parsedParams = new URLSearchParams(params);
     const long = Number(parsedParams.get('long'));
     const lat = Number(parsedParams.get('lat'));
@@ -142,7 +142,10 @@ async function download(
   }
 
   if (MEDIA_ENTITY_TYPES.has(entityType)) {
-    const data = await client.downloadMedia(entity, {
+    const entityWithType = entity as (
+      GramJs.Photo | GramJs.Document | GramJs.WebDocument
+    );
+    const data = await client.downloadMedia(entityWithType, {
       sizeType, start, end, progressCallback: onProgress, workers: DOWNLOAD_WORKERS,
     });
     let mimeType;
@@ -159,7 +162,7 @@ async function download(
       fullSize = entity.size;
     } else if (entity instanceof GramJs.Document) {
       mimeType = entity.mimeType;
-      fullSize = entity.size.toJSNumber();
+      fullSize = toJSNumber(entity.size);
     }
 
     // Prevent HTML-in-video attacks
@@ -181,10 +184,9 @@ async function download(
   }
 }
 
-// eslint-disable-next-line no-async-without-await/no-async-without-await
-async function parseMedia(
-  data: Buffer | File, mediaFormat: ApiMediaFormat, mimeType?: string,
-): Promise<ApiParsedMedia | undefined> {
+function parseMedia(
+  data: Buffer<ArrayBuffer> | File, mediaFormat: ApiMediaFormat, mimeType?: string,
+): ApiParsedMedia | undefined {
   if (data instanceof File) {
     return data;
   }
@@ -240,7 +242,7 @@ export function parseMediaUrl(url: string) {
     : url.startsWith('webDocument')
       ? url.match(/(webDocument):(.+)/)
       : url.match(
-        // eslint-disable-next-line max-len
+
         /(avatar|profile|photo|stickerSet|sticker|wallpaper|document)([-\d\w./]+)(?::\d+)?(\?size=\w+)?/,
       );
   if (!mediaMatch) {

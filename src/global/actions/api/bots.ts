@@ -1,4 +1,4 @@
-import type { InlineBotSettings } from '../../../types';
+import type { InlineBotSettings, ThreadId } from '../../../types';
 import type { WebApp } from '../../../types/webapp';
 import type { RequiredGlobalActions } from '../../index';
 import type {
@@ -16,17 +16,21 @@ import { ManagementProgress } from '../../../types';
 
 import { BOT_FATHER_USERNAME, GENERAL_REFETCH_INTERVAL } from '../../../config';
 import { copyTextToClipboard } from '../../../util/clipboard';
+import { getUsernameFromDeepLink } from '../../../util/deepLinkParser';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { pick } from '../../../util/iteratees.ts';
+import { getTranslationFn } from '../../../util/localization';
+import { formatStarsAsText } from '../../../util/localization/format';
 import { oldTranslate } from '../../../util/oldLangProvider';
-import PopupManager from '../../../util/PopupManager';
 import requestActionTimeout from '../../../util/requestActionTimeout';
 import { debounce } from '../../../util/schedulers';
 import { getServerTime } from '../../../util/serverTime';
 import { extractCurrentThemeParams } from '../../../util/themeStyle';
 import { callApi } from '../../../api/gramjs';
+import { getMainUsername } from '../../helpers';
 import {
   getWebAppKey,
-} from '../../helpers/bots';
+} from '../../helpers';
 import {
   addActionHandler, getGlobal, setGlobal,
 } from '../../index';
@@ -34,6 +38,7 @@ import {
   removeBlockedUser,
   updateBotAppPermissions,
   updateManagementProgress,
+  updateSharedSettings,
   updateUser,
   updateUserFullInfo,
 } from '../../reducers';
@@ -52,6 +57,7 @@ import {
   selectCurrentChat,
   selectCurrentMessageList,
   selectDraft,
+  selectIsCurrentUserFrozen,
   selectIsTrustedBot,
   selectMessageReplyInfo,
   selectPeer,
@@ -61,18 +67,36 @@ import {
   selectUser,
   selectUserFullInfo,
 } from '../../selectors';
+import { selectSharedSettings } from '../../selectors/sharedState';
 import { fetchChatByUsername } from './chats';
+import { getPeerStarsForMessage } from './messages';
 
 import { getIsWebAppsFullscreenSupported } from '../../../hooks/useAppLayout';
 
-const GAMEE_URL = 'https://prizes.gamee.com/';
 const TOP_PEERS_REQUEST_COOLDOWN = 60; // 1 min
 const runDebouncedForSearch = debounce((cb) => cb(), 500, false);
 let botFatherId: string | null;
 
-addActionHandler('clickBotInlineButton', (global, actions, payload): ActionReturnType => {
+addActionHandler('clickSuggestedMessageButton', (global, actions, payload): ActionReturnType => {
   const {
     chatId, messageId, button, tabId = getCurrentTabId(),
+  } = payload;
+
+  const { buttonType } = button;
+  const message = selectChatMessage(global, chatId, messageId);
+
+  switch (buttonType) {
+    case 'suggestChanges':
+      if (!message) break;
+
+      actions.initDraftFromSuggestedMessage({ chatId, messageId, tabId });
+      break;
+  }
+});
+
+addActionHandler('clickBotInlineButton', (global, actions, payload): ActionReturnType => {
+  const {
+    chatId, messageId, threadId, button, tabId = getCurrentTabId(),
   } = payload;
   const chat = selectChat(global, chatId);
   const message = selectChatMessage(global, chatId, messageId);
@@ -84,23 +108,28 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
     case 'command':
       actions.sendBotCommand({ command: button.text, tabId });
       break;
+
     case 'url': {
       const { url } = button;
-      actions.openUrl({ url, tabId });
+      actions.openUrl({ url, tabId, linkContext: { type: 'message', chatId, messageId, threadId } });
       break;
     }
+
     case 'copy': {
       copyTextToClipboard(button.copyText);
       actions.showNotification({ message: oldTranslate('ExactTextCopied', button.copyText), tabId });
       break;
     }
+
     case 'callback': {
-      void answerCallbackButton(global, actions, chat, messageId, button.data, undefined, tabId);
+      void answerCallbackButton(global, actions, chat, messageId, threadId, button.data, undefined, tabId);
       break;
     }
+
     case 'requestPoll':
       actions.openPollModal({ isQuiz: button.isQuiz, tabId });
       break;
+
     case 'requestPhone': {
       const user = global.currentUserId ? selectUser(global, global.currentUserId) : undefined;
       if (!user) {
@@ -117,6 +146,7 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
       });
       break;
     }
+
     case 'receipt': {
       const { receiptMessageId } = button;
       actions.getReceipt({
@@ -124,6 +154,7 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
       });
       break;
     }
+
     case 'buy': {
       actions.openInvoice({
         type: 'message',
@@ -133,10 +164,12 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
       });
       break;
     }
+
     case 'game': {
-      void answerCallbackButton(global, actions, chat, messageId, undefined, true, tabId);
+      void answerCallbackButton(global, actions, chat, messageId, threadId, undefined, true, tabId);
       break;
     }
+
     case 'switchBotInline': {
       const { query, isSamePeer } = button;
       actions.switchBotInline({
@@ -183,6 +216,7 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
       });
       break;
     }
+
     case 'urlAuth': {
       const { url } = button;
       actions.requestBotUrlAuth({
@@ -330,7 +364,7 @@ addActionHandler('queryInlineBot', async (global, actions, payload): Promise<voi
   void runDebouncedForSearch(() => {
     searchInlineBot(global, {
       username,
-      inlineBotData: inlineBotData as InlineBotSettings,
+      inlineBotData,
       chatId,
       query,
       offset,
@@ -370,7 +404,7 @@ addActionHandler('switchBotInline', (global, actions, payload): ActionReturnType
 
   actions.openChatWithDraft({
     text: {
-      text: `@${botSender.usernames![0].username} ${query}`,
+      text: `@${getMainUsername(botSender)} ${query}`,
     },
     chatId: isSamePeer ? chat.id : undefined,
     filter,
@@ -379,16 +413,34 @@ addActionHandler('switchBotInline', (global, actions, payload): ActionReturnType
   return undefined;
 });
 
-addActionHandler('sendInlineBotResult', (global, actions, payload): ActionReturnType => {
+addActionHandler('sendInlineBotApiResult', async (global, actions, payload): Promise<void> => {
   const {
-    id, queryId, isSilent, scheduledAt, messageList,
+    chat, id, queryId, replyInfo, sendAs, isSilent, scheduledAt, allowPaidStars,
+  } = payload;
+
+  await callApi('sendInlineBotResult', {
+    chat,
+    resultId: id,
+    queryId,
+    replyInfo,
+    sendAs,
+    isSilent,
+    scheduleDate: scheduledAt,
+    allowPaidStars,
+  });
+
+  if (allowPaidStars) actions.loadStarStatus();
+});
+
+addActionHandler('sendInlineBotResult', async (global, actions, payload): Promise<void> => {
+  const {
+    id, queryId, isSilent, scheduledAt, threadId, chatId,
     tabId = getCurrentTabId(),
   } = payload;
   if (!id) {
     return;
   }
 
-  const { chatId, threadId } = messageList;
   const chat = selectChat(global, chatId)!;
   const draftReplyInfo = selectDraft(global, chatId, threadId)?.replyInfo;
 
@@ -397,14 +449,35 @@ addActionHandler('sendInlineBotResult', (global, actions, payload): ActionReturn
   actions.resetDraftReplyInfo({ tabId });
   actions.clearWebPagePreview({ tabId });
 
-  void callApi('sendInlineBotResult', {
+  const starsForOneMessage = await getPeerStarsForMessage(global, chatId);
+  const params = {
     chat,
-    resultId: id,
+    id,
     queryId,
     replyInfo,
     sendAs: selectSendAs(global, chatId),
     isSilent,
-    scheduleDate: scheduledAt,
+    scheduledAt,
+    allowPaidStars: starsForOneMessage,
+  };
+  if (!starsForOneMessage) {
+    actions.sendInlineBotApiResult(params);
+    return;
+  }
+
+  actions.sendInlineBotApiResult({ ...params });
+
+  actions.showNotification({
+    localId: queryId,
+    title: { key: 'MessageSentPaidToastTitle', variables: { count: 1 }, options: { pluralValue: 1 } },
+    message: {
+      key: 'MessageSentPaidToastText', variables: { amount: formatStarsAsText(getTranslationFn(), starsForOneMessage) },
+    },
+
+    icon: 'star',
+    shouldUseCustomIcon: true,
+    type: 'paidMessage',
+    tabId,
   });
 });
 
@@ -631,6 +704,11 @@ addActionHandler('requestMainWebView', async (global, actions, payload): Promise
     tabId = getCurrentTabId(),
   } = payload;
 
+  if (selectIsCurrentUserFrozen(global)) {
+    actions.openFrozenAccountModal({ tabId });
+    return;
+  }
+
   if (checkIfOpenOrActivate(global, botId, tabId)) return;
 
   const bot = selectUser(global, botId);
@@ -728,16 +806,9 @@ addActionHandler('openWebAppsCloseConfirmationModal', (global, actions, payload)
 addActionHandler('closeWebAppsCloseConfirmationModal', (global, actions, payload): ActionReturnType => {
   const { shouldSkipInFuture, tabId = getCurrentTabId() } = payload || {};
 
-  global = {
-    ...global,
-    settings: {
-      ...global.settings,
-      byKey: {
-        ...global.settings.byKey,
-        shouldSkipWebAppCloseConfirmation: Boolean(shouldSkipInFuture),
-      },
-    },
-  };
+  global = updateSharedSettings(global, {
+    shouldSkipWebAppCloseConfirmation: Boolean(shouldSkipInFuture),
+  });
 
   return updateTabState(global, {
     isWebAppsCloseConfirmationModalOpen: undefined,
@@ -832,7 +903,7 @@ addActionHandler('requestAppWebView', async (global, actions, payload): Promise<
 
   global = getGlobal();
 
-  const peerId = (peer ? peer.id : bot!.id);
+  const peerId = (peer ? peer.id : bot.id);
 
   const newActiveApp: WebApp = {
     url,
@@ -992,8 +1063,8 @@ addActionHandler('callAttachBot', (global, actions, payload): ActionReturnType =
     actions.openThread({ chatId, threadId, tabId });
     actions.requestWebView({
       url,
-      peerId: chatId!,
-      botId: (isFromBotMenu ? chatId : bot.id)!,
+      peerId: chatId,
+      botId: (isFromBotMenu ? chatId : bot.id),
       theme,
       buttonText: '',
       isFromBotMenu,
@@ -1186,27 +1257,25 @@ async function searchInlineBot<T extends GlobalState>(global: T, {
   });
 
   global = getGlobal();
-  const newInlineBotData = selectTabState(global, tabId).inlineBots.byUsername[username];
+  const currentInlineBotSettings = selectTabState(global, tabId).inlineBots.byUsername[username];
   global = replaceInlineBotsIsLoading(global, false, tabId);
-  if (!result || !newInlineBotData || query !== newInlineBotData.query) {
+  if (!result || !currentInlineBotSettings || query !== currentInlineBotSettings.query) {
     setGlobal(global);
     return;
   }
 
-  const currentIds = new Set((newInlineBotData.results || []).map((data) => data.id));
+  const currentIds = new Set((currentInlineBotSettings.results || []).map((data) => data.id));
   const newResults = result.results.filter((data) => !currentIds.has(data.id));
 
   global = replaceInlineBotSettings(global, username, {
-    ...newInlineBotData,
-    help: result.help,
+    ...currentInlineBotSettings,
+    ...pick(result, ['help', 'switchPm', 'switchWebview']),
     cacheTime: Date.now() + result.cacheTime * 1000,
     ...(newResults.length && { isGallery: result.isGallery }),
-    ...(result.switchPm && { switchPm: result.switchPm }),
-    ...(result.switchWebview && { switchWebview: result.switchWebview }),
     canLoadMore: result.results.length > 0 && Boolean(result.nextOffset),
-    results: newInlineBotData.offset === '' || newInlineBotData.offset === result.nextOffset
+    results: currentInlineBotSettings.offset === '' || currentInlineBotSettings.offset === result.nextOffset
       ? result.results
-      : (newInlineBotData.results || []).concat(newResults),
+      : (currentInlineBotSettings.results || []).concat(newResults),
     offset: newResults.length ? result.nextOffset : '',
   }, tabId);
 
@@ -1225,26 +1294,14 @@ async function sendBotCommand(
   });
 }
 
-let gameePopups: PopupManager | undefined;
-
 async function answerCallbackButton<T extends GlobalState>(
   global: T,
-  actions: RequiredGlobalActions, chat: ApiChat, messageId: number, data?: string, isGame = false,
+  actions: RequiredGlobalActions, chat: ApiChat, messageId: number, threadId?: ThreadId, data?: string, isGame = false,
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
   const {
     showDialog, showNotification, openUrl, openGame,
   } = actions;
-
-  if (isGame) {
-    if (!gameePopups) {
-      gameePopups = new PopupManager('popup,width=800,height=600', () => {
-        showNotification({ message: 'Allow browser to open popup window', tabId });
-      });
-    }
-
-    gameePopups.preOpenIfNeeded();
-  }
 
   const result = await callApi('answerCallbackButton', {
     chatId: chat.id,
@@ -1265,17 +1322,11 @@ async function answerCallbackButton<T extends GlobalState>(
     showNotification({ message, tabId });
   } else if (url) {
     if (isGame) {
-      // Workaround for Gamee embedding bug
-      if (url.includes(GAMEE_URL)) {
-        gameePopups!.open(url);
-      } else {
-        gameePopups!.cancelPreOpen();
-        openGame({
-          url, chatId: chat.id, messageId, tabId,
-        });
-      }
+      openGame({
+        url, chatId: chat.id, messageId, tabId,
+      });
     } else {
-      openUrl({ url, tabId });
+      openUrl({ url, tabId, linkContext: { type: 'message', chatId: chat.id, messageId, threadId } });
     }
   }
 }
@@ -1287,7 +1338,7 @@ addActionHandler('setBotInfo', async (global, actions, payload): Promise<void> =
   } = payload;
 
   let { langCode } = payload;
-  if (!langCode) langCode = global.settings.byKey.language;
+  if (!langCode) langCode = selectSharedSettings(global).language;
 
   const { currentUserId } = global;
   if (!currentUserId || !bot) {
@@ -1379,4 +1430,18 @@ addActionHandler('startBotFatherConversation', async (global, actions, payload):
   }
 
   actions.openChat({ id: botFatherId, tabId });
+});
+
+addActionHandler('loadBotFreezeAppeal', async (global): Promise<void> => {
+  const botUrl = global.appConfig.freezeAppealUrl;
+  if (!botUrl) return;
+  const botAppealUsername = botUrl ? getUsernameFromDeepLink(botUrl) : undefined;
+  if (!botAppealUsername) return;
+  const chat = await fetchChatByUsername(global, botAppealUsername);
+  global = getGlobal();
+  global = {
+    ...global,
+    botFreezeAppealId: chat?.id,
+  };
+  setGlobal(global);
 });

@@ -1,12 +1,13 @@
 import type { FC, TeactNode } from '../../lib/teact/teact';
-import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { memo, useCallback, useRef } from '../../lib/teact/teact';
 
 import type { TextPart } from '../../types';
 
 import buildClassName from '../../util/buildClassName';
 
 import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
-import useOldLang from '../../hooks/useOldLang';
+import useLang from '../../hooks/useLang';
 
 import Button from './Button';
 import Modal from './Modal';
@@ -37,7 +38,7 @@ const ConfirmDialog: FC<OwnProps> = ({
   header,
   text,
   textParts,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   confirmIsDestructive,
   isConfirmDisabled,
   isOnlyConfirm,
@@ -48,10 +49,9 @@ const ConfirmDialog: FC<OwnProps> = ({
   onClose,
   onCloseAnimationEnd,
 }) => {
-  const lang = useOldLang();
+  const lang = useLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
   const handleSelectWithEnter = useCallback((index: number) => {
     if (index === -1) confirmHandler();
@@ -84,7 +84,7 @@ const ConfirmDialog: FC<OwnProps> = ({
           color={confirmIsDestructive ? 'danger' : 'primary'}
           disabled={isConfirmDisabled}
         >
-          {confirmLabel}
+          {confirmLabel || lang('GeneralConfirm')}
         </Button>
         {!isOnlyConfirm && <Button className="confirm-dialog-button" isText onClick={onClose}>{lang('Cancel')}</Button>}
       </div>

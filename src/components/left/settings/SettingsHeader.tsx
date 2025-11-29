@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
@@ -11,7 +11,6 @@ import useLang from '../../../hooks/useLang';
 import useMultiClick from '../../../hooks/useMultiClick';
 import useOldLang from '../../../hooks/useOldLang';
 
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import ConfirmDialog from '../../ui/ConfirmDialog';
 import DropdownMenu from '../../ui/DropdownMenu';
@@ -21,25 +20,24 @@ type OwnProps = {
   currentScreen: SettingsScreens;
   editedFolderId?: number;
   onReset: () => void;
-  onScreenSelect: (screen: SettingsScreens) => void;
 };
 
 const SettingsHeader: FC<OwnProps> = ({
   currentScreen,
   editedFolderId,
   onReset,
-  onScreenSelect,
 }) => {
   const {
     signOut,
     openDeleteChatFolderModal,
+    openSettingsScreen,
   } = getActions();
 
   const { isMobile } = useAppLayout();
   const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
 
   const handleMultiClick = useMultiClick(5, () => {
-    onScreenSelect(SettingsScreens.Experimental);
+    openSettingsScreen({ screen: SettingsScreens.Experimental });
   });
 
   const openSignOutConfirmation = useCallback(() => {
@@ -71,9 +69,8 @@ const SettingsHeader: FC<OwnProps> = ({
         className={isOpen ? 'active' : ''}
         onClick={onTrigger}
         ariaLabel="More actions"
-      >
-        <Icon name="more" />
-      </Button>
+        iconName="more"
+      />
     );
   }, [isMobile]);
 
@@ -163,6 +160,9 @@ const SettingsHeader: FC<OwnProps> = ({
       case SettingsScreens.PrivacyPhoneP2PDeniedContacts:
         return <h3>{oldLang('NeverAllow')}</h3>;
 
+      case SettingsScreens.PrivacyNoPaidMessages:
+        return <h3>{lang('RemoveFeeTitle')}</h3>;
+
       case SettingsScreens.Performance:
         return <h3>{lang('MenuAnimations')}</h3>;
 
@@ -248,7 +248,7 @@ const SettingsHeader: FC<OwnProps> = ({
           <h3>
             {oldLang(
               currentScreen === SettingsScreens.FoldersIncludedChats
-                  || currentScreen === SettingsScreens.FoldersIncludedChatsFromChatList
+              || currentScreen === SettingsScreens.FoldersIncludedChatsFromChatList
                 ? 'FilterInclude' : 'FilterExclude',
             )}
           </h3>
@@ -266,12 +266,10 @@ const SettingsHeader: FC<OwnProps> = ({
               ripple={!isMobile}
               size="smaller"
               color="translucent"
-              // eslint-disable-next-line react/jsx-no-bind
-              onClick={() => onScreenSelect(SettingsScreens.EditProfile)}
+              onClick={() => openSettingsScreen({ screen: SettingsScreens.EditProfile })}
               ariaLabel={oldLang('lng_settings_information')}
-            >
-              <Icon name="edit" />
-            </Button>
+              iconName="edit"
+            />
             <DropdownMenu
               className="settings-more-menu"
               trigger={SettingsMenuButton}
@@ -292,9 +290,8 @@ const SettingsHeader: FC<OwnProps> = ({
         color="translucent"
         onClick={onReset}
         ariaLabel={oldLang('AccDescrGoBack')}
-      >
-        <Icon name="arrow-left" />
-      </Button>
+        iconName="arrow-left"
+      />
       {renderHeaderContent()}
       <ConfirmDialog
         isOpen={isSignOutDialogOpen}

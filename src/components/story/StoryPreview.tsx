@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo } from '../../lib/teact/teact';
+import { memo, useEffect, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
@@ -6,7 +6,8 @@ import type {
 } from '../../api/types';
 import type { StoryViewerOrigin } from '../../types';
 
-import { getPeerTitle, getStoryMediaHash } from '../../global/helpers';
+import { getStoryMediaHash } from '../../global/helpers';
+import { getPeerTitle } from '../../global/helpers/peers';
 import { selectTabState } from '../../global/selectors';
 import renderText from '../common/helpers/renderText';
 
@@ -93,10 +94,10 @@ function StoryPreview({
   );
 }
 
-export default memo(withGlobal<OwnProps>((global, { peer }): StateProps => {
+export default memo(withGlobal<OwnProps>((global, { peer }): Complete<StateProps> => {
   const {
     storyViewer: {
-      lastViewedByPeerIds,
+      lastViewedByPeerId: lastViewedByPeerIds,
       origin,
       storyList,
     },

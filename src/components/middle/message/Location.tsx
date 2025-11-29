@@ -1,11 +1,11 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiMessage, ApiPeer } from '../../../api/types';
-import type { ISettings } from '../../../types';
+import type { ThemeKey } from '../../../types';
 
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import {
@@ -14,7 +14,7 @@ import {
   isGeoLiveExpired,
 } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
-import { formatCountdownShort, formatLastUpdated } from '../../../util/dates/dateFormat';
+import { formatCountdownShort, formatLocationLastUpdate } from '../../../util/dates/dateFormat';
 import {
   getMetersPerPixel, getVenueColor, getVenueIconUrl,
 } from '../../../util/map';
@@ -50,7 +50,7 @@ type OwnProps = {
   peer?: ApiPeer;
   isInSelectMode?: boolean;
   isSelected?: boolean;
-  theme: ISettings['theme'];
+  theme: ThemeKey;
 };
 
 const Location: FC<OwnProps> = ({
@@ -58,10 +58,8 @@ const Location: FC<OwnProps> = ({
   peer,
 }) => {
   const { openMapModal } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const countdownRef = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
+  const countdownRef = useRef<HTMLDivElement>();
   const lang = useOldLang();
   const forceUpdate = useForceUpdate();
 
@@ -161,7 +159,7 @@ const Location: FC<OwnProps> = ({
         <div className="location-info">
           <div className="location-info-title">{lang('AttachLiveLocation')}</div>
           <div className="location-info-subtitle">
-            {formatLastUpdated(lang, serverTime, message.editDate)}
+            {formatLocationLastUpdate(lang, serverTime, message.editDate)}
           </div>
           {!isExpired && (
             <div className="geo-countdown" ref={countdownRef}>

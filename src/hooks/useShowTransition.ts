@@ -1,4 +1,4 @@
-import type { RefObject } from '../lib/teact/teact';
+import type { ElementRef } from '../lib/teact/teact';
 import { useLayoutEffect, useRef, useSignal } from '../lib/teact/teact';
 import { addExtraClass, toggleExtraClass } from '../lib/teact/teact-dom';
 
@@ -16,7 +16,7 @@ const CLOSE_DURATION = 350;
 
 type BaseHookParams<RefType extends HTMLElement> = {
   isOpen: boolean | undefined;
-  ref?: RefObject<RefType | null>;
+  ref?: ElementRef<RefType>;
   noMountTransition?: boolean;
   noOpenTransition?: boolean;
   noCloseTransition?: boolean;
@@ -31,16 +31,16 @@ export type HookParams<RefType extends HTMLElement> = BaseHookParams<RefType> & 
   withShouldRender?: never;
 };
 
-type HookParamsWithShouldRender<RefType extends HTMLElement> = BaseHookParams<RefType> & {
+export type HookParamsWithShouldRender<RefType extends HTMLElement> = BaseHookParams<RefType> & {
   withShouldRender: true;
 };
 
-type HookResult<RefType extends HTMLElement> = {
-  ref: RefObject<RefType | null>;
+export type HookResult<RefType extends HTMLElement> = {
+  ref: ElementRef<RefType>;
   getIsClosing: Signal<boolean>;
 };
 
-type HookResultWithShouldRender<RefType extends HTMLElement> = HookResult<RefType> & {
+export type HookResultWithShouldRender<RefType extends HTMLElement> = HookResult<RefType> & {
   shouldRender: boolean;
 };
 
@@ -50,11 +50,14 @@ type State =
   | 'open'
   | 'closing';
 
+/**
+ * Use for showing and hiding small elements with transitions. For large elements, use {@link useMediaTransition}.
+ */
 export default function useShowTransition<RefType extends HTMLElement = HTMLDivElement>(
-  params: HookParams<RefType>
+  params: HookParams<RefType>,
 ): HookResult<RefType>;
 export default function useShowTransition<RefType extends HTMLElement = HTMLDivElement>(
-  params: HookParamsWithShouldRender<RefType>
+  params: HookParamsWithShouldRender<RefType>,
 ): HookResultWithShouldRender<RefType>;
 export default function useShowTransition<RefType extends HTMLElement = HTMLDivElement>(
   params: HookParams<RefType> | HookParamsWithShouldRender<RefType>,
@@ -71,8 +74,7 @@ export default function useShowTransition<RefType extends HTMLElement = HTMLDivE
     onCloseAnimationEnd,
   } = params;
 
-  // eslint-disable-next-line no-null/no-null
-  const localRef = useRef<RefType>(null);
+  const localRef = useRef<RefType>();
   const ref = params.ref || localRef;
   const closingTimeoutRef = useRef<number>();
   const [getState, setState] = useSignal<State | undefined>();

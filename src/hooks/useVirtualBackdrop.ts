@@ -1,5 +1,7 @@
-import type { RefObject } from 'react';
+import type { ElementRef } from '../lib/teact/teact';
 import { useEffect } from '../lib/teact/teact';
+
+import { hasActiveViewTransition } from './animations/useViewTransition';
 
 const BACKDROP_CLASSNAME = 'backdrop';
 
@@ -7,7 +9,7 @@ const BACKDROP_CLASSNAME = 'backdrop';
 // without adding extra elements to the DOM
 export default function useVirtualBackdrop(
   isOpen: boolean,
-  containerRef: RefObject<HTMLElement>,
+  containerRef: ElementRef<HTMLElement>,
   onClose?: () => void | undefined,
   ignoreRightClick?: boolean,
   excludedClosestSelector?: string,
@@ -20,7 +22,7 @@ export default function useVirtualBackdrop(
     const handleEvent = (e: MouseEvent) => {
       const container = containerRef.current;
       const target = e.target as HTMLElement | null;
-      if (!container || !target || (ignoreRightClick && e.button === 2)) {
+      if (!container || !target || (ignoreRightClick && e.button === 2) || hasActiveViewTransition()) {
         return;
       }
 

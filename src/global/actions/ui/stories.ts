@@ -5,6 +5,7 @@ import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { omit } from '../../../util/iteratees';
 import * as langProvider from '../../../util/oldLangProvider';
 import { callApi } from '../../../api/gramjs';
+import { addTabStateResetterAction } from '../../helpers/meta';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { addStoriesForPeer } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
@@ -18,6 +19,7 @@ import {
   selectTabState,
 } from '../../selectors';
 import { fetchChatByUsername } from '../api/chats';
+import { getPeerStarsForMessage } from '../api/messages';
 
 addActionHandler('openStoryViewer', async (global, actions, payload): Promise<void> => {
   const {
@@ -96,7 +98,7 @@ addActionHandler('closeStoryViewer', (global, actions, payload): ActionReturnTyp
       isMuted,
       isRibbonShown,
       isArchivedRibbonShown,
-      lastViewedByPeerIds: undefined,
+      lastViewedByPeerId: undefined,
       storyList: undefined,
     },
   }, tabId);
@@ -289,7 +291,7 @@ addActionHandler('copyStoryLink', async (global, actions, payload): Promise<void
   });
 });
 
-addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => {
+addActionHandler('sendMessage', async (global, actions, payload): Promise<void> => {
   const { tabId = getCurrentTabId() } = payload;
   const { storyId, peerId: storyPeerId } = selectCurrentViewedStory(global, tabId);
   const isStoryReply = Boolean(storyId && storyPeerId);
@@ -297,6 +299,8 @@ addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => 
   if (!isStoryReply) {
     return;
   }
+  const messagePriceInStars = await getPeerStarsForMessage(global, storyPeerId!);
+  if (messagePriceInStars === undefined) return;
 
   const { gif, sticker, isReaction } = payload;
 
@@ -349,17 +353,17 @@ addActionHandler('closeStoryPrivacyEditor', (global, actions, payload): ActionRe
   }, tabId);
 });
 
-addActionHandler('toggleStealthModal', (global, actions, payload): ActionReturnType => {
-  const { isOpen, tabId = getCurrentTabId() } = payload || {};
-  const tabState = selectTabState(global, tabId);
+addActionHandler('openStealthModal', (global, actions, payload): ActionReturnType => {
+  const { targetPeerId, tabId = getCurrentTabId() } = payload;
 
   return updateTabState(global, {
-    storyViewer: {
-      ...tabState.storyViewer,
-      isStealthModalOpen: isOpen,
+    storyStealthModal: {
+      targetPeerId,
     },
   }, tabId);
 });
+
+addTabStateResetterAction('closeStealthModal', 'storyStealthModal');
 
 addActionHandler('clearStoryViews', (global, actions, payload): ActionReturnType => {
   const { isLoading, tabId = getCurrentTabId() } = payload || {};

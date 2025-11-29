@@ -1,11 +1,11 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, { memo } from '../../../../lib/teact/teact';
+import { memo } from '../../../../lib/teact/teact';
 
 import { STICKER_SIZE_PASSCODE } from '../../../../config';
 import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
 
 import useHistoryBack from '../../../../hooks/useHistoryBack';
-import useOldLang from '../../../../hooks/useOldLang';
+import useLang from '../../../../hooks/useLang';
 
 import AnimatedIconWithPreview from '../../../common/AnimatedIconWithPreview';
 import Button from '../../../ui/Button';
@@ -13,15 +13,15 @@ import Button from '../../../ui/Button';
 import lockPreviewUrl from '../../../../assets/lock.png';
 
 type OwnProps = {
-  onStart: NoneToVoidFunction;
   isActive?: boolean;
+  onStart: NoneToVoidFunction;
   onReset: () => void;
 };
 
 const SettingsPasscodeStart: FC<OwnProps> = ({
   isActive, onReset, onStart,
 }) => {
-  const lang = useOldLang();
+  const lang = useLang();
 
   useHistoryBack({ isActive, onBack: onReset });
 
@@ -36,15 +36,14 @@ const SettingsPasscodeStart: FC<OwnProps> = ({
         />
 
         <p className="settings-item-description" dir="auto">
-          When you set up an additional passcode, a lock icon will appear on the chats page.
-          Tap it to lock and unlock your Telegram Web A.
+          {lang('SettingsPasscodeStart1', undefined, { withNodes: true, renderTextFilters: ['br'] })}
         </p>
         <p className="settings-item-description mb-3" dir="auto">
-          Note: if you forget your local passcode, you&apos;ll need to log out of Telegram Web A and log in again.
+          {lang('SettingsPasscodeStart2', undefined, { withNodes: true, renderTextFilters: ['br'] })}
         </p>
       </div>
 
-      <div className="settings-item pt-2">
+      <div className="settings-item settings-group">
         <Button onClick={onStart}>{lang('EnablePasscode')}</Button>
       </div>
     </div>

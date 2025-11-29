@@ -1,5 +1,5 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
+import type { ElementRef, FC } from '../../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
 import type { ApiStickerSet } from '../../../api/types';
@@ -8,9 +8,9 @@ import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import { STICKER_SIZE_PICKER_HEADER } from '../../../config';
 import { getStickerMediaHash } from '../../../global/helpers';
 import { selectIsAlwaysHighPriorityEmoji } from '../../../global/selectors';
+import { IS_WEBM_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 import { getFirstLetters } from '../../../util/textFormat';
-import { IS_WEBM_SUPPORTED } from '../../../util/windowEnvironment';
 
 import useColorFilter from '../../../hooks/stickers/useColorFilter';
 import useDynamicColorListener from '../../../hooks/stickers/useDynamicColorListener';
@@ -32,7 +32,7 @@ type OwnProps = {
   noPlay?: boolean;
   forcePlayback?: boolean;
   observeIntersection: ObserveFn;
-  sharedCanvasRef?: React.RefObject<HTMLCanvasElement>;
+  sharedCanvasRef?: ElementRef<HTMLCanvasElement>;
 };
 
 const StickerSetCover: FC<OwnProps> = ({
@@ -44,8 +44,7 @@ const StickerSetCover: FC<OwnProps> = ({
   sharedCanvasRef,
 }) => {
   const { loadStickers } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
   const {
     hasThumbnail, hasVideoThumb, hasAnimatedThumb, hasStaticThumb, thumbCustomEmojiId,
@@ -53,21 +52,21 @@ const StickerSetCover: FC<OwnProps> = ({
 
   const { customEmoji } = useCustomEmoji(thumbCustomEmojiId);
   const hasCustomColor = customEmoji?.shouldUseTextColor;
-  const customColor = useDynamicColorListener(containerRef, !hasCustomColor);
+  const customColor = useDynamicColorListener(containerRef, undefined, !hasCustomColor);
   const colorFilter = useColorFilter(customColor);
 
   const isIntersecting = useIsIntersecting(containerRef, observeIntersection);
   const shouldPlay = isIntersecting && !noPlay;
 
-  const hasOnlyStaticThumb = hasStaticThumb && !hasVideoThumb && !hasAnimatedThumb && !thumbCustomEmojiId;
+  const shouldFallbackToSticker = !hasThumbnail
+    || (hasVideoThumb && !IS_WEBM_SUPPORTED && !hasAnimatedThumb && !hasStaticThumb);
+  const firstStickerHash = shouldFallbackToSticker && stickerSet.stickers?.[0]
+    && getStickerMediaHash(stickerSet.stickers[0], 'preview');
+  const firstStickerMediaData = useMedia(firstStickerHash, !isIntersecting);
 
-  const shouldFallbackToStatic = hasOnlyStaticThumb || (hasVideoThumb && !IS_WEBM_SUPPORTED && !hasAnimatedThumb);
-  const staticHash = shouldFallbackToStatic && getStickerMediaHash(stickerSet.stickers![0], 'preview');
-  const staticMediaData = useMedia(staticHash, !isIntersecting);
-
-  const mediaHash = ((hasThumbnail && !shouldFallbackToStatic) || hasAnimatedThumb) && `stickerSet${stickerSet.id}`;
+  const mediaHash = ((hasThumbnail && !firstStickerHash) || hasAnimatedThumb) && `stickerSet${stickerSet.id}`;
   const mediaData = useMedia(mediaHash, !isIntersecting);
-  const isReady = thumbCustomEmojiId || mediaData || staticMediaData;
+  const isReady = thumbCustomEmojiId || mediaData || firstStickerMediaData;
   const transitionClassNames = useMediaTransitionDeprecated(isReady);
 
   const coords = useCoordsInSharedCanvas(containerRef, sharedCanvasRef);
@@ -81,7 +80,11 @@ const StickerSetCover: FC<OwnProps> = ({
   }, [isIntersecting, loadStickers, stickerSet]);
 
   return (
-    <div ref={containerRef} className={buildClassName(styles.root, 'sticker-set-cover')}>
+    <div
+      ref={containerRef}
+      className={buildClassName(styles.root, 'sticker-set-cover')}
+      style={`--_size: ${size}px`}
+    >
       {isReady ? (
         thumbCustomEmojiId ? (
           <CustomEmoji
@@ -101,7 +104,7 @@ const StickerSetCover: FC<OwnProps> = ({
             sharedCanvasCoords={coords}
             forceAlways={forcePlayback}
           />
-        ) : (hasVideoThumb && !shouldFallbackToStatic) ? (
+        ) : (hasVideoThumb && !shouldFallbackToSticker) ? (
           <OptimizedVideo
             className={buildClassName(styles.video, transitionClassNames)}
             src={mediaData}
@@ -113,7 +116,7 @@ const StickerSetCover: FC<OwnProps> = ({
           />
         ) : (
           <img
-            src={mediaData || staticMediaData}
+            src={mediaData || firstStickerMediaData}
             style={colorFilter}
             className={buildClassName(styles.image, transitionClassNames)}
             alt=""

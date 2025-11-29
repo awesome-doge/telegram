@@ -1,5 +1,4 @@
 import type { FC } from '../../lib/teact/teact';
-import React from '../../lib/teact/teact';
 
 import type { IconName } from '../../types/icons';
 
@@ -7,8 +6,8 @@ import { IS_TEST } from '../../config';
 import buildClassName from '../../util/buildClassName';
 
 import useAppLayout from '../../hooks/useAppLayout';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useOldLang from '../../hooks/useOldLang';
 
 import Icon from '../common/icons/Icon';
 
@@ -22,6 +21,8 @@ export type MenuItemProps = {
   clickArg?: number;
   onContextMenu?: (e: React.UIEvent) => void;
   href?: string;
+  rel?: string;
+  target?: string;
   download?: string;
   disabled?: boolean;
   destructive?: boolean;
@@ -45,17 +46,19 @@ const MenuItem: FC<MenuItemProps> = (props) => {
     children,
     onClick,
     href,
+    target,
     download,
     disabled,
     destructive,
     ariaLabel,
     withWrap,
+    rel = 'noopener noreferrer',
     onContextMenu,
     clickArg,
     withPreventDefaultOnMouseDown,
   } = props;
 
-  const lang = useOldLang();
+  const lang = useLang();
   const { isTouchScreen } = useAppLayout();
   const handleClick = useLastCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled || !onClick) {
@@ -102,7 +105,7 @@ const MenuItem: FC<MenuItemProps> = (props) => {
     </>
   );
 
-  if (href) {
+  if (href && !disabled) {
     return (
       <a
         tabIndex={0}
@@ -111,8 +114,8 @@ const MenuItem: FC<MenuItemProps> = (props) => {
         download={download}
         aria-label={ariaLabel}
         title={ariaLabel}
-        target={href.startsWith(window.location.origin) || IS_TEST ? '_self' : '_blank'}
-        rel="noopener noreferrer"
+        target={target || (href.startsWith(window.location.origin) || IS_TEST ? '_self' : '_blank')}
+        rel={rel}
         dir={lang.isRtl ? 'rtl' : undefined}
         onClick={onClick}
         onMouseDown={handleMouseDown}

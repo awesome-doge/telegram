@@ -1,9 +1,9 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   useCallback, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 
-import Icon from '../common/icons/Icon';
 import Button from './Button';
 import Menu from './Menu';
 
@@ -11,6 +11,7 @@ import './DropdownMenu.scss';
 
 type OwnProps = {
   className?: string;
+  bubbleClassName?: string;
   trigger?: FC<{ onTrigger: () => void; isOpen?: boolean }>;
   transformOriginX?: number;
   transformOriginY?: number;
@@ -30,6 +31,7 @@ type OwnProps = {
 const DropdownMenu: FC<OwnProps> = ({
   trigger,
   className,
+  bubbleClassName,
   children,
   transformOriginX,
   transformOriginY,
@@ -44,8 +46,7 @@ const DropdownMenu: FC<OwnProps> = ({
   onHide,
   autoClose = true,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>();
   const [isOpen, setIsOpen] = useState(false);
 
   const toggleIsOpen = () => {
@@ -87,11 +88,10 @@ const DropdownMenu: FC<OwnProps> = ({
         size="smaller"
         color="translucent"
         className={isMenuOpen ? 'active' : ''}
+        iconName="more"
         onClick={onTrigger}
         ariaLabel="More actions"
-      >
-        <Icon name="more" />
-      </Button>
+      />
     );
   }, [trigger]);
 
@@ -107,6 +107,7 @@ const DropdownMenu: FC<OwnProps> = ({
         ref={menuRef}
         isOpen={isOpen || Boolean(forceOpen)}
         className={className || ''}
+        bubbleClassName={bubbleClassName || ''}
         transformOriginX={transformOriginX}
         transformOriginY={transformOriginY}
         positionX={positionX}

@@ -1,6 +1,6 @@
-import React, { memo, useMemo, useRef } from '../../../lib/teact/teact';
+import { memo, useMemo, useRef } from '../../../lib/teact/teact';
 
-import type { ApiFactCheck } from '../../../api/types';
+import type { ApiFactCheck, ApiPeerColor } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
 import { renderTextWithEntities } from '../../common/helpers/renderTextWithEntities';
@@ -20,7 +20,8 @@ type OwnProps = {
   isToggleDisabled?: boolean;
 };
 
-const COLOR = {
+const COLOR: ApiPeerColor = {
+  type: 'regular',
   color: 0,
 };
 const MAX_LINES = 4;
@@ -28,10 +29,8 @@ const MAX_LINES = 4;
 const FactCheck = ({ factCheck, isToggleDisabled }: OwnProps) => {
   const lang = useOldLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const cutoutRef = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
+  const cutoutRef = useRef<HTMLDivElement>();
   const {
     isCollapsed, isCollapsible, setIsCollapsed,
   } = useCollapsibleLines(ref, MAX_LINES, cutoutRef);

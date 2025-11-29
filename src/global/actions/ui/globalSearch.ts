@@ -12,7 +12,8 @@ addActionHandler('setGlobalSearchQuery', (global, actions, payload): ActionRetur
   const { query, tabId = getCurrentTabId() } = payload;
   const { chatId, currentContent } = selectTabState(global, tabId).globalSearch;
 
-  const fetchingStatus = query && currentContent !== GlobalSearchContent.BotApps
+  const fetchingStatus = query
+    && currentContent !== GlobalSearchContent.BotApps && currentContent !== GlobalSearchContent.PublicPosts
     ? { chats: !chatId, messages: true } : undefined;
 
   return updateGlobalSearch(global, {
@@ -32,7 +33,7 @@ addActionHandler('setGlobalSearchClosing', (global, actions, payload): ActionRet
 });
 
 addActionHandler('addRecentlyFoundChatId', (global, actions, payload): ActionReturnType => {
-  const { id } = payload!;
+  const { id } = payload;
   const { recentlyFoundChatIds } = global;
 
   if (!recentlyFoundChatIds) {

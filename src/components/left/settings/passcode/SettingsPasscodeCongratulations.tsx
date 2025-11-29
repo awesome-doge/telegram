@@ -1,5 +1,5 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../../lib/teact/teact';
+import { memo, useCallback } from '../../../../lib/teact/teact';
 
 import { STICKER_SIZE_PASSCODE } from '../../../../config';
 import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
@@ -43,7 +43,7 @@ const SettingsPasscodeCongratulations: FC<OwnProps> = ({
         </p>
       </div>
 
-      <div className="settings-item pt-2">
+      <div className="settings-item settings-group">
         <Button onClick={fullReset}>{lang('Back')}</Button>
       </div>
     </div>

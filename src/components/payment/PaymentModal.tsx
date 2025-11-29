@@ -1,11 +1,11 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
-  ApiChat, ApiCountry, ApiInvoice, ApiLabeledPrice, ApiPaymentCredentials, ApiPaymentFormRegular,
+  ApiChat, ApiCountry, ApiInvoice, ApiLabeledPrice, ApiPaymentFormRegular,
 } from '../../api/types';
 import type { TabState } from '../../global/types';
 import type { FormState } from '../../hooks/reducers/usePaymentReducer';
@@ -27,7 +27,6 @@ import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
-import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import Spinner from '../ui/Spinner';
@@ -59,7 +58,6 @@ type StateProps = {
   invoice?: ApiInvoice;
   form?: ApiPaymentFormRegular;
   error?: TabState['payment']['error'];
-  prices?: ApiLabeledPrice[];
   isProviderError?: boolean;
   needCardholderName?: boolean;
   needCountry?: boolean;
@@ -71,7 +69,6 @@ type StateProps = {
   requestId?: string;
   smartGlocalToken?: string;
   stripeId?: string;
-  savedCredentials?: ApiPaymentCredentials[];
   passwordValidUntil?: number;
   isExtendedMedia?: boolean;
   isPaymentFormUrl?: boolean;
@@ -99,7 +96,6 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
   requestId,
   smartGlocalToken,
   stripeId,
-  savedCredentials,
   passwordValidUntil,
   isExtendedMedia,
   isPaymentFormUrl,
@@ -205,13 +201,13 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
   }, [form, paymentDispatch, countryList]);
 
   useEffect(() => {
-    if (savedCredentials?.length) {
+    if (form?.savedCredentials?.length) {
       paymentDispatch({
         type: 'changeSavedCredentialId',
-        payload: savedCredentials[0].id,
+        payload: form.savedCredentials[0].id,
       });
     }
-  }, [paymentDispatch, savedCredentials]);
+  }, [paymentDispatch, form?.savedCredentials]);
 
   const handleErrorModalClose = useCallback(() => {
     clearPaymentError();
@@ -256,7 +252,7 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
             isText
             onClick={handleClearPaymentError}
           >
-            {oldLang('OK')}
+            {lang('OK')}
           </Button>
         </div>
       </Modal>
@@ -278,7 +274,7 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
     sendForm();
   }, [sendForm]);
 
-  function renderModalContent(currentStep: PaymentStep) {
+  function renderModalContent(currentStep: PaymentStep, isActive?: boolean) {
     switch (currentStep) {
       case PaymentStep.Checkout:
         return (
@@ -297,7 +293,7 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
             hasShippingOptions={hasShippingOptions}
             tipAmount={paymentState.tipAmount}
             needAddress={Boolean(invoice?.isShippingAddressRequested)}
-            savedCredentials={savedCredentials}
+            savedCredentials={form!.savedCredentials}
             isTosAccepted={isTosAccepted}
             onAcceptTos={setIsTosAccepted}
             botName={botName}
@@ -307,7 +303,7 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
         return (
           <SavedPaymentCredentials
             state={paymentState}
-            savedCredentials={savedCredentials}
+            savedCredentials={form!.savedCredentials}
             dispatch={paymentDispatch}
             onNewCardClick={handleNewCardClick}
           />
@@ -316,7 +312,7 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
         return (
           <PasswordConfirm
             state={paymentState}
-            savedCredentials={savedCredentials}
+            savedCredentials={form!.savedCredentials}
             onPasswordChange={setTwoFaPassword}
             isActive={currentStep === step}
           />
@@ -330,7 +326,8 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
             needCardholderName={needCardholderName}
             needCountry={needCountry}
             needZip={needZip}
-            countryList={countryList!}
+            countryList={countryList}
+            isActive={isActive}
           />
         );
       case PaymentStep.ShippingInfo:
@@ -342,7 +339,7 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
             needEmail={Boolean(invoice?.isEmailRequested || invoice?.isEmailSentToProvider)}
             needPhone={Boolean(invoice?.isPhoneRequested || invoice?.isPhoneSentToProvider)}
             needName={Boolean(invoice?.isNameRequested)}
-            countryList={countryList!}
+            countryList={countryList}
           />
         );
       case PaymentStep.Shipping:
@@ -540,8 +537,7 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
         onCloseAnimationEnd={handleModalClose}
       >
         <p>
-          Sorry, Telegram Web A doesn&apos;t support payments with this provider yet. <br />
-          Please use one of our mobile apps to do this.
+          {lang('PaymentsProvidesNotSupported', undefined, { withNodes: true, renderTextFilters: ['br'] })}
         </p>
         <div className="dialog-buttons mt-2">
           <Button
@@ -564,17 +560,16 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
       onClose={closeModal}
       onCloseAnimationEnd={handleModalClose}
     >
-      <div className="header" dir={oldLang.isRtl ? 'rtl' : undefined}>
+      <div className="header" dir={lang.isRtl ? 'rtl' : undefined}>
         <Button
           className="close-button"
           color="translucent"
           round
           size="smaller"
+          iconName={step === PaymentStep.Checkout ? 'close' : 'arrow-left'}
           onClick={step === PaymentStep.Checkout ? closeModal : handleBackClick}
-          ariaLabel="Close"
-        >
-          <Icon name={step === PaymentStep.Checkout ? 'close' : 'arrow-left'} />
-        </Button>
+          ariaLabel={lang('Close')}
+        />
         <h3>{modalHeader}</h3>
       </div>
       {step !== undefined ? (
@@ -584,9 +579,11 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
           shouldCleanup
           cleanupOnlyKey={PaymentStep.ConfirmPayment}
         >
-          <div className="content custom-scroll">
-            {renderModalContent(step)}
-          </div>
+          {(isActive) => (
+            <div className="content custom-scroll">
+              {renderModalContent(step, isActive)}
+            </div>
+          )}
         </Transition>
       ) : (
         <div className="empty-content">
@@ -612,7 +609,7 @@ const PaymentModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const {
       form,
       step,
@@ -636,7 +633,7 @@ export default memo(withGlobal<OwnProps>(
       providerName = url.startsWith(DONATE_PROVIDER_URL) ? DONATE_PROVIDER : undefined;
     }
 
-    const chat = inputInvoice && 'chatId' in inputInvoice ? selectChat(global, inputInvoice.chatId!) : undefined;
+    const chat = inputInvoice && 'chatId' in inputInvoice ? selectChat(global, inputInvoice.chatId) : undefined;
     const isProviderError = Boolean(invoice && (!providerName || !SUPPORTED_PROVIDERS.has(providerName)));
     const { needCardholderName, needCountry, needZip } = (nativeParams || {});
     const bot = form?.botId ? selectUser(global, form.botId) : undefined;

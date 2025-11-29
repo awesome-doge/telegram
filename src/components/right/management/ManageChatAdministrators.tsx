@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiChatMember } from '../../../api/types';
@@ -13,7 +13,6 @@ import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
-import Icon from '../../common/icons/Icon';
 import PrivateChatInfo from '../../common/PrivateChatInfo';
 import Checkbox from '../../ui/Checkbox';
 import FloatingActionButton from '../../ui/FloatingActionButton';
@@ -111,7 +110,7 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="Management">
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         <div className="section">
           <ListItem
             icon="recent"
@@ -134,7 +133,7 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
             <ListItem
               key={member.userId}
               className="chat-item-clickable"
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => handleAdminMemberClick(member)}
             >
               <PrivateChatInfo
@@ -149,9 +148,8 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
             isShown={canAddNewAdmins}
             onClick={handleAddAdminClick}
             ariaLabel={lang('Channel.Management.AddModerator')}
-          >
-            <Icon name="add-user-filled" />
-          </FloatingActionButton>
+            iconName="add-user-filled"
+          />
         </div>
 
         {canToggleSignatures && (
@@ -185,7 +183,7 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const chat = selectChat(global, chatId);
     return {
       chat,

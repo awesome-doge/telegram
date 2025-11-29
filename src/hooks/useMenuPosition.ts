@@ -1,6 +1,6 @@
-import type React from '../lib/teact/teact';
+import type { ElementRef } from '../lib/teact/teact';
 import { useLayoutEffect } from '../lib/teact/teact';
-import { addExtraClass, setExtraStyles } from '../lib/teact/teact-dom';
+import { addExtraClass, removeExtraClass, setExtraStyles } from '../lib/teact/teact-dom';
 
 import type { IAnchorPosition } from '../types';
 
@@ -19,9 +19,9 @@ interface StaticPositionOptions {
 
 interface DynamicPositionOptions {
   anchor: IAnchorPosition;
-  getTriggerElement: () => HTMLElement | null;
-  getRootElement: () => HTMLElement | null;
-  getMenuElement: () => HTMLElement | null;
+  getTriggerElement: () => HTMLElement | undefined | null;
+  getRootElement: () => HTMLElement | undefined | null;
+  getMenuElement: () => HTMLElement | undefined | null;
   getLayout?: () => Layout;
   withMaxHeight?: boolean;
 }
@@ -33,7 +33,6 @@ export type MenuPositionOptions =
 export interface Layout {
   extraPaddingX?: number;
   extraTopPadding?: number;
-  extraMarginTop?: number;
   menuElMinWidth?: number;
   deltaX?: number;
   topShiftY?: number;
@@ -50,8 +49,8 @@ const EMPTY_RECT = {
 
 export default function useMenuPosition(
   isOpen: boolean,
-  containerRef: React.RefObject<HTMLDivElement>,
-  bubbleRef: React.RefObject<HTMLDivElement>,
+  containerRef: ElementRef<HTMLDivElement>,
+  bubbleRef: ElementRef<HTMLDivElement>,
   options: MenuPositionOptions,
 ) {
   const optionsRef = useStateRef(options);
@@ -76,8 +75,8 @@ export default function useMenuPosition(
 }
 
 function applyStaticOptions(
-  containerRef: React.RefObject<HTMLDivElement>,
-  bubbleRef: React.RefObject<HTMLDivElement>,
+  containerRef: ElementRef<HTMLDivElement>,
+  bubbleRef: ElementRef<HTMLDivElement>,
   {
     positionX = 'left',
     positionY = 'top',
@@ -99,10 +98,12 @@ function applyStaticOptions(
   }
 
   if (positionX) {
+    removeExtraClass(bubbleEl, positionX === 'left' ? 'right' : 'left');
     addExtraClass(bubbleEl, positionX);
   }
 
   if (positionY) {
+    removeExtraClass(bubbleEl, positionY === 'top' ? 'bottom' : 'top');
     addExtraClass(bubbleEl, positionY);
   }
 
@@ -115,8 +116,8 @@ function applyStaticOptions(
 }
 
 function processDynamically(
-  containerRef: React.RefObject<HTMLDivElement>,
-  bubbleRef: React.RefObject<HTMLDivElement>,
+  containerRef: ElementRef<HTMLDivElement>,
+  bubbleRef: ElementRef<HTMLDivElement>,
   {
     anchor,
     getRootElement,
@@ -138,7 +139,6 @@ function processDynamically(
   const {
     extraPaddingX = 0,
     extraTopPadding = 0,
-    extraMarginTop = 0,
     topShiftY = 0,
     menuElMinWidth = 0,
     deltaX = 0,
@@ -147,7 +147,7 @@ function processDynamically(
     isDense = false,
   } = getLayout?.() || {};
 
-  const marginTop = menuEl ? parseInt(getComputedStyle(menuEl).marginTop, 10) + extraMarginTop : undefined;
+  const marginTop = menuEl ? parseInt(getComputedStyle(menuEl).marginTop, 10) : undefined;
   const { offsetWidth: menuElWidth, offsetHeight: menuElHeight } = menuEl || { offsetWidth: 0, offsetHeight: 0 };
   const menuRect = menuEl ? {
     width: Math.max(menuElWidth, menuElMinWidth),

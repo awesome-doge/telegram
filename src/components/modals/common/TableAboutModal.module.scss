@@ -1,12 +1,10 @@
 .root :global(.modal-dialog) {
-  width: 26.25rem;
   overflow: hidden;
+  width: 26.25rem;
 }
 
-.title, .description {
-  text-align: center !important;
-  text-wrap: pretty;
-  padding-inline: 1.5rem;
+.title {
+  font-weight: var(--font-weight-medium);
 }
 
 .secondary {
@@ -14,32 +12,40 @@
 }
 
 .topIcon {
-  --premium-gradient: linear-gradient(88.39deg, #6C93FF -2.56%, #976FFF 51.27%, #DF69D1 107.39%);
   display: grid;
-  place-items: center;
   flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--premium-gradient);
+  place-items: center;
 
-  font-size: 4rem;
-  color: white;
   width: 6rem;
   height: 6rem;
-  margin-bottom: 1rem;
+  border-radius: 50%;
+
+  font-size: 4rem;
+  color: var(--color-white);
+
+  background: var(--color-primary);
+}
+
+.premiumGradient {
+  --premium-gradient: linear-gradient(88.39deg, #6C93FF -2.56%, #976FFF 51.27%, #DF69D1 107.39%);
+
+  background: var(--premium-gradient);
 }
 
 .listItemIcon {
+  font-size: 1.875rem !important;
   color: var(--accent-color) !important;
 }
 
 .content {
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
   align-items: center;
-  overflow-x: hidden;
 }
 
 .separator {
-  margin-block: 1rem;
   width: calc(100% + 2rem); // Hack to cover modal paddings
+  margin-block: 1rem;
 }

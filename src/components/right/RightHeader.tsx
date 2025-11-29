@@ -1,17 +1,17 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
-  useEffect, useMemo, useRef, useState,
+import {
+  useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiExportedInvite } from '../../api/types';
 import type { GiftProfileFilterOptions, ThreadId } from '../../types';
 import { MAIN_THREAD_ID } from '../../api/types';
-import { ManagementScreens, ProfileState } from '../../types';
+import { ManagementScreens, ProfileState, SettingsScreens } from '../../types';
 
 import { ANIMATION_END_DELAY, SAVED_FOLDER_ID } from '../../config';
 import {
-  getCanAddContact, getCanManageTopic, isChatChannel, isUserBot, isUserId,
+  getCanAddContact, getCanManageTopic, isChatChannel, isUserBot,
 } from '../../global/helpers';
 import {
   selectCanManage,
@@ -26,18 +26,20 @@ import {
   selectTopic,
   selectUser,
 } from '../../global/selectors';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
+import { IS_MAC_OS } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
+import { isUserId } from '../../util/entities/ids';
 
+import { useVtn } from '../../hooks/animations/useVtn';
 import useAppLayout from '../../hooks/useAppLayout';
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
-import useElectronDrag from '../../hooks/useElectronDrag';
 import useFlag from '../../hooks/useFlag';
 import { useFolderManagerForChatsCount } from '../../hooks/useFolderManager';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 
-import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import DropdownMenu from '../ui/DropdownMenu';
@@ -87,10 +89,11 @@ type StateProps = {
   canEditBot?: boolean;
   giftProfileFilter: GiftProfileFilterOptions;
   canUseGiftFilter?: boolean;
-  canUseGiftAdminFilter?:boolean;
+  canUseGiftAdminFilter?: boolean;
   isInsideTopic?: boolean;
   canEditTopic?: boolean;
   isSavedMessages?: boolean;
+  isOwnProfile?: boolean;
 };
 
 const COLUMN_ANIMATION_DURATION = 450 + ANIMATION_END_DELAY;
@@ -135,6 +138,7 @@ enum HeaderContent {
   CreateTopic,
   EditTopic,
   SavedDialogs,
+  NewDiscussionGroup,
 }
 
 const RightHeader: FC<OwnProps & StateProps> = ({
@@ -171,12 +175,13 @@ const RightHeader: FC<OwnProps & StateProps> = ({
   isInsideTopic,
   canEditTopic,
   isSavedMessages,
-  onClose,
-  onScreenSelect,
   canEditBot,
   giftProfileFilter,
   canUseGiftFilter,
   canUseGiftAdminFilter,
+  isOwnProfile,
+  onClose,
+  onScreenSelect,
 }) => {
   const {
     setStickerSearchQuery,
@@ -188,15 +193,18 @@ const RightHeader: FC<OwnProps & StateProps> = ({
     deleteExportedChatInvite,
     openEditTopicPanel,
     updateGiftProfileFilter,
+    openSettingsScreen,
   } = getActions();
 
   const [isDeleteDialogOpen, openDeleteDialog, closeDeleteDialog] = useFlag();
   const { isMobile } = useAppLayout();
+  const { createVtnStyle } = useVtn();
 
   const {
     sortType: giftsSortType,
     shouldIncludeUnlimited: shouldIncludeUnlimitedGifts,
     shouldIncludeLimited: shouldIncludeLimitedGifts,
+    shouldIncludeUpgradable: shouldIncludeUpgradableGifts,
     shouldIncludeUnique: shouldIncludeUniqueGifts,
     shouldIncludeDisplayed: shouldIncludeDisplayedGifts,
     shouldIncludeHidden: shouldIncludeHiddenGifts,
@@ -238,6 +246,10 @@ const RightHeader: FC<OwnProps & StateProps> = ({
 
   const handleToggleStatistics = useLastCallback(() => {
     toggleStatistics();
+  });
+
+  const handleEditProfile = useLastCallback(() => {
+    openSettingsScreen({ screen: SettingsScreens.EditProfile });
   });
 
   const handleClose = useLastCallback(() => {
@@ -317,6 +329,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
       HeaderContent.ManageInviteInfo
     ) : managementScreen === ManagementScreens.JoinRequests ? (
       HeaderContent.ManageJoinRequests
+    ) : managementScreen === ManagementScreens.NewDiscussionGroup ? (
+      HeaderContent.NewDiscussionGroup
     ) : undefined // Never reached
   ) : isStatistics ? (
     HeaderContent.Statistics
@@ -337,6 +351,10 @@ const RightHeader: FC<OwnProps & StateProps> = ({
   const renderingContentKey = useCurrentOrPrev(contentKey, true) ?? -1;
 
   function getHeaderTitle() {
+    if (isOwnProfile) {
+      return lang('MyProfileHeader');
+    }
+
     if (isSavedMessages) {
       return oldLang('SavedMessages');
     }
@@ -365,10 +383,9 @@ const RightHeader: FC<OwnProps & StateProps> = ({
         color="translucent"
         className={isOpen ? 'active' : ''}
         onClick={onTrigger}
-        ariaLabel={lang('AccDescrOpenMenu2')}
-      >
-        <Icon name="more" />
-      </Button>
+        ariaLabel={lang('AriaLabelOpenMenu')}
+        iconName="more"
+      />
     );
   }, [isMobile, lang]);
 
@@ -422,9 +439,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                   size="smaller"
                   ariaLabel={oldLang('Edit')}
                   onClick={handleEditInviteClick}
-                >
-                  <Icon name="edit" />
-                </Button>
+                  iconName="edit"
+                />
               )}
               {currentInviteInfo && currentInviteInfo.isRevoked && (
                 <>
@@ -434,9 +450,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                     size="smaller"
                     ariaLabel={oldLang('Delete')}
                     onClick={openDeleteDialog}
-                  >
-                    <Icon name="delete" />
-                  </Button>
+                    iconName="delete"
+                  />
                   <ConfirmDialog
                     isOpen={isDeleteDialogOpen}
                     onClose={closeDeleteDialog}
@@ -517,20 +532,20 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                   autoClose={false}
                 >
                   <MenuItem
-                    icon={giftsSortType === 'byDate' ? 'calendar-filter' : 'cash-circle'}
-                    // eslint-disable-next-line react/jsx-no-bind
+                    icon={giftsSortType === 'byDate' ? 'cash-circle' : 'calendar-filter'}
+
                     onClick={() => updateGiftProfileFilter(
                       { peerId: chatId, filter: { sortType: giftsSortType === 'byDate' ? 'byValue' : 'byDate' } },
                     )}
                   >
-                    {lang(giftsSortType === 'byDate' ? 'GiftSortByDate' : 'GiftSortByValue')}
+                    {lang(giftsSortType === 'byDate' ? 'GiftSortByValue' : 'GiftSortByDate')}
                   </MenuItem>
 
                   <MenuSeparator />
 
                   <MenuItem
                     icon={shouldIncludeUnlimitedGifts ? 'check' : 'placeholder'}
-                    // eslint-disable-next-line react/jsx-no-bind
+
                     onClick={() => updateGiftProfileFilter(
                       { peerId: chatId, filter: { shouldIncludeUnlimited: !shouldIncludeUnlimitedGifts } },
                     )}
@@ -540,17 +555,31 @@ const RightHeader: FC<OwnProps & StateProps> = ({
 
                   <MenuItem
                     icon={shouldIncludeLimitedGifts ? 'check' : 'placeholder'}
-                    // eslint-disable-next-line react/jsx-no-bind
+
                     onClick={() => updateGiftProfileFilter(
-                      { peerId: chatId, filter: { shouldIncludeLimited: !shouldIncludeLimitedGifts } },
+                      { peerId: chatId, filter: {
+                        shouldIncludeLimited: !shouldIncludeLimitedGifts,
+                      } },
                     )}
                   >
                     {lang('GiftFilterLimited')}
                   </MenuItem>
 
                   <MenuItem
+                    icon={shouldIncludeUpgradableGifts ? 'check' : 'placeholder'}
+
+                    onClick={() => updateGiftProfileFilter(
+                      { peerId: chatId, filter: {
+                        shouldIncludeUpgradable: !shouldIncludeUpgradableGifts,
+                      } },
+                    )}
+                  >
+                    {lang('GiftFilterUpgradable')}
+                  </MenuItem>
+
+                  <MenuItem
                     icon={shouldIncludeUniqueGifts ? 'check' : 'placeholder'}
-                    // eslint-disable-next-line react/jsx-no-bind
+
                     onClick={() => updateGiftProfileFilter(
                       { peerId: chatId, filter: { shouldIncludeUnique: !shouldIncludeUniqueGifts } },
                     )}
@@ -563,7 +592,7 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                       <MenuSeparator />
                       <MenuItem
                         icon={shouldIncludeDisplayedGifts ? 'check' : 'placeholder'}
-                        // eslint-disable-next-line react/jsx-no-bind
+
                         onClick={() => updateGiftProfileFilter(
                           { peerId: chatId, filter: { shouldIncludeDisplayed: !shouldIncludeDisplayedGifts } },
                         )}
@@ -573,7 +602,7 @@ const RightHeader: FC<OwnProps & StateProps> = ({
 
                       <MenuItem
                         icon={shouldIncludeHiddenGifts ? 'check' : 'placeholder'}
-                        // eslint-disable-next-line react/jsx-no-bind
+
                         onClick={() => updateGiftProfileFilter(
                           { peerId: chatId, filter: { shouldIncludeHidden: !shouldIncludeHiddenGifts } },
                         )}
@@ -587,6 +616,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
             )}
           </>
         );
+      case HeaderContent.NewDiscussionGroup:
+        return <h3 className="title">{oldLang('NewGroup')}</h3>;
       default:
         return (
           <>
@@ -601,9 +632,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                   size="smaller"
                   ariaLabel={oldLang('AddContact')}
                   onClick={handleAddContact}
-                >
-                  <Icon name="add-user" />
-                </Button>
+                  iconName="add-user"
+                />
               )}
               {canManage && !isInsideTopic && (
                 <Button
@@ -612,9 +642,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                   size="smaller"
                   ariaLabel={oldLang('Edit')}
                   onClick={handleToggleManagement}
-                >
-                  <Icon name="edit" />
-                </Button>
+                  iconName="edit"
+                />
               )}
               {canEditBot && (
                 <Button
@@ -623,9 +652,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                   size="smaller"
                   ariaLabel={oldLang('Edit')}
                   onClick={handleToggleManagement}
-                >
-                  <Icon name="edit" />
-                </Button>
+                  iconName="edit"
+                />
               )}
               {canEditTopic && (
                 <Button
@@ -634,9 +662,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                   size="smaller"
                   ariaLabel={oldLang('EditTopic')}
                   onClick={toggleEditTopic}
-                >
-                  <Icon name="edit" />
-                </Button>
+                  iconName="edit"
+                />
               )}
               {canViewStatistics && (
                 <Button
@@ -645,9 +672,18 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                   size="smaller"
                   ariaLabel={oldLang('Statistics')}
                   onClick={handleToggleStatistics}
-                >
-                  <Icon name="stats" />
-                </Button>
+                  iconName="stats"
+                />
+              )}
+              {isOwnProfile && (
+                <Button
+                  round
+                  color="translucent"
+                  size="smaller"
+                  ariaLabel={lang('Edit')}
+                  onClick={handleEditProfile}
+                  iconName="edit"
+                />
               )}
             </section>
           </>
@@ -674,12 +710,12 @@ const RightHeader: FC<OwnProps & StateProps> = ({
     (shouldSkipTransition || shouldSkipHistoryAnimations) && 'no-transition',
   );
 
-  // eslint-disable-next-line no-null/no-null
-  const headerRef = useRef<HTMLDivElement>(null);
-  useElectronDrag(headerRef);
-
   return (
-    <div className="RightHeader" ref={headerRef}>
+    <div
+      className="RightHeader"
+      data-tauri-drag-region={IS_TAURI && IS_MAC_OS ? true : undefined}
+      style={createVtnStyle('rightHeader', true)}
+    >
       <Button
         className="close-button"
         round
@@ -703,7 +739,7 @@ const RightHeader: FC<OwnProps & StateProps> = ({
 export default withGlobal<OwnProps>(
   (global, {
     chatId, isProfile, isManagement, threadId,
-  }): StateProps => {
+  }): Complete<StateProps> => {
     const tabState = selectTabState(global);
     const { query: stickerSearchQuery } = selectCurrentStickerSearch(global) || {};
     const { query: gifSearchQuery } = selectCurrentGifSearch(global) || {};
@@ -714,7 +750,8 @@ export default withGlobal<OwnProps>(
     const topic = isInsideTopic ? selectTopic(global, chatId!, threadId!) : undefined;
     const canEditTopic = isInsideTopic && topic && getCanManageTopic(chat, topic);
     const isBot = user && isUserBot(user);
-    const isSavedMessages = chatId ? selectIsChatWithSelf(global, chatId) : undefined;
+    const isOwnProfile = tabState.chatInfo?.isOwnProfile;
+    const isSavedMessages = chatId && !isOwnProfile ? selectIsChatWithSelf(global, chatId) : undefined;
     const canEditBot = isBot && user?.canEditBot;
 
     const canAddContact = user && getCanAddContact(user);
@@ -751,6 +788,7 @@ export default withGlobal<OwnProps>(
       giftProfileFilter,
       canUseGiftFilter,
       canUseGiftAdminFilter,
+      isOwnProfile,
     };
   },
 )(RightHeader);

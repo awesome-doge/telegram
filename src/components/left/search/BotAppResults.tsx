@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useRef,
   useState,
 } from '../../../lib/teact/teact';
@@ -20,6 +20,7 @@ import NothingFound from '../../common/NothingFound';
 import InfiniteScroll from '../../ui/InfiniteScroll';
 import Link from '../../ui/Link';
 import Loading from '../../ui/Loading';
+import Transition from '../../ui/Transition.tsx';
 import LeftSearchResultChat from './LeftSearchResultChat';
 
 export type OwnProps = {
@@ -46,8 +47,7 @@ const BotAppResults: FC<OwnProps & StateProps> = ({
     openChatWithInfo,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
   const lang = useOldLang();
 
@@ -80,7 +80,13 @@ const BotAppResults: FC<OwnProps & StateProps> = ({
   const canRenderContents = useAsyncRendering([searchQuery], SLIDE_TRANSITION_DURATION) && !isLoading;
 
   return (
-    <div ref={containerRef} className="LeftSearch--content">
+    <Transition
+      ref={containerRef}
+      slideClassName="LeftSearch--content"
+      name="fade"
+      activeKey={canRenderContents ? 1 : 0}
+      shouldCleanup
+    >
       <InfiniteScroll
         className="search-content custom-scroll"
         items={canRenderContents ? filteredFoundIds : undefined}
@@ -90,6 +96,7 @@ const BotAppResults: FC<OwnProps & StateProps> = ({
         {!canRenderContents && <Loading />}
         {canRenderContents && !filteredFoundIds?.length && (
           <NothingFound
+            withSticker
             text={lang('ChatList.Search.NoResults')}
             description={lang('ChatList.Search.NoResultsDescription')}
           />
@@ -119,7 +126,7 @@ const BotAppResults: FC<OwnProps & StateProps> = ({
             })}
           </div>
         )}
-        {canRenderContents && filteredFoundIds?.length && (
+        {canRenderContents && Boolean(filteredFoundIds?.length) && (
           <div className="search-section">
             <h3 className="section-heading">{lang('SearchAppsPopular')}</h3>
             {filteredFoundIds.map((id) => {
@@ -134,11 +141,11 @@ const BotAppResults: FC<OwnProps & StateProps> = ({
           </div>
         )}
       </InfiniteScroll>
-    </div>
+    </Transition>
   );
 };
 
-export default memo(withGlobal<OwnProps>((global) => {
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
   const globalSearch = selectTabState(global).globalSearch;
   const foundIds = globalSearch.popularBotApps?.peerIds;
 

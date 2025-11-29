@@ -1,4 +1,4 @@
-import React, {
+import {
   memo, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -7,13 +7,12 @@ import type {
   ApiChat,
   ApiPostStatistics,
   ApiUser,
-  StatisticsGraph,
 } from '../../../api/types';
 
-import { STATISTICS_PUBLIC_FORWARDS_LIMIT } from '../../../config';
 import { selectChatFullInfo, selectTabState } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { callApi } from '../../../api/gramjs';
+import { isGraph } from './helpers/isGraph';
 
 import useForceUpdate from '../../../hooks/useForceUpdate';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -27,8 +26,8 @@ import StatisticsStoryPublicForward from './StatisticsStoryPublicForward';
 
 import styles from './Statistics.module.scss';
 
-type ILovelyChart = { create: Function };
-let lovelyChartPromise: Promise<ILovelyChart>;
+type ILovelyChart = { create: (el: HTMLElement, params: AnyLiteral) => void };
+let lovelyChartPromise: Promise<ILovelyChart> | undefined;
 let LovelyChart: ILovelyChart;
 
 async function ensureLovelyChart() {
@@ -69,10 +68,10 @@ function StoryStatistics({
   usersById,
 }: OwnProps & StateProps) {
   const lang = useOldLang();
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
   const [isReady, setIsReady] = useState(false);
-  const loadedCharts = useRef<string[]>([]);
+  const loadedCharts = useRef<Set<string>>(new Set());
+  const errorCharts = useRef<Set<string>>(new Set());
 
   const { loadStoryStatistics, loadStoryPublicForwards, loadStatisticsAsyncGraph } = getActions();
   const forceUpdate = useForceUpdate();
@@ -85,7 +84,8 @@ function StoryStatistics({
 
   useEffect(() => {
     if (!isActive || storyId) {
-      loadedCharts.current = [];
+      loadedCharts.current.clear();
+      errorCharts.current.clear();
       setIsReady(false);
     }
   }, [isActive, storyId]);
@@ -97,11 +97,14 @@ function StoryStatistics({
     }
 
     GRAPHS.forEach((name) => {
-      const graph = statistics[name as keyof typeof statistics];
-      const isAsync = typeof graph === 'string';
+      const graph = statistics[name];
+      if (!isGraph(graph)) {
+        return;
+      }
+      const isAsync = graph.graphType === 'async';
 
       if (isAsync) {
-        loadStatisticsAsyncGraph({ name, chatId, token: graph });
+        loadStatisticsAsyncGraph({ name, chatId, token: graph.token });
       }
     });
   }, [chatId, statistics, loadStatisticsAsyncGraph]);
@@ -120,34 +123,39 @@ function StoryStatistics({
       }
 
       GRAPHS.forEach((name, index: number) => {
-        const graph = statistics[name as keyof typeof statistics];
-        const isAsync = typeof graph === 'string';
+        const graph = statistics[name];
+        if (!isGraph(graph)) {
+          return;
+        }
+        const isAsync = graph.graphType === 'async';
+        const isError = graph.graphType === 'error';
 
-        if (isAsync || loadedCharts.current.includes(name)) {
+        if (isAsync || loadedCharts.current.has(name)) {
           return;
         }
 
-        if (!graph) {
-          loadedCharts.current.push(name);
+        if (isError) {
+          loadedCharts.current.add(name);
+          errorCharts.current.add(name);
 
           return;
         }
 
-        const { zoomToken } = graph as StatisticsGraph;
+        const { zoomToken } = graph;
 
         LovelyChart.create(
-          containerRef.current!.children[index],
+          containerRef.current!.children[index] as HTMLElement,
           {
             title: lang((GRAPH_TITLES as Record<string, string>)[name]),
             ...zoomToken ? {
               onZoom: (x: number) => callApi('fetchStatisticsAsyncGraph', { token: zoomToken, x, dcId }),
               zoomOutLabel: lang('Graph.ZoomOut'),
             } : {},
-            ...graph as StatisticsGraph,
+            ...graph,
           },
         );
 
-        loadedCharts.current.push(name);
+        loadedCharts.current.add(name);
       });
 
       forceUpdate();
@@ -167,15 +175,21 @@ function StoryStatistics({
   }
 
   return (
-    <div className={buildClassName(styles.root, 'custom-scroll', isReady && styles.ready)}>
+    <div
+      key={`${chatId}-${storyId}`}
+      className={buildClassName(styles.root, 'custom-scroll', isReady && styles.ready)}
+    >
       <StatisticsOverview statistics={statistics} type="story" title={lang('StatisticOverview')} />
 
-      {!loadedCharts.current.length && <Loading />}
+      {!loadedCharts.current.size && <Loading />}
 
       <div ref={containerRef}>
-        {GRAPHS.map((graph) => (
-          <div className={buildClassName(styles.graph, !loadedCharts.current.includes(graph) && styles.hidden)} />
-        ))}
+        {GRAPHS.map((graph) => {
+          const isGraphReady = loadedCharts.current.has(graph) && !errorCharts.current.has(graph);
+          return (
+            <div className={buildClassName(styles.graph, !isGraphReady && styles.hidden)} />
+          );
+        })}
       </div>
 
       {Boolean(statistics.publicForwards) && (
@@ -186,7 +200,6 @@ function StoryStatistics({
             items={statistics.publicForwardsData}
             itemSelector=".statistic-public-forward"
             onLoadMore={handleLoadMore}
-            preloadBackwards={STATISTICS_PUBLIC_FORWARDS_LIMIT}
             noFastList
           >
             {statistics.publicForwardsData!.map((item) => {
@@ -213,7 +226,7 @@ function StoryStatistics({
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const dcId = selectChatFullInfo(global, chatId)?.statisticsDcId;
     const tabState = selectTabState(global);
     const statistics = tabState.statistics.currentStory;

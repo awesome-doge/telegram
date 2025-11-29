@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type { ApiTypingStatus, ApiUser } from '../../api/types';
@@ -41,9 +41,9 @@ const TypingStatus: FC<OwnProps & StateProps> = ({ typingStatus, typingUser }) =
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { typingStatus }): StateProps => {
+  (global, { typingStatus }): Complete<StateProps> => {
     if (!typingStatus.userId) {
-      return {};
+      return { typingUser: undefined };
     }
 
     const typingUser = selectUser(global, typingStatus.userId);

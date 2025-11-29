@@ -1,10 +1,6 @@
-import type { RefObject } from 'react';
-import React, {
-  beginHeavyAnimation, useEffect, useLayoutEffect, useRef,
-} from '../../lib/teact/teact';
-import {
-  addExtraClass, removeExtraClass, setExtraStyles, toggleExtraClass,
-} from '../../lib/teact/teact-dom';
+import type { ElementRef } from '@teact';
+import { beginHeavyAnimation, useEffect, useLayoutEffect, useRef } from '@teact';
+import { addExtraClass, removeExtraClass, setExtraStyles, toggleExtraClass } from '@teact/teact-dom';
 import { getGlobal } from '../../global';
 
 import { requestForcedReflow, requestMutation } from '../../lib/fasterdom/fasterdom';
@@ -17,6 +13,7 @@ import { allowSwipeControlForTransition } from '../../util/swipeController';
 
 import useForceUpdate from '../../hooks/useForceUpdate';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
+import useSyncEffectWithPrevDeps from '../../hooks/useSyncEffectWithPrevDeps.ts';
 
 import './Transition.scss';
 
@@ -24,10 +21,10 @@ type AnimationName = (
   'none' | 'slide' | 'slideRtl' | 'slideFade' | 'zoomFade' | 'zoomBounceSemiFade' | 'slideLayers'
   | 'fade' | 'pushSlide' | 'reveal' | 'slideOptimized' | 'slideOptimizedRtl' | 'semiFade'
   | 'slideVertical' | 'slideVerticalFade' | 'slideFadeAndroid'
-  );
+);
 export type ChildrenFn = (isActive: boolean, isFrom: boolean, currentKey: number, activeKey: number) => React.ReactNode;
 export type TransitionProps = {
-  ref?: RefObject<HTMLDivElement>;
+  ref?: ElementRef<HTMLDivElement>;
   activeKey: number;
   nextKey?: number;
   name: AnimationName;
@@ -45,9 +42,15 @@ export type TransitionProps = {
   slideClassName?: string;
   withSwipeControl?: boolean;
   isBlockingAnimation?: boolean;
+  children: React.ReactNode | ChildrenFn;
+  'data-tauri-drag-region'?: true;
+  contentSelector?: string;
+  restoreHeightKey?: number;
   onStart?: NoneToVoidFunction;
   onStop?: NoneToVoidFunction;
-  children: React.ReactNode | ChildrenFn;
+  onScroll?: NoneToVoidFunction;
+  onWheel?: (e: React.WheelEvent<HTMLDivElement>) => void;
+  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 };
 
 const FALLBACK_ANIMATION_END = 1000;
@@ -85,17 +88,22 @@ function Transition({
   slideClassName,
   withSwipeControl,
   isBlockingAnimation,
+  children,
+  'data-tauri-drag-region': dataTauriDragRegion,
+  contentSelector,
+  restoreHeightKey,
   onStart,
   onStop,
-  children,
+  onScroll,
+  onMouseDown,
+  onWheel,
 }: TransitionProps) {
   const currentKeyRef = useRef<number>();
   // No need for a container to update on change
   const shouldDisableAnimation = DISABLEABLE_ANIMATIONS.has(name)
     && !selectCanAnimateInterface(getGlobal());
 
-  // eslint-disable-next-line no-null/no-null
-  let containerRef = useRef<HTMLDivElement>(null);
+  let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
@@ -117,6 +125,27 @@ function Transition({
     rendersRef.current[nextKey] = children;
   }
 
+  // Reset when switching from/to "optimized" transitions
+  useSyncEffectWithPrevDeps(([prevName]) => {
+    if (!prevName) return;
+
+    const prevIsSliceOptimized = prevName === 'slideOptimized' || prevName === 'slideOptimizedRtl';
+    const isSlideOptimized = name === 'slideOptimized' || name === 'slideOptimizedRtl';
+    const shouldReset = (prevIsSliceOptimized && !isSlideOptimized) || (!prevIsSliceOptimized && isSlideOptimized);
+    if (!shouldReset) return;
+
+    rendersRef.current = { [activeKey]: children };
+
+    if (prevIsSliceOptimized) {
+      requestMutation(() => {
+        const container = containerRef.current!;
+
+        ['slideOptimized', 'slideOptimizedBackwards', 'slideOptimizedRtl', 'slideOptimizedRtlBackwards']
+          .forEach((cn) => removeExtraClass(container, `Transition-${cn}`));
+      });
+    }
+  }, [name]);
+
   const isBackwards = (
     direction === -1
     || (direction === 'auto' && prevActiveKey > activeKey)
@@ -125,9 +154,8 @@ function Transition({
 
   useLayoutEffect(() => {
     function cleanup() {
-      if (!shouldCleanup) {
-        return;
-      }
+      if (!shouldCleanup) return;
+
       if (cleanupExceptionKey !== undefined) {
         rendersRef.current = { [cleanupExceptionKey]: rendersRef.current[cleanupExceptionKey] };
       } else if (cleanupOnlyKey !== undefined) {
@@ -135,6 +163,7 @@ function Transition({
       } else {
         rendersRef.current = {};
       }
+
       forceUpdate();
     }
 
@@ -340,7 +369,10 @@ function Transition({
       return;
     }
 
-    const { clientHeight, clientWidth } = activeElement || {};
+    const contentElement = contentSelector
+      ? activeElement.querySelector<HTMLDivElement>(contentSelector) : activeElement;
+
+    const { clientHeight, clientWidth } = contentElement || activeElement || {};
     if (!clientHeight || !clientWidth) {
       return;
     }
@@ -352,7 +384,7 @@ function Transition({
         flexBasis: `${clientHeight}px`,
       });
     });
-  }, [shouldRestoreHeight, children]);
+  }, [shouldRestoreHeight, children, restoreHeightKey, contentSelector]);
 
   const asFastList = !renderCount;
   const renders = rendersRef.current;
@@ -378,6 +410,10 @@ function Transition({
       id={id}
       className={buildClassName('Transition', className)}
       teactFastList={asFastList}
+      data-tauri-drag-region={dataTauriDragRegion}
+      onScroll={onScroll}
+      onMouseDown={onMouseDown}
+      onWheel={onWheel}
     >
       {contents}
     </div>

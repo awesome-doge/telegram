@@ -1,5 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
@@ -15,23 +16,29 @@ import type { Signal } from '../../util/signals';
 import { MAIN_THREAD_ID } from '../../api/types';
 
 import { EDITABLE_STORY_INPUT_CSS_SELECTOR, EDITABLE_STORY_INPUT_ID } from '../../config';
-import { getPeerTitle, isChatChannel, isUserId } from '../../global/helpers';
+import { isChatChannel } from '../../global/helpers';
+import { getPeerTitle } from '../../global/helpers/peers';
 import {
   selectChat,
+  selectIsCurrentUserFrozen,
   selectIsCurrentUserPremium,
   selectPeer,
+  selectPeerPaidMessagesStars,
   selectPeerStory,
   selectPerformanceSettingsValue,
   selectTabState,
   selectUser,
+  selectUserFullInfo,
 } from '../../global/selectors';
+import { IS_SAFARI } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
-import { formatMediaDuration, formatRelativeTime } from '../../util/dates/dateFormat';
+import { formatMediaDuration, formatRelativePastTime } from '../../util/dates/dateFormat';
 import download from '../../util/download';
+import { isUserId } from '../../util/entities/ids';
+import { formatStarsAsIcon } from '../../util/localization/format';
 import { round } from '../../util/math';
 import { getServerTime } from '../../util/serverTime';
-import { IS_SAFARI } from '../../util/windowEnvironment';
 import renderText from '../common/helpers/renderText';
 import { BASE_STORY_HEIGHT, BASE_STORY_WIDTH } from './helpers/dimensions';
 import { PRIMARY_VIDEO_MIME, SECONDARY_VIDEO_MIME } from './helpers/videoFormats';
@@ -42,6 +49,7 @@ import useCanvasBlur from '../../hooks/useCanvasBlur';
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
 import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
 import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useLongPress from '../../hooks/useLongPress';
 import useMediaTransitionDeprecated from '../../hooks/useMediaTransitionDeprecated';
@@ -72,7 +80,7 @@ interface OwnProps {
   peerId: string;
   storyId: number;
   dimensions: IDimensions;
-  // eslint-disable-next-line react/no-unused-prop-types
+
   isDeleteModalOpen?: boolean;
   isPrivateStories?: boolean;
   isArchivedStories?: boolean;
@@ -94,10 +102,12 @@ interface StateProps {
   storyChangelogUserId?: string;
   viewersExpirePeriod: number;
   isChatExist?: boolean;
-  areChatSettingsLoaded?: boolean;
+  arePeerSettingsLoaded?: boolean;
   isCurrentUserPremium?: boolean;
   stealthMode: ApiStealthMode;
   withHeaderAnimation?: boolean;
+  paidMessagesStars?: number;
+  isAccountFrozen?: boolean;
 }
 
 const VIDEO_MIN_READY_STATE = IS_SAFARI ? 4 : 3;
@@ -122,11 +132,13 @@ function Story({
   storyChangelogUserId,
   viewersExpirePeriod,
   isChatExist,
-  areChatSettingsLoaded,
+  arePeerSettingsLoaded,
   getIsAnimating,
   isCurrentUserPremium,
   stealthMode,
   withHeaderAnimation,
+  paidMessagesStars,
+  isAccountFrozen,
   onDelete,
   onClose,
   onReport,
@@ -143,14 +155,15 @@ function Story({
     openChat,
     showNotification,
     openStoryPrivacyEditor,
-    loadChatSettings,
+    loadPeerSettings,
     fetchChat,
     loadStoryViews,
-    toggleStealthModal,
+    openStealthModal,
   } = getActions();
   const serverTime = getServerTime();
 
-  const lang = useOldLang();
+  const oldLang = useOldLang();
+  const lang = useLang();
   const { isMobile } = useAppLayout();
   const [isComposerHasFocus, markComposerHasFocus, unmarkComposerHasFocus] = useFlag(false);
   const [isStoryPlaybackRequested, playStory, pauseStory] = useFlag(false);
@@ -160,8 +173,7 @@ function Story({
   const [isPausedBySpacebar, setIsPausedBySpacebar] = useState(false);
   const [isPausedByLongPress, markIsPausedByLongPress, unmarkIsPausedByLongPress] = useFlag(false);
   const [isDropdownMenuOpen, markDropdownMenuOpen, unmarkDropdownMenuOpen] = useFlag(false);
-  // eslint-disable-next-line no-null/no-null
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>();
   const {
     isDeletedStory,
     hasText,
@@ -185,6 +197,7 @@ function Story({
   const isChatStory = !isUserStory;
   const isChannelStory = isChatStory && isChatChannel(peer as ApiChat);
   const isOut = isLoadedStory && story.isOut;
+  const isUnsupportedStory = isLoadedStory && Object.keys(story.content).length === 0;
 
   const canPinToProfile = useCurrentOrPrev(
     isOut ? !story.isInProfile : undefined,
@@ -195,7 +208,7 @@ function Story({
     true,
   );
   const areViewsExpired = Boolean(
-    isOut && (story!.date + viewersExpirePeriod) < getServerTime(),
+    isOut && (story.date + viewersExpirePeriod) < getServerTime(),
   );
 
   const forwardSenderTitle = forwardSender ? getPeerTitle(lang, forwardSender)
@@ -205,7 +218,7 @@ function Story({
     isLoadedStory
     && story.isPublic
     && !isChangelog
-    && peer?.usernames?.length,
+    && peer?.hasUsername,
   );
 
   const canShare = Boolean(
@@ -217,7 +230,8 @@ function Story({
   );
 
   const canPlayStory = Boolean(
-    hasFullData && !shouldForcePause && isAppFocused && !isComposerHasFocus && !isCaptionExpanded
+    (hasFullData || isUnsupportedStory)
+    && !shouldForcePause && isAppFocused && !isComposerHasFocus && !isCaptionExpanded
     && !isPausedBySpacebar && !isPausedByLongPress,
   );
 
@@ -225,18 +239,18 @@ function Story({
     ? story.content.video.duration
     : undefined;
 
-  const shouldShowComposer = !(isOut && isUserStory) && !isChangelog && !isChannelStory;
+  const shouldShowComposer = !(isOut && isUserStory) && !isChangelog && !isChannelStory && !isAccountFrozen;
   const shouldShowFooter = isLoadedStory && !shouldShowComposer && (isOut || isChannelStory);
   const headerAnimation = isMobile && withHeaderAnimation ? 'slideFade' : 'none';
 
   const {
     shouldRender: shouldRenderSkeleton,
     transitionClassNames: skeletonTransitionClassNames,
-  } = useShowTransitionDeprecated(!hasFullData);
+  } = useShowTransitionDeprecated(!hasFullData && !isUnsupportedStory);
 
   const {
     transitionClassNames: mediaTransitionClassNames,
-  } = useShowTransitionDeprecated(Boolean(fullMediaData));
+  } = useShowTransitionDeprecated(Boolean(fullMediaData) && !isUnsupportedStory);
 
   const thumbRef = useCanvasBlur(thumbnail, !hasThumb);
   const previewTransitionClassNames = useMediaTransitionDeprecated(previewBlobUrl);
@@ -279,10 +293,10 @@ function Story({
     }
   }, [isChatExist, peerId]);
   useEffect(() => {
-    if (isChatExist && !areChatSettingsLoaded) {
-      loadChatSettings({ chatId: peerId });
+    if (isChatExist && !arePeerSettingsLoaded) {
+      loadPeerSettings({ peerId });
     }
-  }, [areChatSettingsLoaded, isChatExist, peerId]);
+  }, [arePeerSettingsLoaded, isChatExist, peerId]);
 
   const handlePauseStory = useLastCallback(() => {
     if (isVideo) {
@@ -328,17 +342,17 @@ function Story({
     onEnd: handleLongPressEnd,
   });
 
-  const isUnsupported = useUnsupportedMedia(
+  const isUnsupportedVideo = useUnsupportedMedia(
     videoRef,
     undefined,
     !isVideo || !fullMediaData || isStreamingSupported,
   );
 
   const hasAllData = fullMediaData && (!altMediaHash || altMediaData);
-  // Play story after media has been downloaded
   useEffect(() => {
-    if (hasAllData && !isUnsupported) handlePlayStory();
-  }, [hasAllData, isUnsupported]);
+    // Start progress to the nest slide after media has been downloaded or it is unsupported
+    if (hasAllData || isUnsupportedVideo || isUnsupportedStory) handlePlayStory();
+  }, [hasAllData, isUnsupportedVideo, isUnsupportedStory]);
 
   useBackgroundMode(unmarkAppFocused, markAppFocused);
 
@@ -494,13 +508,13 @@ function Story({
     const myName = getPeerTitle(lang, peer);
     switch (visibility) {
       case 'nobody':
-        message = lang('StorySelectedContactsHint', myName);
+        message = oldLang('StorySelectedContactsHint', myName);
         break;
       case 'contacts':
-        message = lang('StoryContactsHint', myName);
+        message = oldLang('StoryContactsHint', myName);
         break;
       case 'closeFriends':
-        message = lang('StoryCloseFriendsHint', myName);
+        message = oldLang('StoryCloseFriendsHint', myName);
         break;
       default:
         return;
@@ -511,7 +525,7 @@ function Story({
   const handleVolumeMuted = useLastCallback(() => {
     if (noSound) {
       showNotification({
-        message: lang('Story.TooltipVideoHasNoSound'),
+        message: oldLang('Story.TooltipVideoHasNoSound'),
       });
       return;
     }
@@ -524,14 +538,14 @@ function Story({
     if (stealthMode.activeUntil && getServerTime() < stealthMode.activeUntil) {
       const diff = stealthMode.activeUntil - getServerTime();
       showNotification({
-        title: lang('StealthModeOn'),
-        message: lang('Story.ToastStealthModeActiveText', formatMediaDuration(diff)),
+        title: lang('StealthModeOnTitle'),
+        message: lang('StealthModeOnHint', { time: formatMediaDuration(diff) }),
         duration: STEALTH_MODE_NOTIFICATION_DURATION,
       });
       return;
     }
 
-    toggleStealthModal({ isOpen: true });
+    openStealthModal({});
   });
 
   const handleDownload = useLastCallback(() => {
@@ -543,9 +557,9 @@ function Story({
     if (!isDeletedStory) return;
 
     showNotification({
-      message: lang('StoryNotFound'),
+      message: oldLang('StoryNotFound'),
     });
-  }, [lang, isDeletedStory]);
+  }, [oldLang, isDeletedStory]);
 
   const MenuButton: FC<{ onTrigger: () => void; isOpen?: boolean }> = useMemo(() => {
     return ({ onTrigger, isOpen }) => {
@@ -557,10 +571,9 @@ function Story({
           color="translucent-white"
           onClick={onTrigger}
           className={buildClassName(styles.button, isOpen && 'active')}
-          ariaLabel={lang('AccDescrOpenMenu2')}
-        >
-          <Icon name="more" />
-        </Button>
+          ariaLabel={lang('AriaLabelOpenMenu')}
+          iconName="more"
+        />
       );
     };
   }, [isMobile, lang]);
@@ -672,10 +685,10 @@ function Story({
               </span>
             )}
             {story && 'date' in story && (
-              <span className={styles.storyMeta}>{formatRelativeTime(lang, serverTime, story.date)}</span>
+              <span className={styles.storyMeta}>{formatRelativePastTime(oldLang, serverTime, story.date)}</span>
             )}
             {isLoadedStory && story.isEdited && (
-              <span className={styles.storyMeta}>{lang('Story.HeaderEdited')}</span>
+              <span className={styles.storyMeta}>{oldLang('Story.HeaderEdited')}</span>
             )}
           </div>
         </div>
@@ -701,10 +714,9 @@ function Story({
               color="translucent-white"
               disabled={!hasFullData}
               onClick={handleVolumeMuted}
-              ariaLabel={lang('Volume')}
-            >
-              <Icon name={(isMuted || noSound) ? 'speaker-muted-story' : 'speaker-story'} />
-            </Button>
+              ariaLabel={oldLang('Volume')}
+              iconName={(isMuted || noSound) ? 'speaker-muted-story' : 'speaker-story'}
+            />
           )}
           <DropdownMenu
             className={styles.buttonMenu}
@@ -713,44 +725,59 @@ function Story({
             onOpen={handleDropdownMenuOpen}
             onClose={handleDropdownMenuClose}
           >
-            {canCopyLink && <MenuItem icon="copy" onClick={handleCopyStoryLink}>{lang('CopyLink')}</MenuItem>}
+            {canCopyLink && <MenuItem icon="copy" onClick={handleCopyStoryLink}>{oldLang('CopyLink')}</MenuItem>}
             {canPinToProfile && (
               <MenuItem icon="save-story" onClick={handlePinClick}>
-                {lang(isUserStory ? 'StorySave' : 'SaveToPosts')}
+                {oldLang(isUserStory ? 'StorySave' : 'SaveToPosts')}
               </MenuItem>
             )}
             {canUnpinFromProfile && (
               <MenuItem icon="delete" onClick={handleUnpinClick}>
-                {lang(isUserStory ? 'ArchiveStory' : 'RemoveFromPosts')}
+                {oldLang(isUserStory ? 'ArchiveStory' : 'RemoveFromPosts')}
               </MenuItem>
             )}
             {canDownload && (
               <MenuItem icon="download" disabled={!downloadMediaData} onClick={handleDownload}>
-                {lang('lng_media_download')}
+                {oldLang('lng_media_download')}
               </MenuItem>
             )}
             {!isOut && isUserStory && (
-              <MenuItem icon="eye-closed-outline" onClick={handleOpenStealthModal}>
-                {lang('StealthMode')}
+              <MenuItem icon="eye-crossed-outline" onClick={handleOpenStealthModal}>
+                {oldLang('StealthMode')}
               </MenuItem>
             )}
-            {!isOut && <MenuItem icon="flag" onClick={handleReportStoryClick}>{lang('lng_report_story')}</MenuItem>}
-            {isOut && <MenuItem icon="delete" destructive onClick={handleDeleteStoryClick}>{lang('Delete')}</MenuItem>}
+            {!isOut && <MenuItem icon="flag" onClick={handleReportStoryClick}>{oldLang('lng_report_story')}</MenuItem>}
+            {isOut && (
+              <MenuItem
+                icon="delete"
+                destructive
+                onClick={handleDeleteStoryClick}
+              >
+                {oldLang('Delete')}
+              </MenuItem>
+            )}
           </DropdownMenu>
           <Button
             className={buildClassName(styles.button, styles.closeButton)}
             round
             size="tiny"
             color="translucent-white"
-            ariaLabel={lang('Close')}
+            ariaLabel={oldLang('Close')}
             onClick={onClose}
-          >
-            <Icon name="close" />
-          </Button>
+            iconName="close"
+          />
         </div>
       </div>
     );
   }
+
+  const inputPlaceholder = paidMessagesStars
+    ? lang('ComposerPlaceholderPaidReply', {
+      amount: formatStarsAsIcon(lang, paidMessagesStars, { asFont: true, className: 'placeholder-star-icon' }),
+    }, {
+      withNodes: true,
+    })
+    : oldLang(isChatStory ? 'ReplyToGroupStory' : 'ReplyPrivately');
 
   return (
     <div
@@ -814,19 +841,25 @@ function Story({
           </OptimizedVideo>
         )}
 
+        {isUnsupportedStory && (
+          <div className={buildClassName(styles.media, styles.unsupportedMedia)}>
+            <span>{lang('StoryUnsupported')}</span>
+          </div>
+        )}
+
         {!isPausedByLongPress && !isComposerHasFocus && (
           <>
             <button
               type="button"
               className={buildClassName(styles.navigate, styles.prev)}
               onClick={handleOpenPrevStory}
-              aria-label={lang('Previous')}
+              aria-label={oldLang('Previous')}
             />
             <button
               type="button"
               className={buildClassName(styles.navigate, styles.next)}
               onClick={handleOpenNextStory}
-              aria-label={lang('Next')}
+              aria-label={oldLang('Next')}
             />
           </>
         )}
@@ -861,7 +894,7 @@ function Story({
           role="button"
           className={buildClassName(styles.captionBackdrop, captionBackdropTransitionClassNames)}
           onClick={() => foldCaption()}
-          aria-label={lang('Close')}
+          aria-label={oldLang('Close')}
         />
       )}
       {hasText && <div className={buildClassName(styles.captionGradient, captionAppearanceAnimationClassNames)} />}
@@ -888,7 +921,7 @@ function Story({
           editableInputId={EDITABLE_STORY_INPUT_ID}
           inputId="story-input-text"
           className={buildClassName(styles.composer, composerAppearanceAnimationClassNames)}
-          inputPlaceholder={lang(isChatStory ? 'ReplyToGroupStory' : 'ReplyPrivately')}
+          inputPlaceholder={inputPlaceholder}
           onForward={canShare ? handleForwardClick : undefined}
           onFocus={markComposerHasFocus}
           onBlur={unmarkComposerHasFocus}
@@ -902,17 +935,17 @@ export default memo(withGlobal<OwnProps>((global, {
   peerId,
   storyId,
   isDeleteModalOpen,
-}): StateProps => {
+}): Complete<StateProps> => {
   const { appConfig } = global;
   const user = selectUser(global, peerId);
   const chat = selectChat(global, peerId);
+  const userFullInfo = selectUserFullInfo(global, peerId);
   const tabState = selectTabState(global);
   const {
     storyViewer: {
       isMuted,
       viewModal,
       isPrivacyModalOpen,
-      isStealthModalOpen,
       storyList,
     },
     forwardMessages: { storyId: forwardedStoryId },
@@ -921,12 +954,16 @@ export default memo(withGlobal<OwnProps>((global, {
     mapModal,
     reportModal,
     giftInfoModal,
+    isPaymentMessageConfirmDialogOpen,
+    storyStealthModal,
   } = tabState;
   const { isOpen: isPremiumModalOpen } = premiumModal || {};
+  const isStealthModalOpen = Boolean(storyStealthModal);
   const story = selectPeerStory(global, peerId, storyId);
   const isLoadedStory = story && 'content' in story;
   const shouldForcePause = Boolean(
-    viewModal || forwardedStoryId || tabState.reactionPicker?.storyId || reportModal || isPrivacyModalOpen
+    isPaymentMessageConfirmDialogOpen
+    || viewModal || forwardedStoryId || tabState.reactionPicker?.storyId || reportModal || isPrivacyModalOpen
     || isPremiumModalOpen || isDeleteModalOpen || safeLinkModalUrl || isStealthModalOpen || mapModal || giftInfoModal,
   );
 
@@ -938,6 +975,8 @@ export default memo(withGlobal<OwnProps>((global, {
   const withHeaderAnimation = selectPerformanceSettingsValue(global, 'mediaViewerAnimations');
 
   const fromPeer = isLoadedStory && story.fromId ? selectPeer(global, story.fromId) : undefined;
+  const paidMessagesStars = selectPeerPaidMessagesStars(global, peerId);
+  const isAccountFrozen = selectIsCurrentUserFrozen(global);
 
   return {
     peer: (user || chat)!,
@@ -948,11 +987,13 @@ export default memo(withGlobal<OwnProps>((global, {
     isMuted,
     isCurrentUserPremium: selectIsCurrentUserPremium(global),
     shouldForcePause,
-    storyChangelogUserId: appConfig!.storyChangelogUserId,
-    viewersExpirePeriod: appConfig!.storyExpirePeriod + appConfig!.storyViewersExpirePeriod,
+    storyChangelogUserId: appConfig.storyChangelogUserId,
+    viewersExpirePeriod: appConfig.storyViewersExpirePeriod,
     isChatExist: Boolean(chat),
-    areChatSettingsLoaded: Boolean(chat?.settings),
+    arePeerSettingsLoaded: Boolean(userFullInfo?.settings),
     stealthMode: global.stories.stealthMode,
     withHeaderAnimation,
+    paidMessagesStars,
+    isAccountFrozen,
   };
 })(Story));

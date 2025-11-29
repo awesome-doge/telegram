@@ -7,12 +7,12 @@ import { ApiMediaFormat } from '../../api/types';
 
 import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import { getStickerHashById } from '../../global/helpers';
-import { selectCanPlayAnimatedEmojis } from '../../global/selectors';
+import { selectCanPlayAnimatedEmojis, selectCustomEmoji } from '../../global/selectors';
+import { IS_WEBM_SUPPORTED } from '../browser/windowEnvironment';
 import { createCallbackManager } from '../callbacks';
 import generateUniqueId from '../generateUniqueId';
 import * as mediaLoader from '../mediaLoader';
 import { throttle } from '../schedulers';
-import { IS_WEBM_SUPPORTED } from '../windowEnvironment';
 
 import blankSrc from '../../assets/blank.png';
 import placeholderSrc from '../../assets/square.svg';
@@ -22,7 +22,7 @@ type CustomEmojiInputRenderCallback = (emojiId: string) => void;
 
 const DOM_PROCESS_THROTTLE = 500;
 
-const INPUT_WAITING_CUSTOM_EMOJI_IDS: Set<string> = new Set();
+const INPUT_WAITING_CUSTOM_EMOJI_IDS = new Set<string>();
 
 const handlers = new Map<CustomEmojiLoadCallback, string>();
 const renderCallbacks = createCallbackManager<CustomEmojiInputRenderCallback>();
@@ -36,7 +36,7 @@ addCallback((global: GlobalState) => {
   ) {
     for (const entry of handlers) {
       const [handler, id] = entry;
-      if (global.customEmojis.byId[id]) {
+      if (selectCustomEmoji(global, id)) {
         handler(global.customEmojis);
       }
     }
@@ -61,7 +61,7 @@ const callInputRenderHandlers = throttle(renderCallbacks.runCallbacks, DOM_PROCE
 function processDomForCustomEmoji() {
   const emojis = document.querySelectorAll<HTMLImageElement>('.custom-emoji.placeholder');
   emojis.forEach((emoji) => {
-    const customEmoji = getGlobal().customEmojis.byId[emoji.dataset.documentId!];
+    const customEmoji = selectCustomEmoji(getGlobal(), emoji.dataset.documentId!);
     if (!customEmoji) {
       INPUT_WAITING_CUSTOM_EMOJI_IDS.add(emoji.dataset.documentId!);
       return;
@@ -103,7 +103,7 @@ export function getCustomEmojiMediaDataForInput(emojiId: string, isPreview?: boo
     return data;
   }
 
-  fetchAndProcess(mediaHash);
+  void fetchAndProcess(mediaHash);
   return undefined;
 }
 
@@ -114,15 +114,15 @@ function fetchAndProcess(mediaHash: string) {
 }
 
 export function getInputCustomEmojiParams(customEmoji?: ApiSticker) {
-  if (!customEmoji) return [true, placeholderSrc, undefined];
+  if (!customEmoji) return [true, placeholderSrc, undefined] as const;
   const shouldUseStaticFallback = !IS_WEBM_SUPPORTED && customEmoji.isVideo;
   const isUsingSharedCanvas = customEmoji.isLottie || (customEmoji.isVideo && !shouldUseStaticFallback);
   if (isUsingSharedCanvas) {
-    fetchAndProcess(`sticker${customEmoji.id}`);
-    return [false, blankSrc, generateUniqueId()];
+    void fetchAndProcess(`sticker${customEmoji.id}`);
+    return [false, blankSrc, generateUniqueId()] as const;
   }
 
   const mediaData = getCustomEmojiMediaDataForInput(customEmoji.id, shouldUseStaticFallback);
 
-  return [!mediaData, mediaData || placeholderSrc, undefined];
+  return [!mediaData, mediaData || placeholderSrc, undefined] as const;
 }

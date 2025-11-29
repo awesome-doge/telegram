@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo,
   useMemo,
 } from '../../../lib/teact/teact';
@@ -20,7 +20,6 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import AnimatedIconWithPreview from '../../common/AnimatedIconWithPreview';
-import Icon from '../../common/icons/Icon';
 import PeerChip from '../../common/PeerChip';
 import Button from '../../ui/Button';
 import Modal from '../../ui/Modal';
@@ -63,13 +62,12 @@ const CollectibleInfoModal: FC<OwnProps & StateProps> = ({
   const handleOpenUrl = useLastCallback(() => {
     openUrl({
       url: modal!.url,
-      shouldSkipModal: true,
     });
     handleClose();
   });
 
   const handleCopy = useLastCallback(() => {
-    const text = isUsername ? formatUsername(modal!.collectible)
+    const text = isUsername ? formatUsername(modal.collectible)
       : formatPhoneNumberWithCode(phoneCodeList, modal!.collectible);
     copyTextToClipboard(text);
     showNotification({
@@ -111,9 +109,8 @@ const CollectibleInfoModal: FC<OwnProps & StateProps> = ({
         className={styles.closeButton}
         ariaLabel={lang('Close')}
         onClick={handleClose}
-      >
-        <Icon name="close" />
-      </Button>
+        iconName="close"
+      />
       <div className={styles.icon}>
         <AnimatedIconWithPreview
           tgsUrl={isUsername ? LOCAL_TGS_URLS.Mention : LOCAL_TGS_URLS.Fragment}
@@ -146,7 +143,7 @@ const CollectibleInfoModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { countryList } = global;
 
     return {

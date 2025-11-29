@@ -1,17 +1,19 @@
-import type { ChangeEvent, FormEvent, RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, {
+import type { ChangeEvent, FormEvent } from 'react';
+import type { ElementRef, FC } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import {
   memo, useCallback, useLayoutEffect, useRef,
 } from '../../lib/teact/teact';
 
 import { requestForcedReflow, requestMutation } from '../../lib/fasterdom/fasterdom';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import buildClassName from '../../util/buildClassName';
 
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 
 type OwnProps = {
-  ref?: RefObject<HTMLTextAreaElement>;
+  ref?: ElementRef<HTMLTextAreaElement>;
   id?: string;
   className?: string;
   value?: string;
@@ -59,8 +61,7 @@ const TextArea: FC<OwnProps> = ({
   onPaste,
   noReplaceNewlines,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  let textareaRef = useRef<HTMLTextAreaElement>(null);
+  let textareaRef = useRef<HTMLTextAreaElement>();
   if (ref) {
     textareaRef = ref;
   }
@@ -119,6 +120,7 @@ const TextArea: FC<OwnProps> = ({
         placeholder={placeholder}
         maxLength={maxLength}
         autoComplete={autoComplete}
+        spellCheck={IS_TAURI ? false : undefined}
         inputMode={inputMode}
         disabled={disabled}
         readOnly={readOnly}

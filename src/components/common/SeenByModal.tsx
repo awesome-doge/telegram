@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from '../../lib/teact/teact';
+import { memo, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import { selectChatMessage, selectTabState } from '../../global/selectors';
@@ -73,7 +73,7 @@ function SeenByModal({
           <ListItem
             key={userId}
             className="chat-item-clickable scroll-item small-icon"
-            // eslint-disable-next-line react/jsx-no-bind
+
             onClick={() => handleClick(userId)}
           >
             <PrivateChatInfo
@@ -99,10 +99,12 @@ function SeenByModal({
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { chatId, messageId } = selectTabState(global).seenByModal || {};
     if (!chatId || !messageId) {
-      return {};
+      return {
+        seenByDates: undefined,
+      };
     }
 
     return {

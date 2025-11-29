@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect } from '../../lib/teact/teact';
+import { memo, useEffect } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
@@ -9,11 +9,10 @@ import type { MessageList } from '../../types';
 
 import { selectCurrentMessageList, selectTabState } from '../../global/selectors';
 import getReadableErrorText from '../../util/getReadableErrorText';
-import { pick } from '../../util/iteratees';
 import renderText from '../common/helpers/renderText';
 
 import useFlag from '../../hooks/useFlag';
-import useOldLang from '../../hooks/useOldLang';
+import useLang from '../../hooks/useLang';
 
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
@@ -30,7 +29,7 @@ const Dialogs: FC<StateProps> = ({ dialogs, currentMessageList }) => {
   } = getActions();
   const [isModalOpen, openModal, closeModal] = useFlag();
 
-  const lang = useOldLang();
+  const lang = useLang();
 
   useEffect(() => {
     if (dialogs.length > 0) {
@@ -49,7 +48,7 @@ const Dialogs: FC<StateProps> = ({ dialogs, currentMessageList }) => {
       }
 
       sendMessage({
-        contact: pick(contactRequest, ['firstName', 'lastName', 'phoneNumber']),
+        contact: contactRequest,
         messageList: currentMessageList,
       });
       closeModal();
@@ -63,12 +62,16 @@ const Dialogs: FC<StateProps> = ({ dialogs, currentMessageList }) => {
         title={lang('ShareYouPhoneNumberTitle')}
         onCloseAnimationEnd={dismissDialog}
       >
-        {lang('AreYouSureShareMyContactInfoBot')}
+        {lang(
+          'AreYouSureShareMyContactInfoBot',
+          undefined,
+          { withNodes: true, withMarkdown: true, renderTextFilters: ['br', 'emoji'],
+          })}
         <div className="dialog-buttons mt-2">
           <Button
             className="confirm-dialog-button"
             isText
-            // eslint-disable-next-line react/jsx-no-bind
+
             onClick={handleConfirm}
           >
             {lang('OK')}
@@ -89,7 +92,7 @@ const Dialogs: FC<StateProps> = ({ dialogs, currentMessageList }) => {
         title={getErrorHeader(error)}
       >
         {error.hasErrorKey ? getReadableErrorText(error)
-          : renderText(error.message!, ['simple_markdown', 'emoji', 'br'])}
+          : renderText(error.message, ['simple_markdown', 'emoji', 'br'])}
         <div className="dialog-buttons mt-2">
           <Button isText onClick={closeModal}>{lang('OK')}</Button>
         </div>
@@ -121,7 +124,7 @@ function getErrorHeader(error: ApiError) {
 }
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       dialogs: selectTabState(global).dialogs,
       currentMessageList: selectCurrentMessageList(global),

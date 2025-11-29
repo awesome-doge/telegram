@@ -8,35 +8,33 @@ import type {
   ApiPostStatistics,
   ApiStoryPublicForward,
   ChannelMonetizationBalances,
-  StatisticsGraph,
   StatisticsMessageInteractionCounter,
   StatisticsOverviewItem,
   StatisticsOverviewPercentage,
   StatisticsOverviewPeriod,
   StatisticsStoryInteractionCounter,
+  TypeStatisticsGraph,
 } from '../../types';
 
-import { buildApiUsernames, buildAvatarPhotoId } from './common';
-import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
-
-const DECIMALS = 10 ** 9;
+import { buildApiUsernames } from './common';
+import { buildApiCurrencyAmount } from './payments';
+import { buildApiPeerId, buildAvatarPhotoId, getApiChatIdFromMtpPeer } from './peers';
 
 export function buildChannelStatistics(stats: GramJs.stats.BroadcastStats): ApiChannelStatistics {
   return {
+    type: 'channel',
     // Graphs
     growthGraph: buildGraph(stats.growthGraph),
     followersGraph: buildGraph(stats.followersGraph),
     muteGraph: buildGraph(stats.muteGraph),
     topHoursGraph: buildGraph(stats.topHoursGraph),
-
-    // Async graphs
-    languagesGraph: (stats.languagesGraph as GramJs.StatsGraphAsync).token,
-    viewsBySourceGraph: (stats.viewsBySourceGraph as GramJs.StatsGraphAsync).token,
-    newFollowersBySourceGraph: (stats.newFollowersBySourceGraph as GramJs.StatsGraphAsync).token,
-    interactionsGraph: (stats.interactionsGraph as GramJs.StatsGraphAsync).token,
-    reactionsByEmotionGraph: (stats.reactionsByEmotionGraph as GramJs.StatsGraphAsync).token,
-    storyInteractionsGraph: (stats.storyInteractionsGraph as GramJs.StatsGraphAsync).token,
-    storyReactionsByEmotionGraph: (stats.storyReactionsByEmotionGraph as GramJs.StatsGraphAsync).token,
+    languagesGraph: buildGraph(stats.languagesGraph),
+    viewsBySourceGraph: buildGraph(stats.viewsBySourceGraph),
+    newFollowersBySourceGraph: buildGraph(stats.newFollowersBySourceGraph),
+    interactionsGraph: buildGraph(stats.interactionsGraph),
+    reactionsByEmotionGraph: buildGraph(stats.reactionsByEmotionGraph),
+    storyInteractionsGraph: buildGraph(stats.storyInteractionsGraph),
+    storyReactionsByEmotionGraph: buildGraph(stats.storyReactionsByEmotionGraph),
 
     // Statistics overview
     followers: buildStatisticsOverview(stats.followers),
@@ -54,15 +52,15 @@ export function buildChannelStatistics(stats: GramJs.stats.BroadcastStats): ApiC
 }
 
 export function buildChannelMonetizationStatistics(
-  stats: GramJs.stats.BroadcastRevenueStats,
+  stats: GramJs.payments.StarsRevenueStats,
 ): ApiChannelMonetizationStatistics {
   return {
     // Graphs
-    topHoursGraph: buildGraph(stats.topHoursGraph),
+    topHoursGraph: stats.topHoursGraph ? buildGraph(stats.topHoursGraph) : undefined,
     revenueGraph: buildGraph(stats.revenueGraph, undefined, true, stats.usdRate),
 
     // Statistics overview
-    balances: buildChannelMonetizationBalances(stats.balances),
+    balances: buildChannelMonetizationBalances(stats.status),
     usdRate: stats.usdRate,
   };
 }
@@ -72,6 +70,7 @@ export function buildApiPostInteractionCounter(
 ): StatisticsMessageInteractionCounter | StatisticsStoryInteractionCounter | undefined {
   if (interaction instanceof GramJs.PostInteractionCountersMessage) {
     return {
+      type: 'message',
       msgId: interaction.msgId,
       forwardsCount: interaction.forwards,
       viewsCount: interaction.views,
@@ -81,6 +80,7 @@ export function buildApiPostInteractionCounter(
 
   if (interaction instanceof GramJs.PostInteractionCountersStory) {
     return {
+      type: 'story',
       storyId: interaction.storyId,
       reactionsCount: interaction.reactions,
       viewsCount: interaction.views,
@@ -93,15 +93,14 @@ export function buildApiPostInteractionCounter(
 
 export function buildGroupStatistics(stats: GramJs.stats.MegagroupStats): ApiGroupStatistics {
   return {
+    type: 'group',
     // Graphs
     growthGraph: buildGraph(stats.growthGraph),
     membersGraph: buildGraph(stats.membersGraph),
     topHoursGraph: buildGraph(stats.topHoursGraph),
-
-    // Async graphs
-    languagesGraph: (stats.languagesGraph as GramJs.StatsGraphAsync).token,
-    messagesGraph: (stats.messagesGraph as GramJs.StatsGraphAsync).token,
-    actionsGraph: (stats.actionsGraph as GramJs.StatsGraphAsync).token,
+    languagesGraph: buildGraph(stats.languagesGraph),
+    messagesGraph: buildGraph(stats.messagesGraph),
+    actionsGraph: buildGraph(stats.actionsGraph),
 
     // Statistics overview
     period: getOverviewPeriod(stats.period),
@@ -112,7 +111,7 @@ export function buildGroupStatistics(stats: GramJs.stats.MegagroupStats): ApiGro
   };
 }
 
-export function buildPostsStatistics(stats: GramJs.stats.MessageStats): ApiPostStatistics {
+export function buildPostsStatistics(stats: GramJs.stats.MessageStats | GramJs.stats.StoryStats): ApiPostStatistics {
   return {
     viewsGraph: buildGraph(stats.viewsGraph),
     reactionsGraph: buildGraph(stats.reactionsByEmotionGraph),
@@ -120,13 +119,16 @@ export function buildPostsStatistics(stats: GramJs.stats.MessageStats): ApiPostS
 }
 
 export function buildMessagePublicForwards(
-  result: GramJs.messages.TypeMessages,
+  result: GramJs.stats.PublicForwards,
 ): ApiMessagePublicForward[] | undefined {
-  if (!result || !('messages' in result)) {
+  if (!result) {
     return undefined;
   }
 
-  return result.messages.map((message) => buildApiMessagePublicForward(message, result.chats));
+  return result.forwards.map((forward) => {
+    if (forward instanceof GramJs.PublicForwardStory) return undefined;
+    return buildApiMessagePublicForward(forward.message, result.chats);
+  }).filter(Boolean);
 }
 
 export function buildStoryPublicForwards(
@@ -155,18 +157,29 @@ export function buildStoryPublicForwards(
 
 export function buildGraph(
   result: GramJs.TypeStatsGraph, isPercentage?: boolean, isCurrency?: boolean, currencyRate?: number,
-): StatisticsGraph | undefined {
-  if ((result as GramJs.StatsGraphError).error) {
-    return undefined;
+): TypeStatisticsGraph {
+  if (result instanceof GramJs.StatsGraphError) {
+    return {
+      graphType: 'error',
+      error: result.error,
+    };
   }
 
-  const data = JSON.parse((result as GramJs.StatsGraph).json.data);
+  if (result instanceof GramJs.StatsGraphAsync) {
+    return {
+      graphType: 'async',
+      token: result.token,
+    };
+  }
+
+  const data = JSON.parse(result.json.data);
   const [x, ...y] = data.columns;
   const hasSecondYAxis = data.y_scaled;
 
   return {
+    graphType: 'graph',
     type: isPercentage ? 'area' : data.types.y0,
-    zoomToken: (result as GramJs.StatsGraph).zoomToken,
+    zoomToken: result.zoomToken,
     labelFormatter: data.xTickFormatter,
     tooltipFormatter: data.xTooltipFormatter,
     labels: x.slice(1),
@@ -243,7 +256,7 @@ function getOverviewPeriod(data: GramJs.StatsDateRangeDays): StatisticsOverviewP
 function buildApiMessagePublicForward(message: GramJs.TypeMessage, chats: GramJs.TypeChat[]): ApiMessagePublicForward {
   const peerId = getApiChatIdFromMtpPeer(message.peerId!);
   const channel = chats.find((c) => buildApiPeerId(c.id, 'channel') === peerId);
-  const channelProfilePhoto = channel && 'photo' in channel && channel.photo instanceof GramJs.Photo
+  const channelProfilePhoto = channel && 'photo' in channel && channel.photo instanceof GramJs.ChatPhoto
     ? channel.photo : undefined;
 
   return {
@@ -256,21 +269,21 @@ function buildApiMessagePublicForward(message: GramJs.TypeMessage, chats: GramJs
       title: (channel as GramJs.Channel).title,
       usernames: buildApiUsernames(channel as GramJs.Channel),
       avatarPhotoId: channelProfilePhoto && buildAvatarPhotoId(channelProfilePhoto),
-      hasVideoAvatar: Boolean(channelProfilePhoto?.videoSizes),
+      hasVideoAvatar: Boolean(channelProfilePhoto?.hasVideo),
     },
   };
 }
 
-function buildChannelMonetizationBalances({
-  currentBalance,
-  availableBalance,
-  overallRevenue,
-  withdrawalEnabled,
-}: GramJs.BroadcastRevenueBalances): ChannelMonetizationBalances {
+function buildChannelMonetizationBalances(revenueStatus: GramJs.StarsRevenueStatus): ChannelMonetizationBalances {
+  const currentBalance = buildApiCurrencyAmount(revenueStatus.currentBalance);
+  const availableBalance = buildApiCurrencyAmount(revenueStatus.availableBalance);
+  const overallRevenue = buildApiCurrencyAmount(revenueStatus.overallRevenue);
+  const withdrawalEnabled = revenueStatus.withdrawalEnabled;
+
   return {
-    currentBalance: Number(currentBalance) / DECIMALS,
-    availableBalance: Number(availableBalance) / DECIMALS,
-    overallRevenue: Number(overallRevenue) / DECIMALS,
+    currentBalance,
+    availableBalance,
+    overallRevenue,
     isWithdrawalEnabled: withdrawalEnabled,
   };
 }

@@ -1,13 +1,12 @@
 import { getGlobal } from '../../../global';
 
 import type { ApiMessage, ApiSponsoredMessage } from '../../../api/types';
-import type { OldLangFn } from '../../../hooks/useOldLang';
-import type { TextPart } from '../../../types';
+import type { TextPart, ThreadId } from '../../../types';
 import { ApiMessageEntityTypes } from '../../../api/types';
 
 import {
   getMessageStatefulContent,
-  getMessageText,
+  getMessageTextWithFallback,
 } from '../../../global/helpers';
 import {
   getMessageSummaryDescription,
@@ -16,6 +15,7 @@ import {
   TRUNCATED_SUMMARY_LENGTH,
 } from '../../../global/helpers/messageSummary';
 import { getMessageKey } from '../../../util/keys/messageKey';
+import { getTranslationFn, type LangFn } from '../../../util/localization';
 import trimText from '../../../util/trimText';
 import renderText from './renderText';
 import { renderTextWithEntities } from './renderTextWithEntities';
@@ -24,27 +24,31 @@ export function renderMessageText({
   message,
   highlight,
   emojiSize,
-  isSimple,
+  asPreview,
   truncateLength,
   isProtected,
   forcePlayback,
   shouldRenderAsHtml,
   isForMediaViewer,
-} : {
+  threadId,
+  maxTimestamp,
+}: {
   message: ApiMessage | ApiSponsoredMessage;
   highlight?: string;
   emojiSize?: number;
-  isSimple?: boolean;
+  asPreview?: boolean;
   truncateLength?: number;
   isProtected?: boolean;
   forcePlayback?: boolean;
   shouldRenderAsHtml?: boolean;
   isForMediaViewer?: boolean;
+  threadId?: ThreadId;
+  maxTimestamp?: number;
 }) {
   const { text, entities } = message.content.text || {};
 
   if (!text) {
-    const contentNotSupportedText = getMessageText(message);
+    const contentNotSupportedText = getMessageTextWithFallback(getTranslationFn(), message)?.text;
     return contentNotSupportedText ? [trimText(contentNotSupportedText, truncateLength)] : undefined;
   }
 
@@ -57,15 +61,19 @@ export function renderMessageText({
     emojiSize,
     shouldRenderAsHtml,
     containerId: `${isForMediaViewer ? 'mv-' : ''}${messageKey}`,
-    isSimple,
+    asPreview,
     isProtected,
     forcePlayback,
+    messageId: 'id' in message ? message.id : undefined,
+    chatId: message.chatId,
+    threadId,
+    maxTimestamp,
   });
 }
 
 // TODO Use Message Summary component instead
 export function renderMessageSummary(
-  lang: OldLangFn,
+  lang: LangFn,
   message: ApiMessage,
   noEmoji = false,
   highlight?: string,
@@ -92,7 +100,7 @@ export function renderMessageSummary(
   const emojiWithSpace = emoji ? `${emoji} ` : '';
 
   const text = renderMessageText({
-    message, highlight, isSimple: true, truncateLength,
+    message, highlight, asPreview: true, truncateLength,
   });
   const description = getMessageSummaryDescription(lang, message, statefulContent, text);
 

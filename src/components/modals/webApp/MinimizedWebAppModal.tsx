@@ -1,4 +1,4 @@
-import React, {
+import {
   memo, useMemo,
   useRef,
 } from '../../../lib/teact/teact';
@@ -16,7 +16,6 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import AvatarList from '../../common/AvatarList';
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 
 import styles from './MinimizedWebAppModal.module.scss';
@@ -37,8 +36,7 @@ const MinimizedWebAppModal = ({
 
   const oldLang = useOldLang();
   const lang = useLang();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
 
   const openedWebAppsValues = useMemo(() => {
     return openedWebApps && Object.values(openedWebApps);
@@ -69,14 +67,14 @@ const MinimizedWebAppModal = ({
   function renderTitle() {
     const activeTabName = peers.length > 0 && peers[0]?.firstName;
     const title = openedTabsCount && activeTabName && openedTabsCount > 1
-      ? `${lang('MiniAppsMoreTabs',
+      ? lang('MiniAppsMoreTabs',
         {
           botName: activeTabName,
           count: openedTabsCount - 1,
         },
         {
           pluralValue: openedTabsCount - 1,
-        })}`
+        })
       : activeTabName;
 
     return (
@@ -98,11 +96,11 @@ const MinimizedWebAppModal = ({
         round
         color="translucent"
         size="tiny"
+        iconName="close"
+        iconClassName={styles.icon}
         ariaLabel={oldLang('Close')}
         onClick={handleCloseClick}
-      >
-        <Icon className={styles.icon} name="close" />
-      </Button>
+      />
       <AvatarList className={styles.avatars} size="mini" peers={peers} />
       {renderTitle()}
       <Button
@@ -113,16 +111,16 @@ const MinimizedWebAppModal = ({
         round
         color="translucent"
         size="tiny"
+        iconName="expand-modal"
+        iconClassName={styles.stateIcon}
         onClick={handleExpandClick}
-      >
-        <Icon className={styles.stateIcon} name="expand-modal" />
-      </Button>
+      />
     </div>
   );
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const tabState = selectTabState(global);
     const webApps = tabState.webApps;
 

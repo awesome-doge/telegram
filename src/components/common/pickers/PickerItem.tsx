@@ -1,10 +1,10 @@
-import React, { type TeactNode } from '../../../lib/teact/teact';
+import { type TeactNode } from '../../../lib/teact/teact';
 
+import { IS_IOS } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
-import { IS_IOS } from '../../../util/windowEnvironment';
 
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
-import useOldLang from '../../../hooks/useOldLang';
 
 import RippleEffect from '../../ui/RippleEffect';
 
@@ -43,7 +43,7 @@ const PickerItem = ({
   onClick,
   onDisabledClick,
 }: OwnProps) => {
-  const lang = useOldLang();
+  const lang = useLang();
 
   const isClickable = !inactive && !disabled;
   const handleClick = useLastCallback(() => {
@@ -71,11 +71,10 @@ const PickerItem = ({
       style={style}
       dir={lang.isRtl ? 'rtl' : undefined}
       role={isClickable ? 'button' : undefined}
-      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
       tabIndex={isClickable ? 0 : undefined}
     >
       {!disabled && !inactive && ripple && <RippleEffect />}
-      {inputElement && (
+      {Boolean(inputElement) && (
         <div className={buildClassName(
           styles.input,
           inputPosition === 'end' ? styles.endInput : styles.startInput,
@@ -84,7 +83,7 @@ const PickerItem = ({
           {inputElement}
         </div>
       )}
-      {avatarElement && (
+      {Boolean(avatarElement) && (
         <div className={styles.avatarElement}>
           {avatarElement}
         </div>
@@ -92,7 +91,7 @@ const PickerItem = ({
       <div className={buildClassName(styles.title, titleClassName)}>
         {title}
       </div>
-      {subtitle && (
+      {Boolean(subtitle) && (
         <div className={buildClassName(styles.subtitle, subtitleClassName)}>
           {subtitle}
         </div>

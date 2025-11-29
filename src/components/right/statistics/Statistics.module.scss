@@ -1,7 +1,11 @@
 .root {
-  height: 100%;
   overflow-x: hidden;
   overflow-y: hidden;
+
+  height: 100%;
+  border-top: 1px solid transparent;
+
+  transition: border-top-color 0.2s ease-in-out;
 
   :global(.lovely-chart--container) {
     font: inherit !important;
@@ -32,13 +36,13 @@
 
 .messages, .publicForwards {
   padding: 1rem 0;
-  border-top: 1px solid var(--color-borders);
 
   &-title {
     padding-left: 0.75rem;
+
     font-size: 16px;
-    color: var(--text-color);
     line-height: 30px;
+    color: var(--text-color);
     text-transform: lowercase;
 
     &:first-letter {
@@ -54,7 +58,6 @@
 .graph {
   margin-bottom: 1rem;
   border-bottom: 1px solid var(--color-borders);
-
   opacity: 1;
   transition: opacity 0.3s ease;
 
@@ -64,41 +67,42 @@
   }
 
   &.hidden {
-    opacity: 0;
     margin: 0;
+    border-bottom: none;
+    opacity: 0;
   }
 }
 
 @keyframes pie-slim-in {
   0% {
-    clip-path: circle(80% at center calc(50% - 7.5px));
     transform: rotate(-360deg);
+    clip-path: circle(80% at center calc(50% - 7.5px));
   }
 
   25% {
-    clip-path: circle(40% at center calc(50% - 7.5px));
     transform: rotate(-360deg);
+    clip-path: circle(40% at center calc(50% - 7.5px));
   }
 
   75% {
-    clip-path: circle(40% at center calc(50% - 7.5px));
     transform: rotate(0);
+    clip-path: circle(40% at center calc(50% - 7.5px));
   }
 }
 
 @keyframes pie-slim-out {
   0% {
-    clip-path: circle(40% at center calc(50% - 7.5px));
     transform: rotate(360deg);
+    clip-path: circle(40% at center calc(50% - 7.5px));
   }
 
   50% {
-    clip-path: circle(40% at center calc(50% - 7.5px));
     transform: rotate(0);
+    clip-path: circle(40% at center calc(50% - 7.5px));
   }
 
   75% {
-    clip-path: circle(80% at center calc(50% - 7.5px));
     transform: rotate(0);
+    clip-path: circle(80% at center calc(50% - 7.5px));
   }
 }

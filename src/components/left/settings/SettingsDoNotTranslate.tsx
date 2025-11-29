@@ -1,10 +1,10 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ISettings } from '../../../types';
+import type { AccountSettings } from '../../../types';
 
 import { SUPPORTED_TRANSLATION_LANGUAGES } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
@@ -50,7 +50,7 @@ type OwnProps = {
   onReset: () => void;
 };
 
-type StateProps = Pick<ISettings, 'doNotTranslate'>;
+type StateProps = Pick<AccountSettings, 'doNotTranslate'>;
 
 const SettingsDoNotTranslate: FC<OwnProps & StateProps> = ({
   isActive,
@@ -132,7 +132,7 @@ const SettingsDoNotTranslate: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const {
       doNotTranslate,
     } = global.settings.byKey;

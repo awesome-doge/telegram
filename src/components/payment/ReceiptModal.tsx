@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect, useMemo } from '../../lib/teact/teact';
+import { memo, useEffect, useMemo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type { ApiReceiptRegular, ApiShippingAddress } from '../../api/types';
@@ -10,7 +10,6 @@ import useFlag from '../../hooks/useFlag';
 import useLang from '../../hooks/useLang';
 import usePrevious from '../../hooks/usePrevious';
 
-import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import Checkout from './Checkout';
@@ -66,10 +65,13 @@ const ReceiptModal: FC<OwnProps & StateProps> = ({
               size="smaller"
               onClick={closeModal}
               ariaLabel="Close"
-            >
-              <Icon name="close" />
-            </Button>
-            <h3> {lang('PaymentReceipt')} </h3>
+              iconName="close"
+            />
+            <h3>
+              {' '}
+              {lang('PaymentReceipt')}
+              {' '}
+            </h3>
           </div>
           <div className="receipt-content custom-scroll">
             <Checkout
@@ -90,7 +92,7 @@ const ReceiptModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { receipt } = selectTabState(global).payment;
 
     return {

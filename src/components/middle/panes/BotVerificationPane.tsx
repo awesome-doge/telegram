@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
+import { memo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiBotVerification } from '../../../api/types';
@@ -66,7 +66,7 @@ const BotVerificationPane: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { peerId }): StateProps => {
+  (global, { peerId }): Complete<StateProps> => {
     const peerFullInfo = selectPeerFullInfo(global, peerId);
 
     const botVerification = peerFullInfo?.botVerification;

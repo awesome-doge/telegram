@@ -1,4 +1,4 @@
-import React, {
+import {
   memo, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
@@ -22,7 +22,7 @@ import PickerModal from '../../common/pickers/PickerModal';
 
 type OwnProps = {
   isOpen?: boolean;
-  // eslint-disable-next-line react/no-unused-prop-types
+
   giveawayChatId?: string;
   selectionLimit: number;
   initialSelectedIds: string[];
@@ -131,10 +131,13 @@ const GiveawayUserPickerModal = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>((global, { giveawayChatId }): StateProps => {
+export default memo(withGlobal<OwnProps>((global, { giveawayChatId }): Complete<StateProps> => {
   const chatFullInfo = giveawayChatId ? selectChatFullInfo(global, giveawayChatId) : undefined;
   if (!chatFullInfo) {
-    return {};
+    return {
+      members: undefined,
+      adminMembersById: undefined,
+    };
   }
 
   return {

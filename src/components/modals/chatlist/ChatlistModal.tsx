@@ -1,5 +1,5 @@
 import type { FC, TeactNode } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChatFolder } from '../../../api/types';
@@ -130,7 +130,7 @@ const ChatlistInviteModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { modal }): StateProps => {
+  (global, { modal }): Complete<StateProps> => {
     const { invite, removal } = modal || {};
     const folderId = removal?.folderId || (invite && 'folderId' in invite ? invite.folderId : undefined);
     const folder = folderId ? selectChatFolder(global, folderId) : undefined;

@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
@@ -14,9 +14,9 @@ import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import { getUserStreams, THRESHOLD } from '../../../lib/secret-sauce';
 import { selectChat, selectUser } from '../../../global/selectors';
 import { animate } from '../../../util/animation';
+import { IS_CANVAS_FILTER_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 import { fastRaf } from '../../../util/schedulers';
-import { IS_CANVAS_FILTER_SUPPORTED } from '../../../util/windowEnvironment';
 import formatGroupCallVolume from './helpers/formatGroupCallVolume';
 
 import useInterval from '../../../hooks/schedulers/useInterval';
@@ -25,7 +25,6 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import FullNameTitle from '../../common/FullNameTitle';
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import Skeleton from '../../ui/placeholder/Skeleton';
 import GroupCallParticipantMenu from './GroupCallParticipantMenu';
@@ -63,12 +62,9 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
 }) => {
   const lang = useOldLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const thumbnailRef = useRef<HTMLCanvasElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const videoRef = useRef<HTMLVideoElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const videoFallbackRef = useRef<HTMLCanvasElement>(null);
+  const thumbnailRef = useRef<HTMLCanvasElement>();
+  const videoRef = useRef<HTMLVideoElement>();
+  const videoFallbackRef = useRef<HTMLCanvasElement>();
 
   const {
     x, y, width, height, noAnimate, isRemoved,
@@ -202,10 +198,8 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
     };
   }, [stream]);
 
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const menuRef = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
+  const menuRef = useRef<HTMLDivElement>();
 
   const {
     isContextMenuOpen,
@@ -292,9 +286,8 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
             className={styles.pinButton}
             ariaLabel={lang(isPinned ? 'lng_group_call_context_unpin_camera' : 'lng_group_call_context_pin_camera')}
             onClick={handleClickPin}
-          >
-            <Icon name={isPinned ? 'unpin' : 'pin'} />
-          </Button>
+            iconName={isPinned ? 'unpin' : 'pin'}
+          />
         )}
         <div className={styles.bottomPanel}>
           <div className={styles.info}>
@@ -322,7 +315,7 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { participant }): StateProps => {
+  (global, { participant }): Complete<StateProps> => {
     return {
       user: participant.isUser ? selectUser(global, participant.id) : undefined,
       chat: !participant.isUser ? selectChat(global, participant.id) : undefined,

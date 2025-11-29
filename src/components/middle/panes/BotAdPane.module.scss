@@ -3,17 +3,20 @@
 .root {
   @include mixins.header-pane;
 
+  cursor: var(--custom-cursor, pointer);
+
   display: flex;
-  align-items: center;
   gap: 0.5rem;
+  align-items: center;
+
   height: auto;
+
+  // Slight variation from mixins.header-pane
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-left: max(1rem, env(safe-area-inset-left));
 
   line-height: 1.25;
 
-  cursor: var(--custom-cursor, pointer);
-
-  // Slight variation from mixins.header-pane
-  padding-left: max(1rem, env(safe-area-inset-left));
   transition: background-color 0.2s, transform var(--slide-transition);
 
   &:hover {
@@ -22,13 +25,18 @@
 }
 
 .content {
+  display: flex;
   flex-grow: 1;
+  gap: 0.5rem;
+  align-items: center;
+
+  color: var(--color-text);
 }
 
 .info {
   display: flex;
-  align-items: center;
   gap: 0.25rem;
+  align-items: center;
   color: var(--accent-color);
 }
 

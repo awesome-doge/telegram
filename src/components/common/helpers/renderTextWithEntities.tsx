@@ -1,15 +1,14 @@
-import React from '../../../lib/teact/teact';
+import type { ElementRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiFormattedText, ApiMessageEntity } from '../../../api/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
-import type { TextPart } from '../../../types';
+import type { TextPart, ThreadId } from '../../../types';
 import type { TextFilter } from './renderText';
 import { ApiMessageEntityTypes } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
 import { copyTextToClipboard } from '../../../util/clipboard';
-import { oldTranslate } from '../../../util/oldLangProvider';
 import { buildCustomEmojiHtmlFromEntity } from '../../middle/composer/helpers/customEmoji';
 import renderText from './renderText';
 
@@ -36,9 +35,8 @@ export function renderTextWithEntities({
   emojiSize,
   shouldRenderAsHtml,
   containerId,
-  isSimple,
+  asPreview,
   isProtected,
-  noLineBreaks,
   observeIntersectionForLoading,
   observeIntersectionForPlaying,
   withTranslucentThumbs,
@@ -47,8 +45,11 @@ export function renderTextWithEntities({
   cacheBuster,
   forcePlayback,
   noCustomEmojiPlayback,
-  focusedQuote,
   isInSelectMode,
+  chatId,
+  messageId,
+  threadId,
+  maxTimestamp,
 }: {
   text: string;
   entities?: ApiMessageEntity[];
@@ -56,29 +57,29 @@ export function renderTextWithEntities({
   emojiSize?: number;
   shouldRenderAsHtml?: boolean;
   containerId?: string;
-  isSimple?: boolean;
+  asPreview?: boolean;
   isProtected?: boolean;
-  noLineBreaks?: boolean;
   observeIntersectionForLoading?: ObserveFn;
   observeIntersectionForPlaying?: ObserveFn;
   withTranslucentThumbs?: boolean;
-  sharedCanvasRef?: React.RefObject<HTMLCanvasElement>;
-  sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>;
+  sharedCanvasRef?: ElementRef<HTMLCanvasElement>;
+  sharedCanvasHqRef?: ElementRef<HTMLCanvasElement>;
   cacheBuster?: string;
   forcePlayback?: boolean;
   noCustomEmojiPlayback?: boolean;
-  focusedQuote?: string;
   isInSelectMode?: boolean;
+  chatId?: string;
+  messageId?: number;
+  threadId?: ThreadId;
+  maxTimestamp?: number;
 }) {
   if (!entities?.length) {
     return renderMessagePart({
       content: text,
       highlight,
-      focusedQuote,
       emojiSize,
       shouldRenderAsHtml,
-      isSimple,
-      noLineBreaks,
+      asPreview,
     });
   }
 
@@ -110,12 +111,10 @@ export function renderTextWithEntities({
         renderResult.push(...renderMessagePart({
           content: textBefore,
           highlight,
-          focusedQuote,
           emojiSize,
           shouldRenderAsHtml,
-          isSimple,
-          noLineBreaks,
-        }) as TextPart[]);
+          asPreview,
+        }));
       }
     }
 
@@ -162,10 +161,8 @@ export function renderTextWithEntities({
         entityContent,
         nestedEntityContent,
         highlight,
-        focusedQuote,
         containerId,
-        isSimple,
-        noLineBreaks,
+        asPreview,
         isProtected,
         observeIntersectionForLoading,
         observeIntersectionForPlaying,
@@ -177,6 +174,10 @@ export function renderTextWithEntities({
         forcePlayback,
         noCustomEmojiPlayback,
         isInSelectMode,
+        chatId,
+        messageId,
+        threadId,
+        maxTimestamp,
       });
 
     if (Array.isArray(newEntity)) {
@@ -196,12 +197,10 @@ export function renderTextWithEntities({
         renderResult.push(...renderMessagePart({
           content: textAfter,
           highlight,
-          focusedQuote,
           emojiSize,
           shouldRenderAsHtml,
-          isSimple,
-          noLineBreaks,
-        }) as TextPart[]);
+          asPreview,
+        }));
       }
     }
 
@@ -239,7 +238,7 @@ export function getTextWithEntitiesAsHtml(formattedText?: ApiFormattedText) {
     text,
     entities,
     shouldRenderAsHtml: true,
-  });
+  }) as string[];
 
   if (Array.isArray(result)) {
     return result.join('');
@@ -254,16 +253,14 @@ function renderMessagePart({
   focusedQuote,
   emojiSize,
   shouldRenderAsHtml,
-  isSimple,
-  noLineBreaks,
-} : {
+  asPreview,
+}: {
   content: TextPart | TextPart[];
   highlight?: string;
   focusedQuote?: string;
   emojiSize?: number;
   shouldRenderAsHtml?: boolean;
-  isSimple?: boolean;
-  noLineBreaks?: boolean;
+  asPreview?: boolean;
 }) {
   if (Array.isArray(content)) {
     const result: TextPart[] = [];
@@ -275,8 +272,7 @@ function renderMessagePart({
         focusedQuote,
         emojiSize,
         shouldRenderAsHtml,
-        isSimple,
-        noLineBreaks,
+        asPreview,
       }));
     });
 
@@ -291,7 +287,7 @@ function renderMessagePart({
 
   const filters: TextFilter[] = [emojiFilter];
   const params: RenderTextParams = {};
-  if (!isSimple && !noLineBreaks) {
+  if (!asPreview) {
     filters.push('br');
   }
 
@@ -299,17 +295,73 @@ function renderMessagePart({
     filters.push('highlight');
     params.highlight = highlight;
   }
-  if (focusedQuote) {
-    filters.push('quote');
-    params.quote = focusedQuote;
-  }
 
   return renderText(content, filters, params);
 }
 
+export function insertTextEntities(entities: ApiMessageEntity[], newEntities: ApiMessageEntity[]) {
+  return newEntities.reduce((acc, newEntity) => {
+    return insertTextEntity(acc, newEntity);
+  }, entities);
+}
+
+export function insertTextEntity(entities: ApiMessageEntity[], newEntity: ApiMessageEntity) {
+  const resultEntities: ApiMessageEntity[] = [];
+
+  const newEntityStart = newEntity.offset;
+  const newEntityEnd = newEntity.offset + newEntity.length;
+
+  for (const existingEntity of entities) {
+    const existingEntityStart = existingEntity.offset;
+    const existingEntityEnd = existingEntity.offset + existingEntity.length;
+    // Push as is if edges do not overlap
+    if (existingEntityEnd <= newEntityStart
+      || existingEntityStart > newEntityEnd
+      || (existingEntityStart > newEntityStart
+        && existingEntityEnd < newEntityEnd)
+      || (existingEntityStart === newEntityStart && existingEntityEnd === newEntityEnd)) {
+      resultEntities.push(existingEntity);
+      continue;
+    }
+
+    // If start edge overlaps
+    if (existingEntityStart < newEntityStart && existingEntityEnd > newEntityStart) {
+      // Split entity in two
+      resultEntities.push({
+        ...existingEntity,
+        length: newEntityStart - existingEntityStart,
+      });
+      resultEntities.push({
+        ...existingEntity,
+        offset: newEntityStart,
+        length: existingEntityEnd - newEntityStart,
+      });
+    }
+
+    // If end edge overlaps
+    if (existingEntityStart < newEntityEnd
+      && existingEntityEnd > newEntityEnd) {
+      // Split entity in two
+      resultEntities.push({
+        ...existingEntity,
+        offset: newEntityEnd,
+        length: existingEntityEnd - newEntityStart - newEntity.length,
+      });
+      resultEntities.push({
+        ...existingEntity,
+        length: newEntityEnd - existingEntityStart,
+      });
+    }
+  }
+
+  resultEntities.push(newEntity);
+  // Sort entities by offset, longer entities first
+  return resultEntities.sort((a, b) => a.offset - b.offset || b.length - a.length);
+}
+
 // Organize entities in a tree-like structure to better represent how the text will be displayed
 function organizeEntities(entities: ApiMessageEntity[]) {
-  const organizedEntityIndexes: Set<number> = new Set();
+  const organizedEntityIndexes = new Set<number>();
   const organizedEntities: IOrganizedEntity[] = [];
 
   entities.forEach((entity, index) => {
@@ -378,10 +430,8 @@ function processEntity({
   entityContent,
   nestedEntityContent,
   highlight,
-  focusedQuote,
   containerId,
-  isSimple,
-  noLineBreaks,
+  asPreview,
   isProtected,
   observeIntersectionForLoading,
   observeIntersectionForPlaying,
@@ -393,26 +443,33 @@ function processEntity({
   forcePlayback,
   noCustomEmojiPlayback,
   isInSelectMode,
-} : {
+  chatId,
+  messageId,
+  threadId,
+  maxTimestamp,
+}: {
   entity: ApiMessageEntity;
   entityContent: TextPart;
   nestedEntityContent: TextPart[];
   highlight?: string;
   focusedQuote?: string;
   containerId?: string;
-  isSimple?: boolean;
-  noLineBreaks?: boolean;
+  asPreview?: boolean;
   isProtected?: boolean;
   observeIntersectionForLoading?: ObserveFn;
   observeIntersectionForPlaying?: ObserveFn;
   withTranslucentThumbs?: boolean;
   emojiSize?: number;
-  sharedCanvasRef?: React.RefObject<HTMLCanvasElement>;
-  sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>;
+  sharedCanvasRef?: ElementRef<HTMLCanvasElement>;
+  sharedCanvasHqRef?: ElementRef<HTMLCanvasElement>;
   cacheBuster?: string;
   forcePlayback?: boolean;
   noCustomEmojiPlayback?: boolean;
   isInSelectMode?: boolean;
+  chatId?: string;
+  messageId?: number;
+  threadId?: ThreadId;
+  maxTimestamp?: number;
 }) {
   const entityText = typeof entityContent === 'string' && entityContent;
   const renderedContent = nestedEntityContent.length ? nestedEntityContent : entityContent;
@@ -421,10 +478,8 @@ function processEntity({
     return renderMessagePart({
       content: renderedContent,
       highlight,
-      focusedQuote,
       emojiSize,
-      isSimple,
-      noLineBreaks,
+      asPreview,
     });
   }
 
@@ -432,7 +487,7 @@ function processEntity({
     return renderNestedMessagePart();
   }
 
-  if (isSimple) {
+  if (asPreview) {
     const text = renderNestedMessagePart();
     if (entity.type === ApiMessageEntityTypes.Spoiler) {
       return <Spoiler>{text}</Spoiler>;
@@ -565,12 +620,31 @@ function processEntity({
         <SafeLink
           url={getLinkUrl(entityText, entity)}
           text={entityText}
+          chatId={chatId}
+          messageId={messageId}
+          threadId={threadId}
+          entityType={entity.type}
         >
           {renderNestedMessagePart()}
         </SafeLink>
       );
     case ApiMessageEntityTypes.Underline:
       return <ins data-entity-type={entity.type}>{renderNestedMessagePart()}</ins>;
+    case ApiMessageEntityTypes.Timestamp:
+      if (!chatId || !messageId || !maxTimestamp || entity.timestamp > maxTimestamp) {
+        return renderNestedMessagePart();
+      }
+
+      return (
+        <a
+          onClick={() => handleTimecodeClick(chatId, messageId, threadId, entity.timestamp)}
+          className="text-entity-link"
+          dir="auto"
+          data-entity-type={entity.type}
+        >
+          {renderNestedMessagePart()}
+        </a>
+      );
     case ApiMessageEntityTypes.Spoiler:
       return <Spoiler containerId={containerId}>{renderNestedMessagePart()}</Spoiler>;
     case ApiMessageEntityTypes.CustomEmoji:
@@ -590,6 +664,10 @@ function processEntity({
           noPlay={noCustomEmojiPlayback}
         />
       );
+    case ApiMessageEntityTypes.QuoteFocus:
+      return (
+        <span className="matching-text-highlight is-quote">{renderNestedMessagePart()}</span>
+      );
     default:
       return renderNestedMessagePart();
   }
@@ -606,8 +684,8 @@ function processEntityAsHtml(
   const content = entity.type === ApiMessageEntityTypes.Pre ? (entityContent as string).trimEnd() : entityContent;
 
   const renderedContent = nestedEntityContent.length
-    ? nestedEntityContent.join('')
-    : renderText(content, ['escape_html', 'emoji_html', 'br_html']).join('');
+    ? (nestedEntityContent as string[]).join('')
+    : (renderText(content, ['escape_html', 'emoji_html', 'br_html']) as string[]).join('');
 
   if (!rawEntityText) {
     return renderedContent;
@@ -623,7 +701,8 @@ function processEntityAsHtml(
     case ApiMessageEntityTypes.Code:
       return `<code class="text-entity-code">${renderedContent}</code>`;
     case ApiMessageEntityTypes.Pre:
-      return `\`\`\`${renderText(entity.language || '', ['escape_html'])}<br/>${renderedContent}<br/>\`\`\`<br/>`;
+      // eslint-disable-next-line @stylistic/max-len
+      return `\`\`\`${renderText(entity.language || '', ['escape_html'])[0] as string}<br/>${renderedContent}<br/>\`\`\`<br/>`;
     case ApiMessageEntityTypes.Strike:
       return `<del>${renderedContent}</del>`;
     case ApiMessageEntityTypes.MentionName:
@@ -686,6 +765,16 @@ function handleHashtagClick(hashtag?: string, username?: string) {
 function handleCodeClick(e: React.MouseEvent<HTMLElement>) {
   copyTextToClipboard(e.currentTarget.innerText);
   getActions().showNotification({
-    message: oldTranslate('TextCopied'),
+    message: {
+      key: 'TextCopied',
+    },
+  });
+}
+
+function handleTimecodeClick(
+  chatId: string, messageId: number, threadId: ThreadId | undefined, timestamp: number,
+) {
+  getActions().openMediaFromTimestamp({
+    chatId, messageId, threadId, timestamp,
   });
 }

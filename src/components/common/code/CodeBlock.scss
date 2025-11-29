@@ -1,37 +1,33 @@
 .CodeBlock {
-  background-color: var(--color-code-bg);
-  margin: 0;
-  padding: 0.1875rem 0.375rem 0.1875rem 0.6875rem;
-  margin-block: 0.25rem;
-  border-radius: 0.25rem;
   position: relative;
+
   overflow: hidden;
 
-  &::before {
-    content: "";
-    display: block;
-    position: absolute;
-    top: 0;
-    inset-inline-start: 0;
-    bottom: 0;
-    width: 0.1875rem;
-    background: var(--bar-gradient, var(--accent-color));
-  }
+  margin: 0;
+  margin-block: 0.25rem;
+  padding-block: 0.1875rem;
+  border-radius: 0.25rem;
+
+  color: var(--color-text);
+
+  background-color: var(--color-code-bg);
 
   .code-title {
-    white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
-    font-weight: var(--font-weight-medium);
+
     margin-bottom: 0.5rem;
-    color: var(--accent-color);
+
     font-size: calc(var(--message-text-size, 1rem) - 0.125rem);
+    font-weight: var(--font-weight-medium);
+    color: var(--accent-color);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .code-block {
+    overflow: hidden;
     margin: 0;
     white-space: pre-wrap;
-    overflow: hidden;
 
     &:hover {
       .code-overlay {
@@ -40,8 +36,8 @@
     }
 
     &.no-word-wrap {
-      white-space: pre;
       padding-bottom: 0.25rem;
+      white-space: pre;
     }
 
     html.theme-light & {
@@ -93,8 +89,8 @@
     }
 
     .hljs {
-      display: block;
       overflow-x: auto;
+      display: block;
       color: var(--color-text);
     }
   }
@@ -142,8 +138,8 @@
 
 .hljs-comment,
 .hljs-quote {
-  color: var(--color-comment);
   font-style: italic;
+  color: var(--color-comment);
 }
 
 .hljs-meta,

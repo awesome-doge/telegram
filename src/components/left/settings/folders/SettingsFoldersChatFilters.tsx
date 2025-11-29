@@ -1,5 +1,5 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect, useMemo, useState,
 } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
@@ -18,7 +18,6 @@ import useHistoryBack from '../../../../hooks/useHistoryBack';
 import useLastCallback from '../../../../hooks/useLastCallback';
 import useOldLang from '../../../../hooks/useOldLang';
 
-import Icon from '../../../common/icons/Icon';
 import PeerPicker from '../../../common/pickers/PeerPicker';
 import FloatingActionButton from '../../../ui/FloatingActionButton';
 import Loading from '../../../ui/Loading';
@@ -162,15 +161,14 @@ const SettingsFoldersChatFilters: FC<OwnProps & StateProps> = ({
         isShown={isTouched}
         onClick={onSaveFilter}
         ariaLabel={lang('Save')}
-      >
-        <Icon name="check" />
-      </FloatingActionButton>
+        iconName="check"
+      />
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       maxChats: selectCurrentLimit(global, 'dialogFiltersChats'),
     };

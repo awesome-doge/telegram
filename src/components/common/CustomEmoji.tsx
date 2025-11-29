@@ -1,5 +1,5 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useRef, useState } from '../../lib/teact/teact';
+import type { ElementRef, FC } from '../../lib/teact/teact';
+import { memo, useRef, useState } from '../../lib/teact/teact';
 import { getGlobal } from '../../global';
 
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
@@ -13,7 +13,6 @@ import useDynamicColorListener from '../../hooks/stickers/useDynamicColorListene
 import useLastCallback from '../../hooks/useLastCallback';
 import useCustomEmoji from './hooks/useCustomEmoji';
 
-import Sparkles from './Sparkles';
 import StickerView from './StickerView';
 
 import styles from './CustomEmoji.module.scss';
@@ -21,7 +20,7 @@ import styles from './CustomEmoji.module.scss';
 import blankImg from '../../assets/blank.png';
 
 type OwnProps = {
-  ref?: React.RefObject<HTMLDivElement>;
+  ref?: ElementRef<HTMLDivElement>;
   documentId: string;
   className?: string;
   style?: string;
@@ -30,10 +29,11 @@ type OwnProps = {
   noPlay?: boolean;
   noVideoOnMobile?: boolean;
   loopLimit?: number;
+  shouldNotLoop?: boolean;
   isSelectable?: boolean;
   withSharedAnimation?: boolean;
-  sharedCanvasRef?: React.RefObject<HTMLCanvasElement>;
-  sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>;
+  sharedCanvasRef?: ElementRef<HTMLCanvasElement>;
+  sharedCanvasHqRef?: ElementRef<HTMLCanvasElement>;
   withTranslucentThumb?: boolean;
   shouldPreloadPreview?: boolean;
   forceOnHeavyAnimation?: boolean;
@@ -42,9 +42,6 @@ type OwnProps = {
   observeIntersectionForPlaying?: ObserveFn;
   onClick?: NoneToVoidFunction;
   onAnimationEnd?: NoneToVoidFunction;
-  withSparkles?: boolean;
-  sparklesClassName?: string;
-  sparklesStyle?: string;
 };
 
 const STICKER_SIZE = 20;
@@ -59,6 +56,7 @@ const CustomEmoji: FC<OwnProps> = ({
   noPlay,
   noVideoOnMobile,
   loopLimit,
+  shouldNotLoop,
   isSelectable,
   withSharedAnimation,
   sharedCanvasRef,
@@ -71,12 +69,8 @@ const CustomEmoji: FC<OwnProps> = ({
   observeIntersectionForPlaying,
   onClick,
   onAnimationEnd,
-  withSparkles,
-  sparklesStyle,
-  sparklesClassName,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  let containerRef = useRef<HTMLDivElement>(null);
+  let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
@@ -88,7 +82,7 @@ const CustomEmoji: FC<OwnProps> = ({
   const [shouldPlay, setShouldPlay] = useState(true);
 
   const hasCustomColor = customEmoji?.shouldUseTextColor;
-  const customColor = useDynamicColorListener(containerRef, !hasCustomColor);
+  const customColor = useDynamicColorListener(containerRef, undefined, !hasCustomColor);
 
   const handleVideoEnded = useLastCallback((e) => {
     if (!loopLimit) return;
@@ -121,7 +115,6 @@ const CustomEmoji: FC<OwnProps> = ({
       ref={containerRef}
       className={buildClassName(
         styles.root,
-        withSparkles && styles.withSparkles,
         className,
         'custom-emoji',
         'emoji',
@@ -133,16 +126,6 @@ const CustomEmoji: FC<OwnProps> = ({
       data-alt={customEmoji?.emoji}
       style={style}
     >
-      {withSparkles && (
-        <Sparkles
-          className={buildClassName(
-            styles.sparkles,
-            sparklesClassName,
-          )}
-          style={sparklesStyle}
-          preset="button"
-        />
-      )}
       {isSelectable && (
         <img
           className={styles.highlightCatch}
@@ -165,7 +148,7 @@ const CustomEmoji: FC<OwnProps> = ({
           noVideoOnMobile={noVideoOnMobile}
           thumbClassName={styles.thumb}
           fullMediaClassName={styles.media}
-          shouldLoop
+          shouldLoop={!shouldNotLoop}
           loopLimit={loopLimit}
           shouldPreloadPreview={shouldPreloadPreview || noPlay || !canPlay}
           forceOnHeavyAnimation={forceOnHeavyAnimation}

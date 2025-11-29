@@ -1,19 +1,18 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useMemo } from '../../lib/teact/teact';
+import { memo, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiChat } from '../../api/types';
 import type { ActiveDownloads, MediaViewerOrigin, MessageListType } from '../../types';
 import type { IconName } from '../../types/icons';
 import type { MenuItemProps } from '../ui/MenuItem';
-import type { MediaViewerItem } from './helpers/getViewableMedia';
+import type { MediaViewerItem, ViewableMedia } from './helpers/getViewableMedia';
 
 import {
   getIsDownloading,
   getMediaFilename,
   getMediaFormat,
   getMediaHash,
-  isUserId,
 } from '../../global/helpers';
 import {
   selectActiveDownloads,
@@ -23,7 +22,8 @@ import {
   selectIsMessageProtected,
   selectTabState,
 } from '../../global/selectors';
-import getViewableMedia from './helpers/getViewableMedia';
+import { isUserId } from '../../util/entities/ids';
+import selectViewableMedia from './helpers/getViewableMedia';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useFlag from '../../hooks/useFlag';
@@ -41,17 +41,6 @@ import ProgressSpinner from '../ui/ProgressSpinner';
 
 import './MediaViewerActions.scss';
 
-type StateProps = {
-  activeDownloads: ActiveDownloads;
-  isProtected?: boolean;
-  isChatProtected?: boolean;
-  canDelete?: boolean;
-  chat?: ApiChat;
-  canUpdate?: boolean;
-  messageListType?: MessageListType;
-  origin?: MediaViewerOrigin;
-};
-
 type OwnProps = {
   item?: MediaViewerItem;
   mediaData?: string;
@@ -63,6 +52,18 @@ type OwnProps = {
   onBeforeDelete: NoneToVoidFunction;
   onCloseMediaViewer: NoneToVoidFunction;
   onForward: NoneToVoidFunction;
+};
+
+type StateProps = {
+  activeDownloads: ActiveDownloads;
+  isProtected?: boolean;
+  isChatProtected?: boolean;
+  canDelete?: boolean;
+  chat?: ApiChat;
+  canUpdate?: boolean;
+  messageListType?: MessageListType;
+  origin?: MediaViewerOrigin;
+  viewableMedia?: ViewableMedia;
 };
 
 const MediaViewerActions: FC<OwnProps & StateProps> = ({
@@ -78,6 +79,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
   messageListType,
   activeDownloads,
   origin,
+  viewableMedia,
   onReportAvatar: onReport,
   onCloseMediaViewer,
   onBeforeDelete,
@@ -98,7 +100,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
 
   const isMessage = item?.type === 'message';
 
-  const { media } = getViewableMedia(item) || {};
+  const { media } = viewableMedia || {};
   const fileName = media && getMediaFilename(media);
   const isDownloading = media && getIsDownloading(activeDownloads, media);
 
@@ -134,7 +136,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
   const handleUpdate = useLastCallback(() => {
     if (item?.type !== 'avatar') return;
     const { avatarOwner, profilePhotos, mediaIndex } = item;
-    const avatarPhoto = profilePhotos?.photos[mediaIndex]!;
+    const avatarPhoto = profilePhotos?.photos[mediaIndex];
     if (isUserId(avatarOwner.id)) {
       updateProfilePhoto({ photo: avatarPhoto });
     } else {
@@ -162,9 +164,8 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         className={isOpen ? 'active' : undefined}
         onClick={onTrigger}
         ariaLabel="More actions"
-      >
-        <Icon name="more" />
-      </Button>
+        iconName="more"
+      />
     );
   }, []);
 
@@ -175,7 +176,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         onClose={closeDeleteModal}
         onConfirm={onBeforeDelete}
         profileId={item.avatarOwner.id}
-        photo={item.profilePhotos.photos[item.mediaIndex!]}
+        photo={item.profilePhotos.photos[item.mediaIndex]}
       />
     ) : undefined;
   }
@@ -207,9 +208,8 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         size="smaller"
         color="translucent-white"
         ariaLabel={lang('AccActionDownload')}
-      >
-        <Icon name="download" />
-      </Button>
+        iconName="download"
+      />
     ));
   }
 
@@ -317,9 +317,8 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           color="translucent-white"
           ariaLabel={lang('Forward')}
           onClick={onForward}
-        >
-          <Icon name="forward" />
-        </Button>
+          iconName="forward"
+        />
       )}
       {renderDownloadButton()}
       <Button
@@ -328,18 +327,16 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         color="translucent-white"
         ariaLabel={lang('MediaZoomOut')}
         onClick={handleZoomOut}
-      >
-        <Icon name="zoom-out" />
-      </Button>
+        iconName="zoom-out"
+      />
       <Button
         round
         size="smaller"
         color="translucent-white"
         ariaLabel={lang('MediaZoomIn')}
         onClick={handleZoomIn}
-      >
-        <Icon name="zoom-in" />
-      </Button>
+        iconName="zoom-in"
+      />
       {canReportAvatar && (
         <Button
           round
@@ -347,9 +344,8 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           color="translucent-white"
           ariaLabel={lang(isVideo ? 'PeerInfo.ReportProfileVideo' : 'PeerInfo.ReportProfilePhoto')}
           onClick={onReport}
-        >
-          <Icon name="flag" />
-        </Button>
+          iconName="flag"
+        />
       )}
       {canUpdate && (
         <Button
@@ -358,9 +354,8 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           color="translucent-white"
           ariaLabel={lang('ProfilePhoto.SetMainPhoto')}
           onClick={handleUpdate}
-        >
-          <Icon name="copy-media" />
-        </Button>
+          iconName="copy-media"
+        />
       )}
       {canDelete && (
         <Button
@@ -369,9 +364,8 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           color="translucent-white"
           ariaLabel={lang('Delete')}
           onClick={openDeleteModalHandler}
-        >
-          <Icon name="delete" />
-        </Button>
+          iconName="delete"
+        />
       )}
       <Button
         round
@@ -379,9 +373,8 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         color="translucent-white"
         ariaLabel={lang('Close')}
         onClick={onCloseMediaViewer}
-      >
-        <Icon name="close" />
-      </Button>
+        iconName="close"
+      />
       {canDelete && renderDeleteModal()}
     </div>
   );
@@ -390,7 +383,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, {
     item, canUpdateMedia,
-  }): StateProps => {
+  }): Complete<StateProps> => {
     const tabState = selectTabState(global);
     const { origin } = tabState.mediaViewer;
 
@@ -411,6 +404,7 @@ export default memo(withGlobal<OwnProps>(
     const canDelete = canDeleteMessage || canDeleteAvatar;
     const canUpdate = canUpdateMedia && Boolean(avatarPhoto) && !isCurrentAvatar;
     const messageListType = currentMessageList?.type;
+    const viewableMedia = selectViewableMedia(global, origin, item);
 
     return {
       activeDownloads,
@@ -421,6 +415,7 @@ export default memo(withGlobal<OwnProps>(
       canUpdate,
       messageListType,
       origin,
+      viewableMedia,
     };
   },
 )(MediaViewerActions));

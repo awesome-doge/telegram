@@ -1,11 +1,9 @@
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
 
 import type {
   ApiChat, ApiMessagePublicForward, ApiPeer, ApiPostStatistics, ApiStoryPublicForward, StatisticsGraph,
 } from '../../types';
 
-import { STATISTICS_PUBLIC_FORWARDS_LIMIT } from '../../../config';
 import {
   buildChannelMonetizationStatistics,
   buildChannelStatistics,
@@ -15,7 +13,7 @@ import {
   buildPostsStatistics,
   buildStoryPublicForwards,
 } from '../apiBuilders/statistics';
-import { buildInputEntity, buildInputPeer } from '../gramjsBuilders';
+import { buildInputChannel, buildInputPeer, DEFAULT_PRIMITIVES } from '../gramjsBuilders';
 import { checkErrorType, wrapError } from '../helpers/misc';
 import { invokeRequest } from './client';
 import { getPassword } from './twoFaSettings';
@@ -24,7 +22,7 @@ export async function fetchChannelStatistics({
   chat, dcId,
 }: { chat: ApiChat; dcId?: number }) {
   const result = await invokeRequest(new GramJs.stats.GetBroadcastStats({
-    channel: buildInputEntity(chat.id, chat.accessHash) as GramJs.InputChannel,
+    channel: buildInputChannel(chat.id, chat.accessHash),
   }), {
     dcId,
   });
@@ -45,7 +43,7 @@ export async function fetchChannelMonetizationStatistics({
   peer: ApiPeer;
   dcId?: number;
 }) {
-  const result = await invokeRequest(new GramJs.stats.GetBroadcastRevenueStats({
+  const result = await invokeRequest(new GramJs.payments.GetStarsRevenueStats({
     peer: buildInputPeer(peer.id, peer.accessHash),
   }), {
     dcId,
@@ -62,7 +60,7 @@ export async function fetchGroupStatistics({
   chat, dcId,
 }: { chat: ApiChat; dcId?: number }) {
   const result = await invokeRequest(new GramJs.stats.GetMegagroupStats({
-    channel: buildInputEntity(chat.id, chat.accessHash) as GramJs.InputChannel,
+    channel: buildInputChannel(chat.id, chat.accessHash),
   }), {
     dcId,
   });
@@ -86,7 +84,7 @@ export async function fetchMessageStatistics({
   dcId?: number;
 }): Promise<ApiPostStatistics | undefined> {
   const result = await invokeRequest(new GramJs.stats.GetMessageStats({
-    channel: buildInputEntity(chat.id, chat.accessHash) as GramJs.InputChannel,
+    channel: buildInputChannel(chat.id, chat.accessHash),
     msgId: messageId,
   }), {
     dcId,
@@ -103,22 +101,24 @@ export async function fetchMessagePublicForwards({
   chat,
   messageId,
   dcId,
-  offset,
+  offset = DEFAULT_PRIMITIVES.STRING,
+  limit = DEFAULT_PRIMITIVES.INT,
 }: {
   chat: ApiChat;
   messageId: number;
   dcId?: number;
   offset?: string;
+  limit?: number;
 }): Promise<{
-    forwards?: ApiMessagePublicForward[];
-    count?: number;
-    nextOffset?: string;
-  } | undefined> {
+  forwards?: ApiMessagePublicForward[];
+  count?: number;
+  nextOffset?: string;
+} | undefined> {
   const result = await invokeRequest(new GramJs.stats.GetMessagePublicForwards({
-    channel: buildInputEntity(chat.id, chat.accessHash) as GramJs.InputChannel,
+    channel: buildInputChannel(chat.id, chat.accessHash),
     msgId: messageId,
     offset,
-    limit: STATISTICS_PUBLIC_FORWARDS_LIMIT,
+    limit,
   }), {
     dcId,
   });
@@ -156,7 +156,10 @@ export async function fetchStatisticsAsyncGraph({
     return undefined;
   }
 
-  return buildGraph(result as GramJs.StatsGraph, isPercentage);
+  const graph = buildGraph(result, isPercentage);
+
+  if (graph.graphType !== 'graph') return undefined;
+  return graph;
 }
 
 export async function fetchStoryStatistics({
@@ -186,22 +189,24 @@ export async function fetchStoryPublicForwards({
   chat,
   storyId,
   dcId,
-  offset,
+  offset = DEFAULT_PRIMITIVES.STRING,
+  limit = DEFAULT_PRIMITIVES.INT,
 }: {
   chat: ApiChat;
   storyId: number;
   dcId?: number;
   offset?: string;
+  limit?: number;
 }): Promise<{
-    publicForwards: (ApiMessagePublicForward | ApiStoryPublicForward)[] | undefined;
-    count?: number;
-    nextOffset?: string;
-  } | undefined> {
+  publicForwards: (ApiMessagePublicForward | ApiStoryPublicForward)[] | undefined;
+  count?: number;
+  nextOffset?: string;
+} | undefined> {
   const result = await invokeRequest(new GramJs.stats.GetStoryPublicForwards({
     peer: buildInputPeer(chat.id, chat.accessHash),
     id: storyId,
     offset,
-    limit: STATISTICS_PUBLIC_FORWARDS_LIMIT,
+    limit,
   }), {
     dcId,
   });
@@ -234,7 +239,7 @@ export async function fetchMonetizationRevenueWithdrawalUrl({
       return password;
     }
 
-    const result = await invokeRequest(new GramJs.stats.GetBroadcastRevenueWithdrawalUrl({
+    const result = await invokeRequest(new GramJs.payments.GetStarsRevenueWithdrawalUrl({
       peer: buildInputPeer(peer.id, peer.accessHash),
       password,
     }), {

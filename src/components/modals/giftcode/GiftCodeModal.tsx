@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiPeer } from '../../../api/types';
@@ -7,9 +7,10 @@ import type { TabState } from '../../../global/types';
 import { TME_LINK_PREFIX } from '../../../config';
 import { selectChatMessage, selectSender } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
-import { formatDateTimeToString } from '../../../util/dates/dateFormat';
+import { formatCountdownDays, formatDateTimeToString } from '../../../util/dates/dateFormat';
 import renderText from '../../common/helpers/renderText';
 
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
@@ -18,7 +19,7 @@ import TableInfoModal, { type TableData } from '../common/TableInfoModal';
 
 import styles from './GiftCodeModal.module.scss';
 
-import PremiumLogo from '../../../assets/premium/PremiumLogo.svg';
+import PremiumLogo from '../../../assets/premium/PremiumStar.svg';
 
 export type OwnProps = {
   modal: TabState['giftCodeModal'];
@@ -39,7 +40,8 @@ const GiftCodeModal = ({
   const {
     closeGiftCodeModal, applyGiftCode, focusMessage,
   } = getActions();
-  const lang = useOldLang();
+  const lang = useLang();
+  const oldLang = useOldLang();
   const isOpen = Boolean(modal);
 
   const canUse = (!modal?.info.toId || modal?.info.toId === currentUserId) && !modal?.info.usedAt;
@@ -70,29 +72,41 @@ const GiftCodeModal = ({
     const header = (
       <>
         <img src={PremiumLogo} alt="" className={styles.logo} />
-        <p className={styles.centered}>{renderText(lang('lng_gift_link_about'), ['simple_markdown'])}</p>
+        <p className={styles.centered}>{renderText(oldLang('lng_gift_link_about'), ['simple_markdown'])}</p>
         <LinkField title="BoostingGiftLink" link={`${TME_LINK_PREFIX}/${GIFTCODE_PATH}/${slug}`} />
       </>
     );
 
-    const tableData = [
-      [lang('BoostingFrom'), fromId ? { chatId: fromId } : lang('BoostingNoRecipient')],
-      [lang('BoostingTo'), info.toId ? { chatId: info.toId } : lang('BoostingNoRecipient')],
-      [lang('BoostingGift'), lang('BoostingTelegramPremiumFor', lang('Months', info.months, 'i'))],
-      [lang('BoostingReason'), (
-        <span className={buildClassName(info.giveawayMessageId && styles.clickable)} onClick={handleOpenGiveaway}>
-          {info.isFromGiveaway && !info.toId ? lang('BoostingIncompleteGiveaway')
-            : lang(info.isFromGiveaway ? 'BoostingGiveaway' : 'BoostingYouWereSelected')}
-        </span>
-      )],
-      [lang('BoostingDate'), formatDateTimeToString(info.date * 1000, lang.code, true)],
-    ] satisfies TableData;
+    const tableData: TableData = [
+      [oldLang('BoostingFrom'), fromId ? { chatId: fromId } : oldLang('BoostingNoRecipient')],
+      [oldLang('BoostingTo'), info.toId ? { chatId: info.toId } : oldLang('BoostingNoRecipient')],
+      [oldLang('BoostingGift'), oldLang('BoostingTelegramPremiumFor', formatCountdownDays(lang, info.days))],
+    ];
+    if (info.isFromGiveaway) {
+      tableData.push([
+        oldLang('BoostingReason'),
+        (
+          <span
+            className={buildClassName(info.giveawayMessageId && styles.clickable)}
+            onClick={handleOpenGiveaway}
+          >
+            {info.isFromGiveaway && !info.toId
+              ? oldLang('BoostingIncompleteGiveaway')
+              : oldLang('BoostingGiveaway')}
+          </span>
+        ),
+      ]);
+    }
+    tableData.push([
+      oldLang('BoostingDate'),
+      formatDateTimeToString(info.date * 1000, oldLang.code, true),
+    ]);
 
     const footer = (
       <span className={styles.centered}>
         {renderText(
-          info.usedAt ? lang('BoostingUsedLinkDate', formatDateTimeToString(info.usedAt * 1000, lang.code, true))
-            : lang('BoostingSendLinkToAnyone'),
+          info.usedAt ? oldLang('BoostingUsedLinkDate', formatDateTimeToString(info.usedAt * 1000, oldLang.code, true))
+            : oldLang('BoostingSendLinkToAnyone'),
           ['simple_markdown'],
         )}
       </span>
@@ -103,18 +117,18 @@ const GiftCodeModal = ({
       tableData,
       footer,
     };
-  }, [lang, messageSender?.id, modal]);
+  }, [lang, oldLang, messageSender?.id, modal]);
 
   if (!modalData) return undefined;
 
   return (
     <TableInfoModal
       isOpen={isOpen}
-      title={lang('lng_gift_link_title')}
+      title={oldLang('lng_gift_link_title')}
       tableData={modalData.tableData}
       header={modalData.header}
       footer={modalData.footer}
-      buttonText={canUse ? lang('BoostingUseLink') : lang('Close')}
+      buttonText={canUse ? oldLang('BoostingUseLink') : oldLang('Close')}
       onButtonClick={handleButtonClick}
       onClose={closeGiftCodeModal}
     />
@@ -122,7 +136,7 @@ const GiftCodeModal = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { modal }): StateProps => {
+  (global, { modal }): Complete<StateProps> => {
     const { message } = modal || {};
     const chatMessage = message && selectChatMessage(global, message.chatId, message.messageId);
     const sender = chatMessage && selectSender(global, chatMessage);

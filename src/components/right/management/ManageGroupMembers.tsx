@@ -1,5 +1,6 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
@@ -23,7 +24,6 @@ import useKeyboardListNavigation from '../../../hooks/useKeyboardListNavigation'
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
-import Icon from '../../common/icons/Icon';
 import NothingFound from '../../common/NothingFound';
 import PrivateChatInfo from '../../common/PrivateChatInfo';
 import FloatingActionButton from '../../ui/FloatingActionButton';
@@ -87,10 +87,8 @@ const ManageGroupMembers: FC<OwnProps & StateProps> = ({
     toggleParticipantsHidden, setNewChatMembersDialogState, toggleManagement,
   } = getActions();
   const lang = useOldLang();
-  // eslint-disable-next-line no-null/no-null
-  const inputRef = useRef<HTMLInputElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>();
+  const containerRef = useRef<HTMLDivElement>();
 
   const [deletingUserId, setDeletingUserId] = useState<string | undefined>();
 
@@ -208,7 +206,7 @@ const ManageGroupMembers: FC<OwnProps & StateProps> = ({
   return (
     <div className="Management">
       {noAdmins && renderSearchField()}
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         {canHideParticipants && !isChannel && (
           <div className="section">
             <ListItem icon="group" ripple onClick={handleToggleParticipantsHidden}>
@@ -234,9 +232,10 @@ const ManageGroupMembers: FC<OwnProps & StateProps> = ({
                 <ListItem
                   key={id}
                   className="chat-item-clickable scroll-item"
-                  // eslint-disable-next-line react/jsx-no-bind
+
                   onClick={() => handleMemberClick(id)}
                   contextActions={getMemberContextAction(id)}
+                  withPortalForMenu
                 >
                   <PrivateChatInfo userId={id} forceShowSelf withStory />
                 </ListItem>
@@ -258,9 +257,8 @@ const ManageGroupMembers: FC<OwnProps & StateProps> = ({
           isShown
           onClick={handleNewMemberDialogOpen}
           ariaLabel={lang('lng_channel_add_users')}
-        >
-          <Icon name="add-user-filled" />
-        </FloatingActionButton>
+          iconName="add-user-filled"
+        />
       )}
       {canDeleteMembers && (
         <DeleteMemberModal
@@ -274,22 +272,22 @@ const ManageGroupMembers: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const chat = selectChat(global, chatId);
     const { statusesById: userStatusesById } = global.users;
     const { members, adminMembersById, areParticipantsHidden } = selectChatFullInfo(global, chatId) || {};
     const isChannel = chat && isChatChannel(chat);
     const { userIds: localContactIds } = global.contactList || {};
-    const hiddenMembersMinCount = global.appConfig?.hiddenMembersMinCount;
+    const hiddenMembersMinCount = global.appConfig.hiddenMembersMinCount;
 
     const canDeleteMembers = chat && (chat.isCreator || getHasAdminRight(chat, 'banUsers'));
 
     const canHideParticipants = canDeleteMembers && !isChatBasicGroup(chat) && chat.membersCount !== undefined
-    && hiddenMembersMinCount !== undefined && chat.membersCount >= hiddenMembersMinCount;
+      && hiddenMembersMinCount !== undefined && chat.membersCount >= hiddenMembersMinCount;
 
     const canAddMembers = chat && ((getHasAdminRight(chat, 'inviteUsers')
-        || (!isChannel && !isUserRightBanned(chat, 'inviteUsers')))
-      || chat.isCreator
+      || (!isChannel && !isUserRightBanned(chat, 'inviteUsers')))
+    || chat.isCreator
     );
 
     const {

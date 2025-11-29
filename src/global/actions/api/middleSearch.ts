@@ -12,7 +12,7 @@ import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { buildCollectionByKey, isInsideSortedArrayRange } from '../../../util/iteratees';
 import { getSearchResultKey } from '../../../util/keys/searchResultKey';
 import { callApi } from '../../../api/gramjs';
-import { getChatMediaMessageIds, getIsSavedDialog, isSameReaction } from '../../helpers';
+import { getIsSavedDialog, getMessageContentIds, isSameReaction } from '../../helpers';
 import {
   addActionHandler, getGlobal, setGlobal,
 } from '../../index';
@@ -66,10 +66,12 @@ addActionHandler('performMiddleSearch', async (global, actions, payload): Promis
   const {
     results, savedTag, type, isHashtag,
   } = currentSearch;
-  const offsetId = results?.nextOffsetId;
-  const offsetRate = results?.nextOffsetRate;
-  const offsetPeerId = results?.nextOffsetPeerId;
-  const offsetPeer = offsetPeerId ? selectChat(global, offsetPeerId) : undefined;
+  const shouldReuseParams = results?.query === query;
+
+  const offsetId = shouldReuseParams ? results?.nextOffsetId : undefined;
+  const offsetRate = shouldReuseParams ? results?.nextOffsetRate : undefined;
+  const offsetPeerId = shouldReuseParams ? results?.nextOffsetPeerId : undefined;
+  const offsetPeer = shouldReuseParams && offsetPeerId ? selectChat(global, offsetPeerId) : undefined;
 
   const shouldHaveQuery = isHashtag || !savedTag;
   if (shouldHaveQuery && !query) {
@@ -111,7 +113,7 @@ addActionHandler('performMiddleSearch', async (global, actions, payload): Promis
   }
 
   if (type === 'channels') {
-    result = await callApi('searchHashtagPosts', {
+    result = await callApi('searchPublicPosts', {
       hashtag: query!,
       limit: MESSAGE_SEARCH_SLICE,
       offsetId,
@@ -358,7 +360,7 @@ function calcChatMediaSearchOffsetId(
   direction: LoadMoreDirection,
   currentMessageId: number,
   segment?: ChatMediaSearchSegment,
-) : number {
+): number {
   if (!segment) return currentMessageId;
   if (direction === LoadMoreDirection.Backwards) return segment.foundIds[0];
   if (direction === LoadMoreDirection.Forwards) return segment.foundIds[segment.foundIds.length - 1];
@@ -394,10 +396,10 @@ function calcLoadMoreDirection(currentMessageId: number, currentSegment?: ChatMe
 }
 
 function calcLoadingState(
-  direction : LoadMoreDirection,
-  limit : number, newFoundIdsCount : number,
+  direction: LoadMoreDirection,
+  limit: number, newFoundIdsCount: number,
   currentSegment?: ChatMediaSearchSegment,
-) : LoadingState {
+): LoadingState {
   let areAllItemsLoadedForwards = Boolean(currentSegment?.loadingState.areAllItemsLoadedForwards);
   let areAllItemsLoadedBackwards = Boolean(currentSegment?.loadingState.areAllItemsLoadedBackwards);
 
@@ -477,7 +479,7 @@ async function searchChatMedia<T extends GlobalState>(
 
   const loadingState = calcLoadingState(direction, limit, newFoundIds.length, currentSegment);
 
-  const filteredIds = getChatMediaMessageIds(byId, newFoundIds, false);
+  const filteredIds = getMessageContentIds(byId, newFoundIds, 'media');
   currentSegment = mergeWithChatMediaSearchSegment(
     filteredIds,
     loadingState,

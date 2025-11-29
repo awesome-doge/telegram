@@ -1,19 +1,19 @@
-import type { RefObject } from 'react';
-import type { FC, TeactNode } from '../../lib/teact/teact';
-import React, { useRef } from '../../lib/teact/teact';
+import type { ElementRef, TeactNode } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { useRef } from '../../lib/teact/teact';
 
 import type { IconName } from '../../types/icons';
 
 import { requestMeasure } from '../../lib/fasterdom/fasterdom';
+import { IS_TOUCH_ENV, MouseButton } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { IS_TOUCH_ENV, MouseButton } from '../../util/windowEnvironment';
 import renderText from '../common/helpers/renderText';
 
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
 import { useFastClick } from '../../hooks/useFastClick';
 import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useOldLang from '../../hooks/useOldLang';
 
 import Icon from '../common/icons/Icon';
 import Button from './Button';
@@ -41,8 +41,8 @@ export type MenuItemContextAction =
   | MenuItemContextActionSeparator;
 
 interface OwnProps {
-  ref?: RefObject<HTMLDivElement>;
-  buttonRef?: RefObject<HTMLDivElement | HTMLAnchorElement>;
+  ref?: ElementRef<HTMLDivElement>;
+  buttonRef?: ElementRef<HTMLDivElement | HTMLAnchorElement>;
   icon?: IconName;
   iconClassName?: string;
   leftElement?: TeactNode;
@@ -60,6 +60,7 @@ interface OwnProps {
   inactive?: boolean;
   focus?: boolean;
   destructive?: boolean;
+  withPrimaryColor?: boolean;
   multiline?: boolean;
   isStatic?: boolean;
   allowSelection?: boolean;
@@ -68,16 +69,17 @@ interface OwnProps {
   withPortalForMenu?: boolean;
   menuBubbleClassName?: string;
   href?: string;
-  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  nonInteractive?: boolean;
   onClick?: (e: React.MouseEvent<HTMLElement>, arg?: any) => void;
-  onContextMenu?: (e: React.MouseEvent<HTMLElement>) => void;
   clickArg?: any;
+  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onContextMenu?: (e: React.MouseEvent<HTMLElement>) => void;
   onSecondaryIconClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onDragEnter?: (e: React.DragEvent<HTMLDivElement>) => void;
-  nonInteractive?: boolean;
+  onDragLeave?: NoneToVoidFunction;
 }
 
-const ListItem: FC<OwnProps> = ({
+const ListItem = ({
   ref,
   buttonRef,
   icon,
@@ -98,6 +100,7 @@ const ListItem: FC<OwnProps> = ({
   inactive,
   focus,
   destructive,
+  withPrimaryColor,
   multiline,
   isStatic,
   allowSelection,
@@ -105,16 +108,16 @@ const ListItem: FC<OwnProps> = ({
   contextActions,
   withPortalForMenu,
   href,
-  onMouseDown,
+  nonInteractive,
   onClick,
-  onContextMenu,
   clickArg,
+  onMouseDown,
+  onContextMenu,
   onSecondaryIconClick,
   onDragEnter,
-  nonInteractive,
-}) => {
-  // eslint-disable-next-line no-null/no-null
-  let containerRef = useRef<HTMLDivElement>(null);
+  onDragLeave,
+}: OwnProps) => {
+  let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
@@ -137,12 +140,13 @@ const ListItem: FC<OwnProps> = ({
   const handleClickEvent = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
     const hasModifierKey = e.ctrlKey || e.metaKey || e.shiftKey;
     if (!hasModifierKey && e.button === MouseButton.Main) {
+      if (href && !onClick) return; // Allow default behavior for opening links
       e.preventDefault();
     }
   });
 
   const handleClick = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
-    if ((disabled && !allowDisabledClick) || !onClick) {
+    if ((disabled && !allowDisabledClick)) {
       return;
     }
 
@@ -153,8 +157,10 @@ const ListItem: FC<OwnProps> = ({
         return;
       }
 
-      e.preventDefault();
+      if (onClick) e.preventDefault();
     }
+
+    if (!onClick) return;
 
     onClick(e, clickArg);
 
@@ -195,7 +201,7 @@ const ListItem: FC<OwnProps> = ({
     }
   });
 
-  const lang = useOldLang();
+  const lang = useLang();
 
   const fullClassName = buildClassName(
     'ListItem',
@@ -209,6 +215,7 @@ const ListItem: FC<OwnProps> = ({
     contextMenuAnchor && 'has-menu-open',
     focus && 'focus',
     destructive && 'destructive',
+    withPrimaryColor && 'primary',
     multiline && 'multiline',
     isStatic && 'is-static',
     withColorTransition && 'with-color-transition',
@@ -224,16 +231,20 @@ const ListItem: FC<OwnProps> = ({
       style={style}
       onMouseDown={onMouseDown}
       onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
     >
       <ButtonElementTag
         className={buildClassName('ListItem-button', isTouched && 'active', buttonClassName)}
-        role={!isStatic ? 'button' : undefined}
+        role={!isStatic && !href ? 'button' : undefined}
         href={href}
-        ref={buttonRef as any /* TS requires specific types for refs */}
+        // @ts-expect-error TS requires specific types for refs
+        ref={buttonRef}
+        rel={href ? 'noopener noreferrer' : undefined}
         tabIndex={!isStatic ? 0 : undefined}
         onClick={(!inactive && IS_TOUCH_ENV) ? handleClick : handleClickEvent}
         onMouseDown={handleMouseDown}
         onContextMenu={onContextMenu || ((!inactive && contextActions) ? handleContextMenu : undefined)}
+        aria-disabled={disabled || undefined}
       >
         {!disabled && !inactive && ripple && (
           <RippleEffect />
@@ -253,9 +264,8 @@ const ListItem: FC<OwnProps> = ({
             size="smaller"
             onClick={handleSecondaryIconClick}
             onMouseDown={handleSecondaryIconMouseDown}
-          >
-            <Icon name={secondaryIcon} />
-          </Button>
+            iconName={secondaryIcon}
+          />
         )}
         {rightElement}
       </ButtonElementTag>

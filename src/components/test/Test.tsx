@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useState } from '../../lib/teact/teact';
+import { useState } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
@@ -38,7 +38,7 @@ const Test: FC<StateProps> = ({ authState, globalRand }) => {
 };
 
 export default withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       authState: global.authState,
       globalRand: Math.random(),

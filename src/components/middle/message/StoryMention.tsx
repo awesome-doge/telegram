@@ -1,11 +1,12 @@
-import React, { memo } from '../../../lib/teact/teact';
+import { memo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type {
   ApiMessage, ApiPeer, ApiTypeStory, ApiUser,
 } from '../../../api/types';
 
-import { getPeerTitle, getStoryMediaHash, getUserFirstOrLastName } from '../../../global/helpers';
+import { getStoryMediaHash, getUserFirstOrLastName } from '../../../global/helpers';
+import { getPeerTitle } from '../../../global/helpers/peers';
 import {
   selectPeer,
   selectPeerStories,
@@ -92,7 +93,7 @@ function StoryMention({
   );
 }
 
-export default memo(withGlobal<OwnProps>((global, { message }): StateProps => {
+export default memo(withGlobal<OwnProps>((global, { message }): Complete<StateProps> => {
   const { id, peerId } = message.content.storyData!;
   const lastReadId = selectPeerStories(global, peerId)?.lastReadId;
 

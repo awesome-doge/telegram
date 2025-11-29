@@ -1,5 +1,3 @@
-import React from '../../lib/teact/teact';
-
 import type { LangFnParameters } from '../../util/localization';
 
 import useLang from '../../hooks/useLang';
@@ -44,9 +42,9 @@ const TestLocale = () => {
       </p>
       <p>{lang('Participants', { count: 42 }, { pluralValue: 42 })}</p>
       <p>
-        {lang('ChatServiceGroupUpdatedPinnedMessage1', {
-          message: 'Some message',
-          user: 'Some user',
+        {lang('ActionPinnedText', {
+          text: 'Some message',
+          from: 'Some user',
         })}
       </p>
       {/* <p>

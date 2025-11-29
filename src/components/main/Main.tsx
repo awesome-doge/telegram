@@ -1,6 +1,6 @@
 import '../../global/actions/all';
 
-import React, {
+import {
   beginHeavyAnimation,
   memo, useEffect, useLayoutEffect,
   useRef, useState,
@@ -10,15 +10,16 @@ import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type { ApiChatFolder, ApiLimitTypeWithModal, ApiUser } from '../../api/types';
 import type { TabState } from '../../global/types';
-import { ElectronEvent } from '../../types/electron';
 
-import { BASE_EMOJI_KEYWORD_LANG, DEBUG, INACTIVE_MARKER } from '../../config';
+import { BASE_EMOJI_KEYWORD_LANG, DEBUG, FOLDERS_POSITION_LEFT, INACTIVE_MARKER } from '../../config';
 import { requestNextMutation } from '../../lib/fasterdom/fasterdom';
 import {
+  selectAreFoldersPresent,
   selectCanAnimateInterface,
   selectChatFolder,
   selectChatMessage,
   selectCurrentMessageList,
+  selectIsCurrentUserFrozen,
   selectIsCurrentUserPremium,
   selectIsForwardModalOpen,
   selectIsMediaViewerOpen,
@@ -30,16 +31,19 @@ import {
   selectTabState,
   selectUser,
 } from '../../global/selectors';
+import { selectSharedSettings } from '../../global/selectors/sharedState';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
+import { IS_ANDROID, IS_WAVE_TRANSFORM_SUPPORTED } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
 import { waitForTransitionEnd } from '../../util/cssAnimationEndListeners';
 import { processDeepLink } from '../../util/deeplink';
 import { Bundles, loadBundle } from '../../util/moduleLoader';
 import { parseInitialLocationHash, parseLocationHash } from '../../util/routing';
 import updateIcon from '../../util/updateIcon';
-import { IS_ANDROID, IS_ELECTRON, IS_WAVE_TRANSFORM_SUPPORTED } from '../../util/windowEnvironment';
 
 import useInterval from '../../hooks/schedulers/useInterval';
 import useTimeout from '../../hooks/schedulers/useTimeout';
+import useTauriEvent from '../../hooks/tauri/useTauriEvent';
 import useAppLayout from '../../hooks/useAppLayout';
 import useForceUpdate from '../../hooks/useForceUpdate';
 import useLang from '../../hooks/useLang';
@@ -76,6 +80,7 @@ import DeleteFolderDialog from './DeleteFolderDialog.async';
 import Dialogs from './Dialogs.async';
 import DownloadManager from './DownloadManager';
 import DraftRecipientPicker from './DraftRecipientPicker.async';
+import FoldersSidebar from './FoldersSidebar';
 import ForwardRecipientPicker from './ForwardRecipientPicker.async';
 import GameModal from './GameModal';
 import HistoryCalendar from './HistoryCalendar.async';
@@ -140,12 +145,14 @@ type StateProps = {
   noRightColumnAnimation?: boolean;
   withInterfaceAnimations?: boolean;
   isSynced?: boolean;
+  isAccountFrozen?: boolean;
+  isAppConfigLoaded?: boolean;
+  isFoldersSidebarShown: boolean;
 };
 
 const APP_OUTDATED_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
 const CALL_BUNDLE_LOADING_DELAY_MS = 5000; // 5 sec
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 let DEBUG_isLogged = false;
 
 const Main = ({
@@ -193,6 +200,9 @@ const Main = ({
   noRightColumnAnimation,
   isSynced,
   currentUserId,
+  isAccountFrozen,
+  isAppConfigLoaded,
+  isFoldersSidebarShown,
 }: OwnProps & StateProps) => {
   const {
     initMain,
@@ -209,7 +219,9 @@ const Main = ({
     loadAvailableReactions,
     loadStickerSets,
     loadPremiumGifts,
+    loadTonGifts,
     loadStarGifts,
+    loadMyUniqueGifts,
     loadDefaultTopicIcons,
     loadAddedStickers,
     loadFavoriteStickers,
@@ -236,7 +248,6 @@ const Main = ({
     loadRecentReactions,
     loadDefaultTagReactions,
     loadFeaturedEmojiStickers,
-    setIsElectronUpdateAvailable,
     loadAuthorizations,
     loadPeerColors,
     loadSavedReactionTags,
@@ -247,6 +258,11 @@ const Main = ({
     loadTopBotApps,
     loadPaidReactionPrivacy,
     loadPasswordInfo,
+    loadBotFreezeAppeal,
+    loadAllChats,
+    loadAllStories,
+    loadAllHiddenStories,
+    loadContentSettings,
   } = getActions();
 
   if (DEBUG && !DEBUG_isLogged) {
@@ -262,10 +278,8 @@ const Main = ({
     void loadBundle(Bundles.Calls);
   }, CALL_BUNDLE_LOADING_DELAY_MS);
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const leftColumnRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
+  const leftColumnRef = useRef<HTMLDivElement>();
 
   const { isDesktop } = useAppLayout();
   useEffect(() => {
@@ -280,73 +294,65 @@ const Main = ({
 
   useInterval(checkAppVersion, isMasterTab ? APP_OUTDATED_TIMEOUT_MS : undefined, true);
 
-  useEffect(() => {
-    if (!IS_ELECTRON) {
-      return undefined;
-    }
-
-    const removeUpdateAvailableListener = window.electron!.on(ElectronEvent.UPDATE_AVAILABLE, () => {
-      setIsElectronUpdateAvailable(true);
-    });
-
-    const removeUpdateErrorListener = window.electron!.on(ElectronEvent.UPDATE_ERROR, () => {
-      setIsElectronUpdateAvailable(false);
-      removeUpdateAvailableListener?.();
-    });
-
-    return () => {
-      removeUpdateErrorListener?.();
-      removeUpdateAvailableListener?.();
-    };
-  }, []);
-
   // Initial API calls
   useEffect(() => {
     if (isMasterTab && isSynced) {
-      updateIsOnline(true);
+      updateIsOnline({ isOnline: true });
       loadConfig();
       loadAppConfig();
       loadPeerColors();
       initMain();
-      loadAvailableReactions();
-      loadAnimatedEmojis();
-      loadNotificationSettings();
-      loadNotificationExceptions();
-      loadAttachBots();
       loadContactList();
-      loadDefaultTopicIcons();
       checkAppVersion();
-      loadTopReactions();
-      loadRecentReactions();
-      loadDefaultTagReactions();
-      loadFeaturedEmojiStickers();
-      loadTopInlineBots();
-      loadEmojiKeywords({ language: BASE_EMOJI_KEYWORD_LANG });
-      loadTimezones();
-      loadQuickReplies();
-      loadStarStatus();
-      loadPremiumGifts();
-      loadStarGifts();
-      loadAvailableEffects();
-      loadBirthdayNumbersStickers();
-      loadRestrictedEmojiStickers();
-      loadGenericEmojiEffects();
-      loadSavedReactionTags();
       loadAuthorizations();
-      loadTopBotApps();
-      loadPaidReactionPrivacy();
       loadPasswordInfo();
-      loadUserCollectibleStatuses();
     }
   }, [isMasterTab, isSynced]);
 
+  // Initial API calls
+  useEffect(() => {
+    if (isMasterTab && isSynced && isAppConfigLoaded && !isAccountFrozen) {
+      loadAllChats({ listType: 'saved' });
+      loadAllStories();
+      loadAllHiddenStories();
+      loadContentSettings();
+      loadRecentReactions();
+      loadDefaultTagReactions();
+      loadAttachBots();
+      loadNotificationSettings();
+      loadNotificationExceptions();
+      loadTopInlineBots();
+      loadTopReactions();
+      loadStarStatus();
+      loadEmojiKeywords({ language: BASE_EMOJI_KEYWORD_LANG });
+      loadFeaturedEmojiStickers();
+      loadSavedReactionTags();
+      loadTopBotApps();
+      loadPaidReactionPrivacy();
+      loadDefaultTopicIcons();
+      loadAnimatedEmojis();
+      loadAvailableReactions();
+      loadUserCollectibleStatuses();
+      loadGenericEmojiEffects();
+      loadPremiumGifts();
+      loadTonGifts();
+      loadStarGifts();
+      loadMyUniqueGifts();
+      loadAvailableEffects();
+      loadBirthdayNumbersStickers();
+      loadRestrictedEmojiStickers();
+      loadQuickReplies();
+      loadTimezones();
+    }
+  }, [isMasterTab, isSynced, isAppConfigLoaded, isAccountFrozen]);
+
   // Initial Premium API calls
   useEffect(() => {
-    if (isMasterTab && isCurrentUserPremium) {
+    if (isMasterTab && isCurrentUserPremium && isAppConfigLoaded && !isAccountFrozen) {
       loadDefaultStatusIcons();
       loadRecentEmojiStatuses();
     }
-  }, [isCurrentUserPremium, isMasterTab]);
+  }, [isCurrentUserPremium, isMasterTab, isAppConfigLoaded, isAccountFrozen]);
 
   // Language-based API calls
   useEffect(() => {
@@ -356,8 +362,6 @@ const Main = ({
       }
 
       loadCountryList({ langCode: lang.code });
-
-      loadAttachBots();
     }
   }, [lang, isMasterTab]);
 
@@ -373,7 +377,7 @@ const Main = ({
 
   // Sticker sets
   useEffect(() => {
-    if (isMasterTab && isSynced) {
+    if (isMasterTab && isSynced && isAppConfigLoaded && !isAccountFrozen) {
       if (!addedSetIds || !addedCustomEmojiIds) {
         loadStickerSets();
         loadFavoriteStickers();
@@ -383,7 +387,11 @@ const Main = ({
         loadAddedStickers();
       }
     }
-  }, [addedSetIds, addedCustomEmojiIds, isMasterTab, isSynced]);
+  }, [addedSetIds, addedCustomEmojiIds, isMasterTab, isSynced, isAppConfigLoaded, isAccountFrozen]);
+
+  useEffect(() => {
+    loadBotFreezeAppeal();
+  }, [isAppConfigLoaded]);
 
   // Check version when service chat is ready
   useEffect(() => {
@@ -410,11 +418,18 @@ const Main = ({
     }
   }, [isSynced]);
 
-  useEffect(() => {
-    return window.electron?.on(ElectronEvent.DEEPLINK, (link: string) => {
-      processDeepLink(decodeURIComponent(link));
-    });
-  }, []);
+  useTauriEvent<string>('deeplink', (event) => {
+    try {
+      const url = event.payload || '';
+      const decodedUrl = decodeURIComponent(url);
+      processDeepLink(decodedUrl);
+    } catch (e) {
+      if (DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to process deep link', e);
+      }
+    }
+  });
 
   useEffect(() => {
     const parsedLocationHash = parseLocationHash(currentUserId);
@@ -507,6 +522,7 @@ const Main = ({
     isNarrowMessageList && 'narrow-message-list',
     shouldSkipHistoryAnimations && 'history-animation-disabled',
     isFullscreen && 'is-fullscreen',
+    isFoldersSidebarShown && 'folders-sidebar-visible',
   );
 
   const handleBlur = useLastCallback(() => {
@@ -532,13 +548,14 @@ const Main = ({
   });
 
   // Online status and browser tab indicators
-  useBackgroundMode(handleBlur, handleFocus, !!IS_ELECTRON);
+  useBackgroundMode(handleBlur, handleFocus, IS_TAURI);
   useBeforeUnload(handleBlur);
   usePreventPinchZoomGesture(isMediaViewerOpen || isStoryViewerOpen);
 
   return (
     <div ref={containerRef} id="Main" className={className}>
-      <LeftColumn ref={leftColumnRef} />
+      <FoldersSidebar isMobile={isMobile} isActive={isFoldersSidebarShown} />
+      <LeftColumn ref={leftColumnRef} isFoldersSidebarShown={isFoldersSidebarShown} />
       <MiddleColumn leftColumnRef={leftColumnRef} isMobile={isMobile} />
       <RightColumn isMobile={isMobile} />
       <MediaViewer isOpen={isMediaViewerOpen} />
@@ -596,13 +613,8 @@ const Main = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { isMobile }): StateProps => {
+  (global, { isMobile }): Complete<StateProps> => {
     const {
-      settings: {
-        byKey: {
-          wasTimeFormatSetManually,
-        },
-      },
       currentUserId,
     } = global;
 
@@ -631,13 +643,16 @@ export default memo(withGlobal<OwnProps>(
       deleteFolderDialogModal,
     } = selectTabState(global);
 
+    const { wasTimeFormatSetManually, foldersPosition } = selectSharedSettings(global);
+
     const gameMessage = openedGame && selectChatMessage(global, openedGame.chatId, openedGame.messageId);
     const gameTitle = gameMessage?.content.game?.title;
     const { chatId } = selectCurrentMessageList(global) || {};
     const noRightColumnAnimation = !selectPerformanceSettingsValue(global, 'rightColumnAnimations')
-        || !selectCanAnimateInterface(global);
+      || !selectCanAnimateInterface(global);
 
     const deleteFolderDialog = deleteFolderDialogModal ? selectChatFolder(global, deleteFolderDialogModal) : undefined;
+    const isAccountFrozen = selectIsCurrentUserFrozen(global);
 
     return {
       currentUserId,
@@ -683,6 +698,9 @@ export default memo(withGlobal<OwnProps>(
       requestedDraft,
       noRightColumnAnimation,
       isSynced: global.isSynced,
+      isAccountFrozen,
+      isAppConfigLoaded: global.isAppConfigLoaded,
+      isFoldersSidebarShown: foldersPosition === FOLDERS_POSITION_LEFT && !isMobile && selectAreFoldersPresent(global),
     };
   },
 )(Main));

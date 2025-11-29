@@ -1,7 +1,7 @@
 import '../../../global/actions/calls';
 
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -13,13 +13,14 @@ import {
 } from '../../../lib/secret-sauce';
 import { selectTabState } from '../../../global/selectors';
 import { selectPhoneCallUser } from '../../../global/selectors/calls';
-import buildClassName from '../../../util/buildClassName';
-import { formatMediaDuration } from '../../../util/dates/dateFormat';
 import {
   IS_ANDROID,
   IS_IOS,
   IS_REQUEST_FULLSCREEN_SUPPORTED,
-} from '../../../util/windowEnvironment';
+} from '../../../util/browser/windowEnvironment';
+import buildClassName from '../../../util/buildClassName';
+import { formatMediaDuration } from '../../../util/dates/dateFormat';
+import { getServerTime } from '../../../util/serverTime';
 import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
 import renderText from '../../common/helpers/renderText';
 
@@ -31,7 +32,6 @@ import useOldLang from '../../../hooks/useOldLang';
 
 import AnimatedIcon from '../../common/AnimatedIcon';
 import Avatar from '../../common/Avatar';
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import Modal from '../../ui/Modal';
 import PhoneCallButton from './PhoneCallButton';
@@ -55,8 +55,7 @@ const PhoneCall: FC<StateProps> = ({
   const {
     hangUp, requestMasterAndAcceptCall, playGroupCallSound, toggleGroupCallPanel, connectToActivePhoneCall,
   } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
   const [isFullscreen, openFullscreen, closeFullscreen] = useFlag();
   const { isMobile } = useAppLayout();
@@ -216,7 +215,7 @@ const PhoneCall: FC<StateProps> = ({
     setTimeout(stopFlipping, 250);
   }, [startFlipping, stopFlipping]);
 
-  const timeElapsed = phoneCall?.startDate && (Number(new Date()) / 1000 - phoneCall.startDate);
+  const timeElapsed = phoneCall?.startDate && (getServerTime() - phoneCall.startDate);
 
   useEffect(() => {
     if (phoneCall?.state === 'discarded') {
@@ -271,22 +270,20 @@ const PhoneCall: FC<StateProps> = ({
             round
             size="smaller"
             color="translucent"
+            iconName={isFullscreen ? 'smallscreen' : 'fullscreen'}
             onClick={handleToggleFullscreen}
             ariaLabel={lang(isFullscreen ? 'AccExitFullscreen' : 'AccSwitchToFullscreen')}
-          >
-            <Icon name={isFullscreen ? 'smallscreen' : 'fullscreen'} />
-          </Button>
+          />
         )}
 
         <Button
           round
           size="smaller"
           color="translucent"
+          iconName="close"
           onClick={handleClose}
           className={styles.closeButton}
-        >
-          <Icon name="close" />
-        </Button>
+        />
       </div>
       <div
         className={buildClassName(styles.emojisBackdrop, isEmojiOpen && styles.open)}
@@ -364,7 +361,7 @@ const PhoneCall: FC<StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { phoneCall, currentUserId } = global;
     const { isCallPanelVisible, isMasterTab } = selectTabState(global);
     const user = selectPhoneCallUser(global);

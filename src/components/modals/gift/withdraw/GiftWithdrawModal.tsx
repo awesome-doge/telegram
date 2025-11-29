@@ -1,4 +1,4 @@
-import React, {
+import {
   memo,
   useState,
 } from '../../../../lib/teact/teact';
@@ -6,7 +6,7 @@ import { getActions, withGlobal } from '../../../../global';
 
 import type { ApiStarGiftUnique } from '../../../../api/types';
 import type { TabState } from '../../../../global/types';
-import type { CustomPeer } from '../../../../types';
+import { type CustomPeer, SettingsScreens } from '../../../../types';
 
 import { getDays } from '../../../../util/dates/units';
 import { getServerTime } from '../../../../util/serverTime';
@@ -22,6 +22,7 @@ import Avatar from '../../../common/Avatar';
 import Icon from '../../../common/icons/Icon';
 import PasswordForm from '../../../common/PasswordForm';
 import RadialPatternBackground from '../../../common/profile/RadialPatternBackground';
+import Button from '../../../ui/Button';
 import Modal from '../../../ui/Modal';
 
 import styles from './GiftWithdrawModal.module.scss';
@@ -44,7 +45,13 @@ const FRAGMENT_PEER: CustomPeer = {
 const GIFT_STICKER_SIZE = 4.5 * REM;
 
 const GiftWithdrawModal = ({ modal, hasPassword, passwordHint }: OwnProps & StateProps) => {
-  const { closeGiftWithdrawModal, clearGiftWithdrawError, processStarGiftWithdrawal } = getActions();
+  const {
+    closeGiftWithdrawModal,
+    clearGiftWithdrawError,
+    closeGiftInfoModal,
+    processStarGiftWithdrawal,
+    openSettingsScreen,
+  } = getActions();
   const isOpen = Boolean(modal);
 
   const [shouldShowPassword, setShouldShowPassword] = useState(false);
@@ -68,10 +75,19 @@ const GiftWithdrawModal = ({ modal, hasPassword, passwordHint }: OwnProps & Stat
     });
   });
 
+  const handleSetUpPassword = useLastCallback(() => {
+    openSettingsScreen({
+      screen: SettingsScreens.TwoFaDisabled,
+    });
+    closeGiftWithdrawModal();
+    closeGiftInfoModal();
+  });
+
   return (
     <Modal
       isOpen={isOpen}
       title={lang('GiftWithdrawTitle')}
+      isCondensedHeader
       hasCloseButton
       isSlim
       onClose={handleClose}
@@ -83,8 +99,10 @@ const GiftWithdrawModal = ({ modal, hasPassword, passwordHint }: OwnProps & Stat
               <RadialPatternBackground
                 className={styles.backdrop}
                 backgroundColors={[giftAttributes.backdrop!.centerColor, giftAttributes.backdrop!.edgeColor]}
-                patternColor={giftAttributes.backdrop?.patternColor}
                 patternIcon={giftAttributes.pattern?.sticker}
+                ringsCount={1}
+                ovalFactor={1}
+                patternSize={12}
               />
               <AnimatedIconFromSticker
                 className={styles.sticker}
@@ -115,14 +133,19 @@ const GiftWithdrawModal = ({ modal, hasPassword, passwordHint }: OwnProps & Stat
           {lang('GiftWithdrawWait', { days: getDays(exportDelay) }, { pluralValue: getDays(exportDelay) })}
         </p>
       )}
-      {!hasPassword && <span className={styles.noPassword}>{lang('ErrorPasswordMissing')}</span>}
+      {!hasPassword && (
+        <>
+          <span className={styles.noPassword}>{lang('ErrorPasswordMissing')}</span>
+          <Button className="mt-2" onClick={handleSetUpPassword}>{lang('SetUp2FA')}</Button>
+        </>
+      )}
       {hasPassword && !exportDelay && (
         <PasswordForm
           shouldShowSubmit
           placeholder={lang('CheckPasswordPlaceholder')}
           error={renderingModal?.errorKey && lang.withRegular(renderingModal?.errorKey)}
           description={lang('CheckPasswordDescription')}
-          clearError={clearGiftWithdrawError}
+          onClearError={clearGiftWithdrawError}
           isLoading={renderingModal?.isLoading}
           hint={passwordHint}
           isPasswordVisible={shouldShowPassword}
@@ -137,7 +160,7 @@ const GiftWithdrawModal = ({ modal, hasPassword, passwordHint }: OwnProps & Stat
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const {
       settings: {
         byKey: {

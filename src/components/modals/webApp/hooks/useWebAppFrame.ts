@@ -1,9 +1,10 @@
-/* eslint-disable @typescript-eslint/naming-convention */
+import type { ElementRef } from '../../../../lib/teact/teact';
 import { useCallback, useEffect, useRef } from '../../../../lib/teact/teact';
-import { getActions } from '../../../../global';
+import { getActions, getGlobal } from '../../../../global';
 
 import type { WebApp, WebAppInboundEvent, WebAppOutboundEvent } from '../../../../types/webapp';
 
+import { VERIFY_AGE_MIN_DEFAULT } from '../../../../config';
 import { getWebAppKey } from '../../../../global/helpers';
 import { extractCurrentThemeParams } from '../../../../util/themeStyle';
 import { REM } from '../../../common/helpers/mediaDimensions';
@@ -35,7 +36,7 @@ const RELOAD_TIMEOUT = 500;
 const FULLSCREEN_BUTTONS_AREA_HEIGHT = 3.675 * REM;
 
 const useWebAppFrame = (
-  ref: React.RefObject<HTMLIFrameElement>,
+  ref: ElementRef<HTMLIFrameElement>,
   isOpen: boolean,
   isFullscreen: boolean,
   isSimpleView: boolean,
@@ -50,6 +51,7 @@ const useWebAppFrame = (
     closeWebApp,
     openSuggestedStatusModal,
     updateWebApp,
+    updateContentSettings,
   } = getActions();
 
   const isReloadSupported = useRef<boolean>(false);
@@ -265,6 +267,78 @@ const useWebAppFrame = (
         });
       }
 
+      if (eventType === 'web_app_device_storage_clear'
+        || eventType === 'web_app_device_storage_get_key'
+        || eventType === 'web_app_device_storage_save_key') {
+        const { req_id } = eventData;
+        sendEvent({
+          eventType: 'device_storage_failed',
+          eventData: {
+            req_id,
+            error: 'UNSUPPORTED',
+          },
+        });
+      }
+
+      if (eventType === 'web_app_secure_storage_clear'
+        || eventType === 'web_app_secure_storage_get_key'
+        || eventType === 'web_app_secure_storage_restore_key'
+        || eventType === 'web_app_secure_storage_save_key') {
+        const { req_id } = eventData;
+        sendEvent({
+          eventType: 'secure_storage_failed',
+          eventData: {
+            req_id,
+            error: 'UNSUPPORTED',
+          },
+        });
+      }
+
+      if (eventType === 'web_app_start_accelerometer') {
+        sendEvent({
+          eventType: 'accelerometer_failed',
+          eventData: {
+            error: 'UNSUPPORTED',
+          },
+        });
+      }
+
+      if (eventType === 'web_app_start_gyroscope') {
+        sendEvent({
+          eventType: 'gyroscope_failed',
+          eventData: {
+            error: 'UNSUPPORTED',
+          },
+        });
+      }
+
+      if (eventType === 'web_app_start_device_orientation') {
+        sendEvent({
+          eventType: 'device_orientation_failed',
+          eventData: {
+            error: 'UNSUPPORTED',
+          },
+        });
+      }
+
+      if (eventType === 'web_app_add_to_home_screen') {
+        sendEvent({
+          eventType: 'home_screen_failed',
+          eventData: {
+            error: 'UNSUPPORTED',
+          },
+        });
+      }
+
+      if (eventType === 'web_app_check_home_screen') {
+        sendEvent({
+          eventType: 'home_screen_checked',
+          eventData: {
+            status: 'unsupported',
+          },
+        });
+      }
+
       if (eventType === 'web_app_set_emoji_status') {
         const { custom_emoji_id, duration } = eventData;
 
@@ -308,6 +382,27 @@ const useWebAppFrame = (
           duration: Number(duration),
           botId: webApp.botId,
         });
+      }
+
+      if (eventType === 'web_app_verify_age') {
+        const { passed } = eventData;
+        const minAge = getGlobal().appConfig.verifyAgeMin || VERIFY_AGE_MIN_DEFAULT;
+        const ageFromParam = eventData.age || 0;
+
+        if (passed && ageFromParam >= minAge) {
+          showNotification({
+            message: {
+              key: 'TitleAgeCheckSuccess',
+            },
+          });
+          updateContentSettings({ isSensitiveEnabled: true });
+        } else {
+          showNotification({
+            message: {
+              key: 'TitleAgeCheckFailed',
+            },
+          });
+        }
       }
 
       onEvent(data);

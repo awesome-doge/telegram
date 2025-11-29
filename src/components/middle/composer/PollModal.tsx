@@ -1,6 +1,6 @@
-import type { ChangeEvent, RefObject } from 'react';
-import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type { ChangeEvent } from 'react';
+import type { ElementRef } from '../../../lib/teact/teact';
+import {
   memo, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
 
@@ -13,7 +13,6 @@ import parseHtmlAsFormattedText from '../../../util/parseHtmlAsFormattedText';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import Checkbox from '../../ui/Checkbox';
 import InputText from '../../ui/InputText';
@@ -27,23 +26,27 @@ export type OwnProps = {
   isOpen: boolean;
   shouldBeAnonymous?: boolean;
   isQuiz?: boolean;
+  maxOptionsCount?: number;
   onSend: (pollSummary: ApiNewPoll) => void;
   onClear: () => void;
 };
 
 const MAX_LIST_HEIGHT = 320;
-const MAX_OPTIONS_COUNT = 10;
+const FALLBACK_MAX_OPTIONS_COUNT = 12;
 const MAX_OPTION_LENGTH = 100;
 const MAX_QUESTION_LENGTH = 255;
 const MAX_SOLUTION_LENGTH = 200;
 
-const PollModal: FC<OwnProps> = ({
-  isOpen, isQuiz, shouldBeAnonymous, onSend, onClear,
-}) => {
-  // eslint-disable-next-line no-null/no-null
-  const questionInputRef = useRef<HTMLInputElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const optionsListRef = useRef<HTMLDivElement>(null);
+const PollModal = ({
+  isOpen,
+  isQuiz,
+  shouldBeAnonymous,
+  maxOptionsCount = FALLBACK_MAX_OPTIONS_COUNT,
+  onSend,
+  onClear,
+}: OwnProps) => {
+  const questionInputRef = useRef<HTMLInputElement>();
+  const optionsListRef = useRef<HTMLDivElement>();
 
   const [question, setQuestion] = useState<string>('');
   const [options, setOptions] = useState<string[]>(['']);
@@ -60,7 +63,7 @@ const PollModal: FC<OwnProps> = ({
     setSolution(e.target.value);
   });
 
-  const focusInput = useLastCallback((ref: RefObject<HTMLInputElement>) => {
+  const focusInput = useLastCallback((ref: ElementRef<HTMLInputElement>) => {
     if (isOpen && ref.current) {
       ref.current.focus();
     }
@@ -171,7 +174,7 @@ const PollModal: FC<OwnProps> = ({
   const updateOption = useLastCallback((index: number, text: string) => {
     const newOptions = [...options];
     newOptions[index] = text;
-    if (newOptions[newOptions.length - 1].trim().length && newOptions.length < MAX_OPTIONS_COUNT) {
+    if (newOptions[newOptions.length - 1].trim().length && newOptions.length < maxOptionsCount) {
       addNewOption(newOptions);
     } else {
       setOptions(newOptions);
@@ -245,9 +248,14 @@ const PollModal: FC<OwnProps> = ({
   function renderHeader() {
     return (
       <div className="modal-header-condensed">
-        <Button round color="translucent" size="smaller" ariaLabel="Cancel poll creation" onClick={onClear}>
-          <Icon name="close" />
-        </Button>
+        <Button
+          round
+          color="translucent"
+          size="smaller"
+          ariaLabel="Cancel poll creation"
+          onClick={onClear}
+          iconName="close"
+        />
         <div className="modal-title">{lang('NewPoll')}</div>
         <Button
           color="primary"
@@ -265,12 +273,13 @@ const PollModal: FC<OwnProps> = ({
     return options.map((option, index) => (
       <div className="option-wrapper">
         <InputText
-          label={index !== options.length - 1 || options.length === MAX_OPTIONS_COUNT
+          maxLength={MAX_OPTION_LENGTH}
+          label={index !== options.length - 1 || options.length === maxOptionsCount
             ? lang('OptionHint')
             : lang('CreatePoll.AddOption')}
           error={getOptionsError(index)}
           value={option}
-          // eslint-disable-next-line react/jsx-no-bind
+
           onChange={(e) => updateOption(index, e.currentTarget.value)}
           onKeyPress={handleKeyPress}
         />
@@ -281,11 +290,9 @@ const PollModal: FC<OwnProps> = ({
             color="translucent"
             size="smaller"
             ariaLabel={lang('Delete')}
-            // eslint-disable-next-line react/jsx-no-bind
             onClick={() => removeOption(index)}
-          >
-            <Icon name="close" />
-          </Button>
+            iconName="close"
+          />
         )}
       </div>
     ));
@@ -336,28 +343,27 @@ const PollModal: FC<OwnProps> = ({
       <div className="options-divider" />
 
       <div className="quiz-mode">
-        {!shouldBeAnonymous && (
+        <div className="dialog-checkbox-group">
+          {!shouldBeAnonymous && (
+            <Checkbox
+              label={lang('PollAnonymous')}
+              checked={isAnonymous}
+              onChange={handleIsAnonymousChange}
+            />
+          )}
           <Checkbox
-            className="dialog-checkbox"
-            label={lang('PollAnonymous')}
-            checked={isAnonymous}
-            onChange={handleIsAnonymousChange}
+            label={lang('PollMultiple')}
+            checked={isMultipleAnswers}
+            disabled={isQuizMode}
+            onChange={handleMultipleAnswersChange}
           />
-        )}
-        <Checkbox
-          className="dialog-checkbox"
-          label={lang('PollMultiple')}
-          checked={isMultipleAnswers}
-          disabled={isQuizMode}
-          onChange={handleMultipleAnswersChange}
-        />
-        <Checkbox
-          className="dialog-checkbox"
-          label={lang('PollQuiz')}
-          checked={isQuizMode}
-          disabled={isMultipleAnswers || isQuiz !== undefined}
-          onChange={handleQuizModeChange}
-        />
+          <Checkbox
+            label={lang('PollQuiz')}
+            checked={isQuizMode}
+            disabled={isMultipleAnswers || isQuiz !== undefined}
+            onChange={handleQuizModeChange}
+          />
+        </div>
         {isQuizMode && (
           <>
             <h3 className="options-header">{lang('lng_polls_solution_title')}</h3>

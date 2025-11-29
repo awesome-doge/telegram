@@ -1,4 +1,4 @@
-import React, { memo, type TeactNode } from '../../../lib/teact/teact';
+import { memo, type TeactNode } from '../../../lib/teact/teact';
 
 import type { IconName } from '../../../types/icons';
 
@@ -15,13 +15,15 @@ import styles from './TableAboutModal.module.scss';
 export type TableAboutData = [IconName | undefined, TeactNode, TeactNode][];
 
 type OwnProps = {
+  className?: string;
   contentClassName?: string;
   isOpen?: boolean;
   listItemData?: TableAboutData;
   headerIconName?: IconName;
+  headerIconPremiumGradient?: boolean;
   header?: TeactNode;
   footer?: TeactNode;
-  buttonText?: string;
+  buttonText?: TeactNode;
   hasBackdrop?: boolean;
   withSeparator?: boolean;
   onClose: NoneToVoidFunction;
@@ -29,28 +31,34 @@ type OwnProps = {
 };
 
 const TableAboutModal = ({
+  className,
   isOpen,
   listItemData,
   headerIconName,
+  headerIconPremiumGradient,
   header,
   footer,
   buttonText,
   hasBackdrop,
   withSeparator,
+  contentClassName,
   onClose,
   onButtonClick,
-  contentClassName,
 }: OwnProps) => {
   return (
     <Modal
       isOpen={isOpen}
-      className={buildClassName(styles.root, contentClassName)}
-      contentClassName={styles.content}
+      className={buildClassName(styles.root, className)}
+      contentClassName={buildClassName(styles.content, contentClassName)}
       hasAbsoluteCloseButton
       absoluteCloseButtonColor={hasBackdrop ? 'translucent-white' : undefined}
       onClose={onClose}
     >
-      {headerIconName && <div className={styles.topIcon}><Icon name={headerIconName} /></div>}
+      {headerIconName && (
+        <div className={buildClassName(styles.topIcon, headerIconPremiumGradient && styles.premiumGradient)}>
+          <Icon name={headerIconName} />
+        </div>
+      )}
       {header}
       <div>
         {listItemData?.map(([icon, title, subtitle]) => {
@@ -61,7 +69,7 @@ const TableAboutModal = ({
               icon={icon}
               iconClassName={styles.listItemIcon}
             >
-              <span className="title">{title}</span>
+              <span className={buildClassName('title', styles.title)}>{title}</span>
               <span className="subtitle">{subtitle}</span>
             </ListItem>
           );
@@ -69,8 +77,8 @@ const TableAboutModal = ({
       </div>
       {withSeparator && <Separator className={styles.separator} />}
       {footer}
-      {buttonText && (
-        <Button size="smaller" onClick={onButtonClick || onClose}>{buttonText}</Button>
+      {Boolean(buttonText) && (
+        <Button onClick={onButtonClick || onClose}>{buttonText}</Button>
       )}
     </Modal>
   );

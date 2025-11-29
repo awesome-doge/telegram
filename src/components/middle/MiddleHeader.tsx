@@ -1,5 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
@@ -18,25 +19,28 @@ import {
 } from '../../config';
 import {
   getIsSavedDialog,
-  isUserId,
 } from '../../global/helpers';
 import {
   selectChat,
   selectChatMessage,
+  selectCustomEmoji,
   selectIsChatWithSelf,
   selectIsInSelectMode,
   selectIsRightColumnShown,
+  selectPeer,
   selectPinnedIds,
   selectScheduledIds,
   selectTabState,
   selectThreadInfo,
   selectThreadParam,
 } from '../../global/selectors';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
+import { IS_MAC_OS } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
+import { isUserId } from '../../util/entities/ids';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useConnectionStatus from '../../hooks/useConnectionStatus';
-import useElectronDrag from '../../hooks/useElectronDrag';
 import useLastCallback from '../../hooks/useLastCallback';
 import useLongPress from '../../hooks/useLongPress';
 import useOldLang from '../../hooks/useOldLang';
@@ -127,17 +131,14 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
 
   const lang = useOldLang();
   const isBackButtonActive = useRef(true);
-  const { isTablet } = useAppLayout();
+  const { isDesktop, isTablet } = useAppLayout();
 
   const { width: windowWidth } = useWindowSize();
-
-  const { isDesktop } = useAppLayout();
 
   const isLeftColumnHideable = windowWidth <= MIN_SCREEN_WIDTH_FOR_STATIC_LEFT_COLUMN;
   const shouldShowCloseButton = isTablet && isLeftColumnShown;
 
-  // eslint-disable-next-line no-null/no-null
-  const componentRef = useRef<HTMLDivElement>(null);
+  const componentRef = useRef<HTMLDivElement>();
 
   const handleOpenSearch = useLastCallback(() => {
     updateMiddleSearch({ chatId, threadId, update: {} });
@@ -146,7 +147,8 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   const handleOpenChat = useLastCallback((event: React.MouseEvent | React.TouchEvent) => {
     if ((event.target as Element).closest('.title > .custom-emoji')) return;
 
-    openThreadWithInfo({ chatId, threadId });
+    // Force close My Profile if clicked on Saved Messages header
+    openThreadWithInfo({ chatId, threadId, isOwnProfile: false });
   });
 
   const {
@@ -260,6 +262,8 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
     const savedMessagesStatus = isSavedDialog ? lang('SavedMessages') : undefined;
 
     const realChatId = isSavedDialog ? String(threadId) : chatId;
+
+    const displayChatId = chat?.isMonoforum ? chat.linkedMonoforumId! : realChatId;
     return (
       <>
         {(isLeftColumnHideable || currentTransitionKey > 0) && renderBackButton(shouldShowCloseButton, !isSavedDialog)}
@@ -271,15 +275,16 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
           onTouchStart={handleLongPressTouchStart}
           onTouchEnd={handleLongPressTouchEnd}
         >
-          {isUserId(realChatId) ? (
+          {isUserId(displayChatId) ? (
             <PrivateChatInfo
-              key={realChatId}
-              userId={realChatId}
+              key={displayChatId}
+              userId={displayChatId}
+              threadId={!isSavedDialog ? threadId : undefined}
               typingStatus={typingStatus}
               status={connectionStatusText || savedMessagesStatus}
               withDots={Boolean(connectionStatusText)}
-              withFullInfo
-              withMediaViewer
+              withFullInfo={threadId === MAIN_THREAD_ID}
+              withMediaViewer={threadId === MAIN_THREAD_ID}
               withStory={!isChatWithSelf}
               withUpdatingStatus
               isSavedDialog={isSavedDialog}
@@ -290,10 +295,11 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
             />
           ) : (
             <GroupChatInfo
-              key={realChatId}
-              chatId={realChatId}
+              key={displayChatId}
+              chatId={displayChatId}
               threadId={!isSavedDialog ? threadId : undefined}
               typingStatus={typingStatus}
+              withMonoforumStatus={chat?.isMonoforum}
               status={connectionStatusText || savedMessagesStatus}
               withDots={Boolean(connectionStatusText)}
               withMediaViewer={threadId === MAIN_THREAD_ID}
@@ -329,10 +335,8 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
     );
   }
 
-  useElectronDrag(componentRef);
-
   return (
-    <div className="MiddleHeader" ref={componentRef}>
+    <div className="MiddleHeader" ref={componentRef} data-tauri-drag-region={IS_TAURI && IS_MAC_OS ? true : undefined}>
       <Transition
         name={shouldSkipHistoryAnimations ? 'none' : 'slideFade'}
         activeKey={currentTransitionKey}
@@ -372,11 +376,12 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, {
     chatId, threadId, messageListType, isMobile,
-  }): StateProps => {
+  }): Complete<StateProps> => {
     const {
       isLeftColumnShown, shouldSkipHistoryAnimations, audioPlayer, messageLists,
     } = selectTabState(global);
     const chat = selectChat(global, chatId);
+    const peer = selectPeer(global, chatId);
 
     const { chatId: audioChatId, messageId: audioMessageId } = audioPlayer;
     const audioMessage = audioChatId && audioMessageId
@@ -397,8 +402,8 @@ export default memo(withGlobal<OwnProps>(
 
     const typingStatus = selectThreadParam(global, chatId, threadId, 'typingStatus');
 
-    const emojiStatus = chat?.emojiStatus;
-    const emojiStatusSticker = emojiStatus && global.customEmojis.byId[emojiStatus.documentId];
+    const emojiStatus = peer?.emojiStatus;
+    const emojiStatusSticker = emojiStatus && selectCustomEmoji(global, emojiStatus.documentId);
     const emojiStatusSlug = emojiStatus?.type === 'collectible' ? emojiStatus.slug : undefined;
 
     const isSavedDialog = getIsSavedDialog(chatId, threadId, global.currentUserId);

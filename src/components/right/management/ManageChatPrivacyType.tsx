@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react';
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
@@ -21,7 +21,7 @@ import useHistoryBack from '../../../hooks/useHistoryBack';
 import useOldLang from '../../../hooks/useOldLang';
 import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
 
-import Icon from '../../common/icons/Icon';
+import LinkField from '../../common/LinkField';
 import ManageUsernames from '../../common/ManageUsernames';
 import SafeLink from '../../common/SafeLink';
 import UsernameInput from '../../common/UsernameInput';
@@ -30,7 +30,6 @@ import FloatingActionButton from '../../ui/FloatingActionButton';
 import ListItem from '../../ui/ListItem';
 import Loading from '../../ui/Loading';
 import RadioGroup from '../../ui/RadioGroup';
-import Spinner from '../../ui/Spinner';
 
 type PrivacyType = 'private' | 'public';
 
@@ -186,7 +185,7 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
 
     return (
       <p className="section-info" dir="auto">
-        {(lang('lng_username_purchase_available') as string)
+        {(lang('lng_username_purchase_available'))
           .replace('{link}', '%PURCHASE_LINK%')
           .split('%')
           .map((s) => {
@@ -198,7 +197,7 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="Management">
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         <div className="section" dir={lang.isRtl ? 'rtl' : undefined}>
           <h3 className="section-heading">{lang(`${langPrefix2}Type`)}</h3>
           <RadioGroup
@@ -212,7 +211,7 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
           <div className="section" dir={lang.isRtl ? 'rtl' : undefined}>
             {privateInviteLink ? (
               <>
-                <SafeLink url={privateInviteLink} className="group-link" text={privateInviteLink} />
+                <LinkField link={privateInviteLink} className="invite-link" />
                 <p className="section-info" dir={lang.isRtl ? 'rtl' : undefined}>
                   {lang(`${langPrefix1}PrivateLinkHelp`)}
                 </p>
@@ -235,14 +234,16 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
           </div>
         ) : (
           <div className="section no-border">
-            <UsernameInput
-              asLink
-              currentUsername={currentUsername}
-              isLoading={isLoading}
-              isUsernameAvailable={isUsernameAvailable}
-              checkedUsername={checkedUsername}
-              onChange={handleUsernameChange}
-            />
+            <div className="settings-input">
+              <UsernameInput
+                asLink
+                currentUsername={currentUsername}
+                isLoading={isLoading}
+                isUsernameAvailable={isUsernameAvailable}
+                checkedUsername={checkedUsername}
+                onChange={handleUsernameChange}
+              />
+            </div>
             {error === USERNAME_PURCHASE_ERROR && renderPurchaseLink()}
             <p className="section-info" dir="auto">
               {lang(`${langPrefix2}.Username.CreatePublicLinkHelp`)}
@@ -278,13 +279,9 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
         disabled={isLoading}
         ariaLabel={lang('Save')}
         onClick={handleSave}
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <Icon name="check" />
-        )}
-      </FloatingActionButton>
+        iconName="check"
+        isLoading={isLoading}
+      />
       <ConfirmDialog
         isOpen={isUsernameLostDialogOpen}
         onClose={closeUsernameLostDialog}
@@ -297,9 +294,9 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const chat = selectChat(global, chatId)!;
-    const { isUsernameAvailable, checkedUsername, error } = selectManagement(global, chatId)!;
+    const { isUsernameAvailable, checkedUsername, error } = selectManagement(global, chatId);
 
     return {
       chat,

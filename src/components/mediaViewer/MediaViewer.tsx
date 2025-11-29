@@ -1,4 +1,5 @@
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   beginHeavyAnimation,
   memo, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
@@ -17,7 +18,9 @@ import { type MediaViewerMedia, MediaViewerOrigin, type ThreadId } from '../../t
 import { ANIMATION_END_DELAY } from '../../config';
 import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import {
-  getChatMediaMessageIds, getMessagePaidMedia, isChatAdmin, isUserId,
+  getMediaSearchType,
+  getMessageContentIds,
+  getMessagePaidMedia, isChatAdmin,
 } from '../../global/helpers';
 import {
   selectChatMessage,
@@ -35,25 +38,29 @@ import {
   selectTabState,
 } from '../../global/selectors';
 import { stopCurrentAudio } from '../../util/audioPlayer';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
+import { IS_MAC_OS } from '../../util/browser/windowEnvironment';
 import captureEscKeyListener from '../../util/captureEscKeyListener';
 import { disableDirectTextInput, enableDirectTextInput } from '../../util/directInputManager';
+import { isUserId } from '../../util/entities/ids';
 import { MEDIA_VIEWER_MEDIA_QUERY } from '../common/helpers/mediaDimensions';
 import { renderMessageText } from '../common/helpers/renderMessageText';
-import getViewableMedia, { getMediaViewerItem, type MediaViewerItem } from './helpers/getViewableMedia';
+import { getMediaViewerItem, type MediaViewerItem, type ViewableMedia } from './helpers/getViewableMedia';
+import selectViewableMedia from './helpers/getViewableMedia';
 import { animateClosing, animateOpening } from './helpers/ghostAnimation';
 
 import useAppLayout from '../../hooks/useAppLayout';
-import useElectronDrag from '../../hooks/useElectronDrag';
+import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
 import useFlag from '../../hooks/useFlag';
 import useForceUpdate from '../../hooks/useForceUpdate';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
-import { exitPictureInPictureIfNeeded, usePictureInPictureSignal } from '../../hooks/usePictureInPicture';
+import { exitPictureInPictureIfNeeded, PICTURE_IN_PICTURE_SIGNAL } from '../../hooks/usePictureInPicture';
+import usePrevious from '../../hooks/usePrevious';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 import { dispatchPriorityPlaybackEvent } from '../../hooks/usePriorityPlaybackCheck';
 import { useMediaProps } from './hooks/useMediaProps';
 
-import Icon from '../common/icons/Icon';
 import ReportAvatarModal from '../common/ReportAvatarModal';
 import Button from '../ui/Button';
 import ShowTransition from '../ui/ShowTransition';
@@ -86,6 +93,8 @@ type StateProps = {
   withDynamicLoading?: boolean;
   isLoadingMoreMedia?: boolean;
   isSynced?: boolean;
+  currentItem?: MediaViewerItem;
+  viewableMedia?: ViewableMedia;
 };
 
 const ANIMATION_DURATION = 250;
@@ -113,6 +122,8 @@ const MediaViewer = ({
   withDynamicLoading,
   isLoadingMoreMedia,
   isSynced,
+  currentItem,
+  viewableMedia,
 }: StateProps) => {
   const {
     openMediaViewer,
@@ -122,12 +133,14 @@ const MediaViewer = ({
     toggleChatInfo,
     searchChatMediaMessages,
     loadMoreProfilePhotos,
-    clickSponsoredMessage,
+    clickSponsored,
     openUrl,
   } = getActions();
 
   const isOpen = Boolean(avatarOwner || message || standaloneMedia || sponsoredMessage);
   const { isMobile } = useAppLayout();
+
+  const { media, isSingle } = viewableMedia || {};
 
   /* Animation */
   const animationKey = useRef<number>();
@@ -139,11 +152,6 @@ const MediaViewer = ({
   /* Controls */
   const [isReportAvatarModalOpen, openReportAvatarModal, closeReportAvatarModal] = useFlag();
 
-  const currentItem = getMediaViewerItem({
-    message, avatarOwner, standaloneMedia, profilePhotos, mediaIndex, sponsoredMessage,
-  });
-  const { media, isSingle } = getViewableMedia(currentItem) || {};
-
   const {
     isVideo,
     isPhoto,
@@ -151,7 +159,7 @@ const MediaViewer = ({
     bestData,
     dimensions,
     isGif,
-    isFromSharedMedia,
+    contentType,
   } = useMediaProps({
     media, isAvatar: Boolean(avatarOwner), origin, delay: isGhostAnimation && ANIMATION_DURATION,
   });
@@ -163,19 +171,18 @@ const MediaViewer = ({
     if (media === info.personalPhoto) return false;
     return true;
   })();
-  const isVisible = !isHidden && isOpen;
 
   const messageMediaIds = useMemo(() => {
     return withDynamicLoading
       ? collectedMessageIds
-      : getChatMediaMessageIds(chatMessages || {}, collectedMessageIds || [], isFromSharedMedia);
-  }, [chatMessages, collectedMessageIds, isFromSharedMedia, withDynamicLoading]);
+      : getMessageContentIds(chatMessages || {}, collectedMessageIds || [], contentType || 'media');
+  }, [chatMessages, collectedMessageIds, contentType, withDynamicLoading]);
 
   if (isOpen && (!prevSenderId || prevSenderId !== senderId || animationKey.current === undefined)) {
     animationKey.current = isSingle ? 0 : (messageId || mediaIndex);
   }
 
-  const [getIsPictureInPicture] = usePictureInPictureSignal();
+  const [getIsPictureInPicture] = PICTURE_IN_PICTURE_SIGNAL;
 
   useEffect(() => {
     if (!isOpen || getIsPictureInPicture()) {
@@ -192,10 +199,10 @@ const MediaViewer = ({
   }, [isOpen, getIsPictureInPicture]);
 
   useEffect(() => {
-    if (isVisible) {
+    if (!isHidden || !isOpen) {
       exitPictureInPictureIfNeeded();
     }
-  }, [isVisible]);
+  }, [isHidden, isOpen]);
 
   useEffect(() => {
     if (isMobile) {
@@ -204,10 +211,6 @@ const MediaViewer = ({
       });
     }
   }, [isMobile, isOpen]);
-
-  // eslint-disable-next-line no-null/no-null
-  const headerRef = useRef<HTMLDivElement>(null);
-  useElectronDrag(headerRef);
 
   const forceUpdate = useForceUpdate();
   useEffect(() => {
@@ -219,17 +222,17 @@ const MediaViewer = ({
     };
   }, [forceUpdate]);
 
-  const prevMessage = usePreviousDeprecated<ApiMessage | undefined>(message);
-  const prevIsHidden = usePreviousDeprecated<boolean | undefined>(isHidden);
-  const prevOrigin = usePreviousDeprecated(origin);
-  const prevItem = usePreviousDeprecated(currentItem);
-  const prevBestImageData = usePreviousDeprecated(bestImageData);
+  const prevMessage = usePrevious<ApiMessage | undefined>(message);
+  const prevOrigin = usePrevious(origin);
+  const prevItem = usePrevious(currentItem);
+  const prevBestImageData = usePrevious(bestImageData);
   const textParts = message ? renderMessageText({ message, forcePlayback: true, isForMediaViewer: true }) : undefined;
   const hasFooter = Boolean(textParts);
-  const shouldAnimateOpening = prevIsHidden && prevItem !== currentItem;
 
-  useEffect(() => {
-    if (isGhostAnimation && isOpen && (shouldAnimateOpening || !prevItem)) {
+  useEffectWithPrevDeps(([prevIsOpen, prevIsHidden]) => {
+    if (prevIsOpen === isOpen && prevIsHidden === isHidden) return;
+
+    if (isGhostAnimation && isOpen && !prevItem) {
       beginHeavyAnimation(ANIMATION_DURATION + ANIMATION_END_DELAY);
       animateOpening(hasFooter, origin!, bestImageData!, dimensions!, isVideo, message, mediaIndex);
     }
@@ -239,13 +242,15 @@ const MediaViewer = ({
       animateClosing(prevOrigin!, prevBestImageData!, prevMessage, prevItem?.mediaIndex);
     }
   }, [
-    bestImageData, dimensions, hasFooter, isGhostAnimation, isOpen, isVideo, message, origin,
-    prevBestImageData, prevItem, prevMessage, prevOrigin, shouldAnimateOpening, mediaIndex,
+    isOpen, isHidden, bestImageData, dimensions, hasFooter, isGhostAnimation, isVideo, message, origin,
+    prevBestImageData, prevItem, prevMessage, prevOrigin, mediaIndex,
   ]);
 
   const handleClose = useLastCallback(() => closeMediaViewer());
 
-  const handleFooterClick = useLastCallback(() => {
+  const handleFooterClick = useLastCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target instanceof HTMLElement && e.target.closest('a')) return; // Prevent closing on timestamp click
+
     handleClose();
 
     if (!chatId || !messageId) return;
@@ -263,8 +268,8 @@ const MediaViewer = ({
   const handleSponsoredClick = useLastCallback((isFromMedia?: boolean) => {
     if (!sponsoredMessage || !chatId) return;
 
-    clickSponsoredMessage({ isMedia: isFromMedia, isFullscreen: true, peerId: chatId });
-    openUrl({ url: sponsoredMessage!.url });
+    clickSponsored({ isMedia: isFromMedia, isFullscreen: true, randomId: sponsoredMessage.randomId });
+    openUrl({ url: sponsoredMessage.url });
     closeMediaViewer();
   });
 
@@ -349,7 +354,7 @@ const MediaViewer = ({
     }
 
     const index = messageMediaIds?.indexOf(fromMessage.id);
-    if (index === undefined) return undefined;
+    if (index === undefined || index === -1) return undefined;
     const nextIndex = index + direction;
     const nextMessageId = messageMediaIds![nextIndex];
     const nextMessage = chatMessages?.[nextMessageId];
@@ -417,18 +422,21 @@ const MediaViewer = ({
       shouldAnimateFirstRender
       noCloseTransition={shouldSkipHistoryAnimations}
     >
-      <div className="media-viewer-head" dir={lang.isRtl ? 'rtl' : undefined} ref={headerRef}>
+      <div
+        className="media-viewer-head"
+        dir={lang.isRtl ? 'rtl' : undefined}
+        data-tauri-drag-region={IS_TAURI && IS_MAC_OS ? true : undefined}
+      >
         {isMobile && (
           <Button
             className="media-viewer-close"
             round
             size="smaller"
             color="translucent-white"
+            iconName="close"
             ariaLabel={lang('Close')}
             onClick={handleClose}
-          >
-            <Icon name="close" />
-          </Button>
+          />
         )}
         <Transition activeKey={animationKey.current!} name={headerAnimation}>
           <SenderInfo
@@ -481,7 +489,7 @@ const MediaViewer = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { mediaViewer, shouldSkipHistoryAnimations } = selectTabState(global);
     const {
       chatId,
@@ -501,18 +509,24 @@ export default memo(withGlobal(
     const isChatWithSelf = Boolean(chatId) && selectIsChatWithSelf(global, chatId);
 
     if (isAvatarView) {
-      const peer = selectPeer(global, chatId!);
+      const avatarOwner = selectPeer(global, chatId!);
       let canUpdateMedia = false;
-      if (peer) {
-        canUpdateMedia = isUserId(peer.id) ? peer.id === currentUserId : isChatAdmin(peer as ApiChat);
+      if (avatarOwner) {
+        canUpdateMedia = isUserId(avatarOwner.id)
+          ? avatarOwner.id === currentUserId : isChatAdmin(avatarOwner as ApiChat);
       }
 
       const profilePhotos = selectPeerPhotos(global, chatId!);
 
+      const currentItem = getMediaViewerItem({
+        avatarOwner, standaloneMedia, profilePhotos, mediaIndex,
+      });
+      const viewableMedia = selectViewableMedia(global, origin, currentItem);
+
       return {
         profilePhotos,
         avatar: profilePhotos?.photos[mediaIndex!],
-        avatarOwner: peer,
+        avatarOwner,
         isLoadingMoreMedia: profilePhotos?.isLoading,
         isChatWithSelf,
         canUpdateMedia,
@@ -523,6 +537,16 @@ export default memo(withGlobal(
         standaloneMedia,
         mediaIndex,
         isSynced,
+        currentItem,
+        viewableMedia,
+        chatId,
+        threadId,
+        messageId,
+        message: undefined,
+        collectedMessageIds: undefined,
+        chatMessages: undefined,
+        sponsoredMessage: undefined,
+        withDynamicLoading,
       };
     }
 
@@ -541,6 +565,11 @@ export default memo(withGlobal(
         sponsoredMessage = selectSponsoredMessage(global, chatId);
       }
     }
+
+    const currentItem = getMediaViewerItem({
+      message, standaloneMedia, mediaIndex, sponsoredMessage,
+    });
+    const viewableMedia = selectViewableMedia(global, origin, currentItem);
 
     let chatMessages: Record<number, ApiMessage> | undefined;
 
@@ -565,7 +594,9 @@ export default memo(withGlobal(
         collectedMessageIds = foundIds;
       } else if (origin === MediaViewerOrigin.SharedMedia) {
         const currentSearch = selectCurrentSharedMediaSearch(global);
-        const { foundIds } = (currentSearch && currentSearch.resultsByType && currentSearch.resultsByType.media) || {};
+        const resultsByType = currentSearch?.resultsByType;
+        const contentType = viewableMedia && getMediaSearchType(viewableMedia?.media);
+        const { foundIds } = (contentType && resultsByType?.[contentType]) || {};
         collectedMessageIds = foundIds;
       } else if (isOriginInline || isOriginAlbum) {
         const outlyingList = selectOutlyingListByMessageId(global, chatId, threadId, messageId);
@@ -591,6 +622,12 @@ export default memo(withGlobal(
       mediaIndex,
       isLoadingMoreMedia,
       isSynced,
+      currentItem,
+      viewableMedia,
+      canUpdateMedia: undefined,
+      avatar: undefined,
+      avatarOwner: undefined,
+      profilePhotos: undefined,
     };
   },
 )(MediaViewer));

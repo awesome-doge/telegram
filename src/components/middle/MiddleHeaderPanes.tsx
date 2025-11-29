@@ -1,15 +1,19 @@
-import React, {
-  memo, useRef, useSignal,
-} from '../../lib/teact/teact';
-import { setExtraStyles } from '../../lib/teact/teact-dom';
+import { memo, useRef, useSignal } from '@teact';
+import { setExtraStyles } from '@teact/teact-dom';
 import { withGlobal } from '../../global';
 
+import type { ApiChat, ApiUserFullInfo } from '../../api/types';
 import type { MessageListType, ThreadId } from '../../types';
 import type { Signal } from '../../util/signals';
-import { type ApiChat, MAIN_THREAD_ID } from '../../api/types';
+import { MAIN_THREAD_ID } from '../../api/types';
 
 import {
-  selectChat, selectChatMessage, selectCurrentMiddleSearch, selectTabState,
+  selectCanAnimateRightColumn,
+  selectChat,
+  selectChatMessage,
+  selectCurrentMiddleSearch,
+  selectTabState,
+  selectUserFullInfo,
 } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 
@@ -25,6 +29,7 @@ import BotAdPane from './panes/BotAdPane';
 import BotVerificationPane from './panes/BotVerificationPane';
 import ChatReportPane from './panes/ChatReportPane';
 import HeaderPinnedMessage from './panes/HeaderPinnedMessage';
+import PaidMessageChargePane from './panes/PaidMessageChargePane';
 
 import styles from './MiddleHeaderPanes.module.scss';
 
@@ -40,8 +45,10 @@ type OwnProps = {
 
 type StateProps = {
   chat?: ApiChat;
+  userFullInfo?: ApiUserFullInfo;
   isAudioPlayerRendered?: boolean;
   isMiddleSearchOpen?: boolean;
+  withRightColumnAnimation?: boolean;
 };
 
 const FALLBACK_PANE_STATE = { height: 0 };
@@ -52,13 +59,15 @@ const MiddleHeaderPanes = ({
   threadId,
   messageListType,
   chat,
+  userFullInfo,
   getCurrentPinnedIndex,
   getLoadingPinnedId,
   isAudioPlayerRendered,
   isMiddleSearchOpen,
+  withRightColumnAnimation,
   onFocusPinnedMessage,
 }: OwnProps & StateProps) => {
-  const { settings } = chat || {};
+  const { settings } = userFullInfo || {};
 
   const { isDesktop } = useAppLayout();
   const [getAudioPlayerState, setAudioPlayerState] = useSignal<PaneState>(FALLBACK_PANE_STATE);
@@ -67,6 +76,7 @@ const MiddleHeaderPanes = ({
   const [getChatReportState, setChatReportState] = useSignal<PaneState>(FALLBACK_PANE_STATE);
   const [getBotAdState, setBotAdState] = useSignal<PaneState>(FALLBACK_PANE_STATE);
   const [getBotVerificationState, setBotVerificationState] = useSignal<PaneState>(FALLBACK_PANE_STATE);
+  const [getPaidMessageChargeState, setPaidMessageChargeState] = useSignal<PaneState>(FALLBACK_PANE_STATE);
 
   const isPinnedMessagesFullWidth = isAudioPlayerRendered || !isDesktop;
 
@@ -91,10 +101,11 @@ const MiddleHeaderPanes = ({
     const groupCallState = getGroupCallState();
     const chatReportState = getChatReportState();
     const botAdState = getBotAdState();
+    const paidMessageState = getPaidMessageChargeState();
 
     // Keep in sync with the order of the panes in the DOM
     const stateArray = [audioPlayerState, groupCallState,
-      chatReportState, botVerificationState, pinnedState, botAdState];
+      chatReportState, botVerificationState, pinnedState, botAdState, paidMessageState];
 
     const isFirstRender = isFirstRenderRef.current;
     const totalHeight = stateArray.reduce((acc, state) => acc + state.height, 0);
@@ -108,12 +119,21 @@ const MiddleHeaderPanes = ({
       '--middle-header-panes-height': `${totalHeight}px`,
     });
   }, [getAudioPlayerState, getGroupCallState, getPinnedState,
-    getChatReportState, getBotAdState, getBotVerificationState]);
+    getChatReportState, getBotAdState, getBotVerificationState, getPaidMessageChargeState]);
 
   if (!shouldRender) return undefined;
 
   return (
-    <div ref={ref} className={buildClassName(styles.root, className)}>
+    <div
+      ref={ref}
+      className={
+        buildClassName(
+          styles.root,
+          withRightColumnAnimation && styles.root_withRightColumnAnimation,
+          className,
+        )
+      }
+    >
       <AudioPlayer
         isFullWidth
         onPaneStateChange={setAudioPlayerState}
@@ -136,6 +156,10 @@ const MiddleHeaderPanes = ({
       <BotVerificationPane
         peerId={chatId}
         onPaneStateChange={setBotVerificationState}
+      />
+      <PaidMessageChargePane
+        peerId={chatId}
+        onPaneStateChange={setPaidMessageChargeState}
       />
       <HeaderPinnedMessage
         chatId={chatId}
@@ -160,9 +184,10 @@ const MiddleHeaderPanes = ({
 export default memo(withGlobal<OwnProps>(
   (global, {
     chatId,
-  }): StateProps => {
+  }): Complete<StateProps> => {
     const { audioPlayer } = selectTabState(global);
     const chat = selectChat(global, chatId);
+    const userFullInfo = selectUserFullInfo(global, chatId);
 
     const { chatId: audioChatId, messageId: audioMessageId } = audioPlayer;
     const audioMessage = audioChatId && audioMessageId
@@ -173,8 +198,10 @@ export default memo(withGlobal<OwnProps>(
 
     return {
       chat,
+      userFullInfo,
       isAudioPlayerRendered: Boolean(audioMessage),
       isMiddleSearchOpen,
+      withRightColumnAnimation: selectCanAnimateRightColumn(global),
     };
   },
 )(MiddleHeaderPanes));

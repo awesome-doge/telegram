@@ -1,13 +1,14 @@
 import { getActions } from '../global';
 
-import type { ApiChatType, ApiFormattedText } from '../api/types';
+import type { ApiChatType, ApiFormattedText, LinkContext } from '../api/types';
 import type { DeepLinkMethod } from './deepLinkParser';
+import { LeftColumnContent, SettingsScreens } from '../types';
 
-import { API_CHAT_TYPES, RE_TG_LINK } from '../config';
+import { API_CHAT_TYPES, RE_TG_LINK, TON_CURRENCY_CODE } from '../config';
+import { IS_BAD_URL_PARSER } from './browser/globalEnvironment';
 import { tryParseDeepLink } from './deepLinkParser';
-import { IS_BAD_URL_PARSER } from './windowEnvironment';
 
-export const processDeepLink = (url: string): boolean => {
+export const processDeepLink = (url: string, linkContext?: LinkContext): boolean => {
   const actions = getActions();
 
   const parsedLink = tryParseDeepLink(url);
@@ -19,6 +20,8 @@ export const processDeepLink = (url: string): boolean => {
           threadId: parsedLink.threadId,
           messageId: parsedLink.messageId,
           commentId: parsedLink.commentId,
+          timestamp: parsedLink.timestamp,
+          linkContext,
         });
         return true;
       case 'publicMessageLink': {
@@ -27,6 +30,8 @@ export const processDeepLink = (url: string): boolean => {
           threadId: parsedLink.threadId,
           messageId: parsedLink.messageId,
           commentId: parsedLink.commentId,
+          timestamp: parsedLink.timestamp,
+          linkContext,
         });
         return true;
       }
@@ -44,6 +49,7 @@ export const processDeepLink = (url: string): boolean => {
           attach: parsedLink.attach,
           choose,
           originalParts: [parsedLink.username, parsedLink.appName],
+          isDirect: parsedLink.isDirect,
         });
         return true;
       }
@@ -73,6 +79,38 @@ export const processDeepLink = (url: string): boolean => {
       case 'giftUniqueLink':
         actions.openUniqueGiftBySlug({ slug: parsedLink.slug });
         return true;
+      case 'settings':
+        if (!parsedLink.screen) {
+          actions.openLeftColumnContent({ contentKey: LeftColumnContent.Settings });
+          return true;
+        }
+        switch (parsedLink.screen) {
+          case 'editProfile':
+            actions.openSettingsScreen({ screen: SettingsScreens.EditProfile });
+            break;
+          case 'language':
+            actions.openSettingsScreen({ screen: SettingsScreens.Language });
+            break;
+          case 'devices':
+            actions.openSettingsScreen({ screen: SettingsScreens.ActiveSessions });
+            break;
+          case 'privacy':
+            actions.openSettingsScreen({ screen: SettingsScreens.Privacy });
+            break;
+          case 'folders':
+            actions.openSettingsScreen({ screen: SettingsScreens.Folders });
+            break;
+          case 'theme':
+            actions.openSettingsScreen({ screen: SettingsScreens.General });
+            break;
+        }
+        return true;
+      case 'stars':
+        actions.openStarsBalanceModal({});
+        break;
+      case 'ton':
+        actions.openStarsBalanceModal({ currency: TON_CURRENCY_CODE });
+        break;
       default:
         break;
     }
@@ -229,6 +267,11 @@ export function formatShareText(url?: string, text?: string, title?: string): Ap
 
 function parseChooseParameter(choose?: string) {
   if (!choose) return undefined;
-  const types = choose.toLowerCase().split(' ');
+  const types = choose.toLowerCase().split(' ').flatMap((type) => {
+    if (type === 'groups') {
+      return ['chats', 'groups'];
+    }
+    return [type];
+  });
   return types.filter((type): type is ApiChatType => API_CHAT_TYPES.includes(type as ApiChatType));
 }

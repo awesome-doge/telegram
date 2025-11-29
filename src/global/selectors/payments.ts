@@ -8,6 +8,9 @@ import {
 } from '../helpers';
 import { selectChat } from './chats';
 import { selectTabState } from './tabs';
+import { selectUser } from './users';
+
+export type ProfileCollectionKey = number | 'all';
 
 export function selectPaymentInputInvoice<T extends GlobalState>(
   global: T,
@@ -69,14 +72,16 @@ export function selectCanUseGiftProfileAdminFilter<T extends GlobalState>(
   global: T, peerId: string,
 ) {
   const chat = selectChat(global, peerId);
-  return chat && isChatChannel(chat) && isChatAdmin(chat) && getHasAdminRight(chat, 'postMessages');
+  const isCurrentUser = global.currentUserId === peerId;
+  return isCurrentUser || (chat && isChatChannel(chat) && isChatAdmin(chat) && getHasAdminRight(chat, 'postMessages'));
 }
 
 export function selectCanUseGiftProfileFilter<T extends GlobalState>(
   global: T, peerId: string,
 ) {
   const chat = selectChat(global, peerId);
-  return chat && isChatChannel(chat);
+  const user = selectUser(global, peerId);
+  return Boolean(user) || (chat && isChatChannel(chat));
 }
 
 export function selectGiftProfileFilter<T extends GlobalState>(
@@ -92,4 +97,12 @@ export function selectIsGiftProfileFilterDefault<T extends GlobalState>(
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
   return arePropsShallowEqual(selectTabState(global, tabId).savedGifts.filter, DEFAULT_GIFT_PROFILE_FILTER_OPTIONS);
+}
+
+export function selectActiveGiftsCollectionId<T extends GlobalState>(
+  global: T,
+  peerId: string,
+  ...[tabId = getCurrentTabId()]: TabArgs<T>
+): ProfileCollectionKey {
+  return selectTabState(global, tabId).savedGifts.activeCollectionByPeerId?.[peerId] || 'all';
 }

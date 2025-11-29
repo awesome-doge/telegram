@@ -1,20 +1,25 @@
 import type { ChangeEvent } from 'react';
 import type { FC, TeactNode } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo,
   useRef,
   useState,
 } from '../../lib/teact/teact';
 
+import type { ApiPeer } from '../../api/types';
 import type { IconName } from '../../types/icons';
 import type { IRadioOption } from './CheckboxGroup';
 
 import buildClassName from '../../util/buildClassName';
+import { REM } from '../common/helpers/mediaDimensions';
 import renderText from '../common/helpers/renderText';
 
+import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useOldLang from '../../hooks/useOldLang';
 
+import Avatar from '../common/Avatar';
 import Icon from '../common/icons/Icon';
 import Button from './Button';
 import Spinner from './Spinner';
@@ -25,6 +30,7 @@ type OwnProps = {
   id?: string;
   name?: string;
   value?: string;
+  peer?: ApiPeer;
   label?: TeactNode;
   labelText?: TeactNode;
   subLabel?: string;
@@ -40,21 +46,23 @@ type OwnProps = {
   onlyInput?: boolean;
   isRound?: boolean;
   className?: string;
-  onChange?: (e: ChangeEvent<HTMLInputElement>, nestedOptionList?: IRadioOption) => void;
-  onCheck?: (isChecked: boolean) => void;
-  onClickLabel?: (e: React.MouseEvent, value?: string) => void;
   nestedCheckbox?: boolean;
   nestedCheckboxCount?: number | undefined;
-  nestedOptionList?: IRadioOption;
+  nestedOptionList?: IRadioOption[];
   leftElement?: TeactNode;
   values?: string[];
+  onChange?: (e: ChangeEvent<HTMLInputElement>, nestedOptionList?: IRadioOption[]) => void;
+  onCheck?: (isChecked: boolean) => void;
+  onClickLabel?: (e: React.MouseEvent, value?: string) => void;
 };
+const AVATAR_SIZE = 1.25 * REM;
 
 const Checkbox: FC<OwnProps> = ({
   id,
   name,
   value,
   label,
+  peer,
   labelText,
   subLabel,
   checked,
@@ -72,15 +80,15 @@ const Checkbox: FC<OwnProps> = ({
   nestedCheckboxCount,
   nestedOptionList,
   leftElement,
-  values = [],
+  values,
   onChange,
   onCheck,
   onClickLabel,
 }) => {
-  const lang = useOldLang();
-  // eslint-disable-next-line no-null/no-null
-  const labelRef = useRef<HTMLLabelElement>(null);
+  const lang = useLang();
+  const labelRef = useRef<HTMLLabelElement>();
   const [showNested, setShowNested] = useState(false);
+  const renderingPeer = useCurrentOrPrev(peer, true);
 
   const handleChange = useLastCallback((event: ChangeEvent<HTMLInputElement>) => {
     if (disabled) {
@@ -151,10 +159,18 @@ const Checkbox: FC<OwnProps> = ({
           Boolean(leftElement) && 'Nested-avatar-list',
         )}
         >
+          <div className={buildClassName('user-avatar', renderingPeer && 'user-avatar-visible')}>
+            {renderingPeer && (
+              <Avatar
+                peer={renderingPeer}
+                size={AVATAR_SIZE}
+              />
+            )}
+          </div>
           <span className="label" dir="auto">
             {leftElement}
             {typeof label === 'string' ? renderText(label) : label}
-            {labelText && <span className="ml-1">{renderText(labelText)}</span>}
+            {Boolean(labelText) && <span className="ml-1">{renderText(labelText)}</span>}
           </span>
           {subLabel && <span className="subLabel" dir="auto">{renderText(subLabel)}</span>}
           {rightIcon && <Icon name={rightIcon} className="right-icon" />}
@@ -174,14 +190,14 @@ const Checkbox: FC<OwnProps> = ({
         <div
           className={buildClassName('nested-checkbox-group', showNested && 'nested-checkbox-group-open')}
         >
-          {nestedOptionList?.nestedOptions?.map((nestedOption) => (
+          {nestedOptionList?.map((nestedOption) => (
             <Checkbox
               key={nestedOption.value}
               leftElement={leftElement}
               onChange={handleChange}
-              checked={values.indexOf(nestedOption.value) !== -1}
+              checked={values?.indexOf(nestedOption.value) !== -1}
               values={values}
-              /* eslint-disable-next-line react/jsx-props-no-spreading */
+
               {...nestedOption}
             />
           ))}

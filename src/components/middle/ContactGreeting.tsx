@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
@@ -54,8 +54,7 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
 
   const lang = useOldLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
   const sticker = useMemo(() => {
     if (businessIntro?.sticker) return businessIntro.sticker;
@@ -115,7 +114,7 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
       </div>
       {businessIntro && (
         <div className={styles.explainer}>
-          {lang('Chat.EmptyStateIntroFooter', getUserFullName(user!))}
+          {lang('Chat.EmptyStateIntroFooter', getUserFullName(user))}
         </div>
       )}
     </div>
@@ -123,11 +122,11 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { userId }): StateProps => {
+  (global, { userId }): Complete<StateProps> => {
     const { stickers } = global.stickers.greeting;
     const chat = selectChat(global, userId);
     if (!chat) {
-      return {};
+      return {} as Complete<StateProps>;
     }
 
     const user = selectUser(global, userId);

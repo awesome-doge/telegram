@@ -1,5 +1,5 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, { memo, useMemo, useRef } from '../../../../lib/teact/teact';
+import { memo, useMemo, useRef } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type {
@@ -20,7 +20,6 @@ import buildClassName, { createClassNameBuilder } from '../../../../util/buildCl
 import useLastCallback from '../../../../hooks/useLastCallback';
 import useOldLang from '../../../../hooks/useOldLang';
 
-import Icon from '../../../common/icons/Icon';
 import Button from '../../../ui/Button';
 import Link from '../../../ui/Link';
 import ReactionSelectorCustomReaction from './ReactionSelectorCustomReaction';
@@ -83,8 +82,7 @@ const ReactionSelector: FC<OwnProps> = ({
   onShowMore,
 }) => {
   const { openPremiumModal } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
   const lang = useOldLang();
 
   const areReactionsLocked = isInSavedMessages && !isCurrentUserPremium && !isInStoryViewer;
@@ -110,7 +108,7 @@ const ReactionSelector: FC<OwnProps> = ({
       if ((!isCustomReaction && !availableReaction) || availableReaction?.isInactive) return undefined;
 
       if (!isPrivate && !shouldUseCurrentReactions
-         && (!enabledReactions || !canSendReaction(reaction, enabledReactions))) {
+        && (!enabledReactions || !canSendReaction(reaction, enabledReactions))) {
         return undefined;
       }
 
@@ -228,9 +226,8 @@ const ReactionSelector: FC<OwnProps> = ({
                 color="translucent"
                 className={cn('show-more')}
                 onClick={handleShowMoreClick}
-              >
-                <Icon name="down" />
-              </Button>
+                iconName="down"
+              />
             )}
           </div>
         </div>

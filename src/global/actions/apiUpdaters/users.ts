@@ -1,12 +1,13 @@
 import { throttleWithFullyIdle } from '../../../lib/teact/heavyAnimation';
 
 import type { ApiUserStatus } from '../../../api/types';
-import type { ActionReturnType, RequiredGlobalState } from '../../types';
+import type { ActionReturnType } from '../../types';
 
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
   deleteContact,
   replaceUserStatuses,
+  updateChat,
   updatePeerStoriesHidden,
   updateUser,
   updateUserFullInfo,
@@ -20,8 +21,7 @@ const updateStatusesOnFullyIdle = throttleWithFullyIdle(flushStatusUpdates);
 let pendingStatusUpdates: Record<string, ApiUserStatus> = {};
 
 function flushStatusUpdates() {
-  // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
-  let global = getGlobal() as RequiredGlobalState;
+  let global = getGlobal();
 
   global = replaceUserStatuses(global, {
     ...global.users.statusesById,
@@ -75,7 +75,9 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     }
 
     case 'updateUserEmojiStatus': {
-      return updateUser(global, update.userId, { emojiStatus: update.emojiStatus });
+      global = updateUser(global, update.userId, { emojiStatus: update.emojiStatus });
+      global = updateChat(global, update.userId, { emojiStatus: update.emojiStatus });
+      return global;
     }
 
     case 'updateUserStatus': {
@@ -105,6 +107,36 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           menuButton: button,
         },
       });
+    }
+
+    case 'updateBotCommands': {
+      const { botId, commands } = update;
+      const targetUserFullInfo = selectUserFullInfo(global, botId);
+      if (!targetUserFullInfo?.botInfo) {
+        return undefined;
+      }
+
+      return updateUserFullInfo(global, botId, {
+        botInfo: {
+          ...targetUserFullInfo.botInfo,
+          commands,
+        },
+      });
+    }
+
+    case 'updatePeerSettings': {
+      const { id, settings } = update;
+
+      const targetUserFullInfo = selectUserFullInfo(global, id);
+      if (!targetUserFullInfo?.botInfo) {
+        actions.loadFullUser({ userId: id });
+        return undefined;
+      }
+
+      global = updateUserFullInfo(global, id, {
+        settings,
+      });
+      return global;
     }
   }
 

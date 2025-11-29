@@ -1,10 +1,10 @@
 import type { ChangeEvent, MouseEventHandler } from 'react';
 import type { FC, TeactNode } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
 
-import useOldLang from '../../hooks/useOldLang';
+import useLang from '../../hooks/useLang';
 
 import Spinner from './Spinner';
 
@@ -18,6 +18,7 @@ type OwnProps = {
   value?: string;
   checked?: boolean;
   disabled?: boolean;
+  isCanCheckedInDisabled?: boolean;
   isLink?: boolean;
   hidden?: boolean;
   isLoading?: boolean;
@@ -46,8 +47,10 @@ const Radio: FC<OwnProps> = ({
   isLink,
   onChange,
   onSubLabelClick,
+  isCanCheckedInDisabled,
 }) => {
-  const lang = useOldLang();
+  const lang = useLang();
+
   const fullClassName = buildClassName(
     'Radio',
     className,
@@ -57,6 +60,7 @@ const Radio: FC<OwnProps> = ({
     isLoading && 'loading',
     onlyInput && 'onlyInput',
     Boolean(subLabel) && 'withSubLabel',
+    isCanCheckedInDisabled && 'canCheckedInDisabled',
   );
 
   return (
@@ -72,16 +76,15 @@ const Radio: FC<OwnProps> = ({
       />
       <div className="Radio-main">
         <span className="label" dir={lang.isRtl ? 'auto' : undefined}>{label}</span>
-        {subLabel
-          && (
-            <span
-              className={buildClassName(subLabelClassName, 'subLabel', isLink ? 'subLabelLink' : undefined)}
-              dir={lang.isRtl ? 'auto' : undefined}
-              onClick={isLink ? onSubLabelClick : undefined}
-            >
-              {subLabel}
-            </span>
-          )}
+        {Boolean(subLabel) && (
+          <span
+            className={buildClassName(subLabelClassName, 'subLabel', isLink ? 'subLabelLink' : undefined)}
+            dir={lang.isRtl ? 'auto' : undefined}
+            onClick={isLink ? onSubLabelClick : undefined}
+          >
+            {subLabel}
+          </span>
+        )}
       </div>
       {isLoading && <Spinner />}
     </label>

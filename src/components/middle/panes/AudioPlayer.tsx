@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { useMemo } from '../../../lib/teact/teact';
+import { useEffect, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type {
@@ -10,18 +10,21 @@ import type { IconName } from '../../../types/icons';
 
 import { PLAYBACK_RATE_FOR_AUDIO_MIN_DURATION } from '../../../config';
 import {
-  getMediaDuration, getMessageContent, getMessageMediaHash, getPeerTitle, isMessageLocal,
+  getMessageContent, isMessageLocal,
 } from '../../../global/helpers';
+import { getPeerTitle } from '../../../global/helpers/peers';
 import {
   selectChat, selectChatMessage, selectSender, selectTabState,
 } from '../../../global/selectors';
+import { selectMessageMediaDuration } from '../../../global/selectors/media';
 import { makeTrackId } from '../../../util/audioPlayer';
+import { IS_IOS, IS_TOUCH_ENV } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 import * as mediaLoader from '../../../util/mediaLoader';
 import { clearMediaSession } from '../../../util/mediaSession';
-import { IS_IOS, IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 import renderText from '../../common/helpers/renderText';
 
+import useMessageMediaHash from '../../../hooks/media/useMessageMediaHash';
 import useAppLayout from '../../../hooks/useAppLayout';
 import useAudioPlayer from '../../../hooks/useAudioPlayer';
 import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
@@ -53,10 +56,12 @@ type StateProps = {
   message?: ApiMessage;
   sender?: ApiPeer;
   chat?: ApiChat;
+  mediaDuration?: number;
   volume: number;
   playbackRate: number;
   isPlaybackRateActive?: boolean;
   isMuted: boolean;
+  timestamp?: number;
 };
 
 const PLAYBACK_RATES: Record<number, number> = {
@@ -73,6 +78,7 @@ const DEFAULT_FAST_PLAYBACK_RATE = 2;
 
 const AudioPlayer: FC<OwnProps & StateProps> = ({
   message,
+  mediaDuration,
   className,
   noUi,
   sender,
@@ -82,6 +88,7 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
   isPlaybackRateActive,
   isMuted,
   isFullWidth,
+  timestamp,
   onPaneStateChange,
 }) => {
   const {
@@ -102,7 +109,7 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
   const shouldRenderPlaybackButton = isVoice || (audio?.duration || 0) > PLAYBACK_RATE_FOR_AUDIO_MIN_DURATION;
   const senderName = sender ? getPeerTitle(lang, sender) : undefined;
 
-  const mediaHash = renderingMessage && getMessageMediaHash(renderingMessage, 'inline');
+  const mediaHash = useMessageMediaHash(renderingMessage, 'inline');
   const mediaData = mediaHash && mediaLoader.getFromMemory(mediaHash);
   const mediaMetadata = useMessageMediaMetadata(renderingMessage, sender, chat);
 
@@ -117,9 +124,10 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
     setVolume,
     toggleMuted,
     setPlaybackRate,
+    setCurrentTime,
   } = useAudioPlayer(
     message && makeTrackId(message),
-    message ? getMediaDuration(message)! : 0,
+    mediaDuration || 0,
     isVoice ? 'voice' : 'audio',
     mediaData,
     undefined,
@@ -152,6 +160,18 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
     handleBeforeContextMenu, handleContextMenu,
     handleContextMenuClose, handleContextMenuHide,
   } = useContextMenuHandlers(transitionRef, !shouldRender);
+
+  useEffect(() => {
+    if (timestamp) {
+      setCurrentTime(timestamp);
+    }
+  }, [timestamp, setCurrentTime]);
+
+  useEffect(() => {
+    if (isPlaying && message?.isDeleting) {
+      playPause();
+    }
+  }, [isPlaying, message?.isDeleting, playPause]);
 
   const handleClick = useLastCallback(() => {
     const { chatId, id } = renderingMessage!;
@@ -275,9 +295,8 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
         disabled={isFirst?.()}
         onClick={requestPreviousTrack}
         ariaLabel="Previous track"
-      >
-        <Icon name="skip-previous" />
-      </Button>
+        iconName="skip-previous"
+      />
       <Button
         round
         ripple={!isMobile}
@@ -299,9 +318,8 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
         disabled={isLast?.()}
         onClick={requestNextTrack}
         ariaLabel="Next track"
-      >
-        <Icon name="skip-next" />
-      </Button>
+        iconName="skip-next"
+      />
 
       <div className="volume-button-wrapper">
         <Button
@@ -312,9 +330,8 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
           ariaLabel="Volume"
           onClick={handleVolumeClick}
           ripple={!isMobile}
-        >
-          <Icon name={volumeIcon} />
-        </Button>
+          iconName={volumeIcon}
+        />
 
         {!IS_IOS && (
           <div className="volume-slider-wrapper">
@@ -350,9 +367,8 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
         size="smaller"
         onClick={handleClose}
         ariaLabel="Close player"
-      >
-        <Icon name="close" />
-      </Button>
+        iconName="close"
+      />
     </div>
   );
 };
@@ -388,18 +404,19 @@ function renderPlaybackRateMenuItem(
   return (
     <MenuItem
       key={rate}
-      // eslint-disable-next-line react/jsx-no-bind
+
       onClick={() => onClick(rate)}
       icon={isSelected ? 'check' : undefined}
       customIcon={!isSelected ? <Icon name="placeholder" /> : undefined}
     >
-      {rate}X
+      {rate}
+      X
     </MenuItem>
   );
 }
 
 export default withGlobal<OwnProps>(
-  (global, { isHidden }): StateProps => {
+  (global, { isHidden }): Complete<StateProps> => {
     const { audioPlayer } = selectTabState(global);
     const { chatId, messageId } = audioPlayer;
     const message = !isHidden && chatId && messageId ? selectChatMessage(global, chatId, messageId) : undefined;
@@ -407,8 +424,10 @@ export default withGlobal<OwnProps>(
     const sender = message && selectSender(global, message);
     const chat = message && selectChat(global, message.chatId);
     const {
-      volume, playbackRate, isMuted, isPlaybackRateActive,
+      volume, playbackRate, isMuted, isPlaybackRateActive, timestamp,
     } = selectTabState(global).audioPlayer;
+
+    const mediaDuration = message ? selectMessageMediaDuration(global, message) : undefined;
 
     return {
       message,
@@ -418,6 +437,8 @@ export default withGlobal<OwnProps>(
       playbackRate,
       isPlaybackRateActive,
       isMuted,
+      timestamp,
+      mediaDuration,
     };
   },
 )(AudioPlayer);

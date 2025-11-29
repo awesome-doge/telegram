@@ -1,4 +1,4 @@
-import React, { memo } from '../../../lib/teact/teact';
+import { memo } from '../../../lib/teact/teact';
 
 import buildClassName from '../../../util/buildClassName';
 
@@ -32,7 +32,6 @@ const PickerModal = ({
 
   return (
     <Modal
-      // eslint-disable-next-line react/jsx-props-no-spreading
       {...modalProps}
       isSlim
       className={buildClassName(
@@ -42,6 +41,7 @@ const PickerModal = ({
       )}
       contentClassName={buildClassName(styles.content, modalProps.contentClassName)}
       headerClassName={buildClassName(styles.header, modalProps.headerClassName)}
+      isCondensedHeader
     >
       {modalProps.children}
       {hasButton && (
@@ -50,7 +50,6 @@ const PickerModal = ({
             withPremiumGradient={withPremiumGradient}
             onClick={onConfirm || modalProps.onClose}
             color="primary"
-            size="smaller"
             disabled={isConfirmDisabled}
           >
             {confirmButtonText || lang('Confirm')}

@@ -1,4 +1,5 @@
-import React, { memo, useEffect, useRef } from '../../../../lib/teact/teact';
+import type React from '../../../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type {
@@ -15,6 +16,7 @@ import { REM } from '../../../common/helpers/mediaDimensions';
 import useSelector from '../../../../hooks/data/useSelector';
 import useContextMenuHandlers from '../../../../hooks/useContextMenuHandlers';
 import useEffectWithPrevDeps from '../../../../hooks/useEffectWithPrevDeps';
+import useLang from '../../../../hooks/useLang';
 import useLastCallback from '../../../../hooks/useLastCallback';
 import usePrevious from '../../../../hooks/usePrevious';
 import useShowTransition from '../../../../hooks/useShowTransition';
@@ -40,6 +42,7 @@ type OwnProps = {
   recentReactors?: ApiPeer[];
   className?: string;
   chosenClassName?: string;
+  isOutside?: boolean;
   observeIntersection?: ObserveFn;
   onClick?: (reaction: ApiReaction) => void;
   onPaidClick?: (count: number) => void;
@@ -58,6 +61,7 @@ const ReactionButton = ({
   chosenClassName,
   chatId,
   messageId,
+  isOutside,
   observeIntersection,
   onClick,
   onPaidClick,
@@ -68,11 +72,11 @@ const ReactionButton = ({
     openPaidReactionModal,
     requestWave,
   } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLButtonElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const counterRef = useRef<HTMLSpanElement>(null);
+  const ref = useRef<HTMLButtonElement>();
+  const counterRef = useRef<HTMLSpanElement>();
   const animationRef = useRef<Animation>();
+
+  const lang = useLang();
 
   const isPaid = reaction.reaction.type === 'paid';
 
@@ -171,6 +175,7 @@ const ReactionButton = ({
         styles.root,
         isOwnMessage && styles.own,
         isPaid && styles.paid,
+        isOutside && styles.outside,
         isReactionChosen(reaction) && styles.chosen,
         isReactionChosen(reaction) && chosenClassName,
         className,
@@ -195,7 +200,7 @@ const ReactionButton = ({
           {shouldRenderPaidCounter && (
             <AnimatedCounter
               ref={counterRef}
-              text={`+${formatIntegerCompact(reaction.localAmount || prevAmount!)}`}
+              text={`+${formatIntegerCompact(lang, reaction.localAmount || prevAmount!)}`}
               className={styles.paidCounter}
             />
           )}
@@ -213,7 +218,7 @@ const ReactionButton = ({
         <AvatarList size="mini" peers={recentReactors} />
       ) : (
         <AnimatedCounter
-          text={formatIntegerCompact(reaction.count + (reaction.localAmount || 0))}
+          text={formatIntegerCompact(lang, reaction.count + (reaction.localAmount || 0))}
           className={styles.counter}
         />
       )}

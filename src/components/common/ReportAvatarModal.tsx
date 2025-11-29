@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react';
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useMemo, useState } from '../../lib/teact/teact';
+import { memo, useMemo, useState } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiPhoto, ApiReportReason } from '../../api/types';
@@ -77,6 +77,7 @@ const ReportAvatarModal: FC<OwnProps> = ({
       title={title}
     >
       <RadioGroup
+        className="dialog-checkbox-group"
         name="report-message"
         options={REPORT_OPTIONS}
         onChange={handleSelectReason}

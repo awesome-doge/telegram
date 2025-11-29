@@ -1,6 +1,6 @@
 import { type MouseEvent as ReactMouseEvent } from 'react';
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect,
   useMemo, useRef,
   useSignal, useState,
@@ -18,10 +18,10 @@ import {
   selectCurrentChat, selectTheme, selectUser,
   selectWebApp,
 } from '../../../global/selectors';
+import { selectSharedSettings } from '../../../global/selectors/sharedState';
 import buildClassName from '../../../util/buildClassName';
 import buildStyle from '../../../util/buildStyle';
-import { getColorLuma } from '../../../util/colors';
-import { hexToRgb } from '../../../util/switchTheme';
+import { getColorLuma, hex2rgbaObj } from '../../../util/colors';
 import windowSize from '../../../util/windowSize';
 
 import useInterval from '../../../hooks/schedulers/useInterval';
@@ -134,12 +134,9 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
   const isFullScreen = modal?.modalState === 'fullScreen';
 
   const supportMultiTabMode = !isMobile;
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const headerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const menuRef = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
+  const headerRef = useRef<HTMLDivElement>();
+  const menuRef = useRef<HTMLDivElement>();
 
   const getTriggerElement = useLastCallback(() => ref.current!);
 
@@ -197,7 +194,9 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
   }, [isDragging, x, y]);
 
   useEffect(() => {
-    if (!isDragging && size && isMaximizedState) { updateMiniAppCachedSize({ size }); }
+    if (!isDragging && size && isMaximizedState) {
+      updateMiniAppCachedSize({ size });
+    }
   }, [isDragging, isMaximizedState, size]);
 
   const currentSize = size || getSize();
@@ -351,9 +350,8 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
         color="translucent"
         onClick={onTrigger}
         ariaLabel="More actions"
-      >
-        <Icon name="more" />
-      </Button>
+        iconName="more"
+      />
     );
   }, [isMobile, supportMultiTabMode]);
 
@@ -427,7 +425,7 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
   const headerTextVar = useMemo(() => {
     if (isMoreAppsTabActive) return 'color-text';
     if (!headerColor) return undefined;
-    const { r, g, b } = hexToRgb(headerColor);
+    const { r, g, b } = hex2rgbaObj(headerColor);
     const luma = getColorLuma([r, g, b]);
     const adaptedLuma = theme === 'dark' ? 255 - luma : luma;
     return adaptedLuma > LUMA_THRESHOLD ? 'color-text' : 'color-background';
@@ -480,11 +478,11 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
             round
             color="translucent"
             size="tiny"
+            iconName="close"
+            iconClassName={styles.tabCloseIcon}
             ariaLabel={oldLang('Close')}
             onClick={handleTabClose}
-          >
-            <Icon className={styles.tabCloseIcon} name="close" />
-          </Button>
+          />
         </div>
         {renderTabCurveBorder(styles.tabButtonRightCurve)}
       </div>
@@ -510,11 +508,11 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
             round
             color="translucent"
             size="tiny"
+            iconName="close"
+            iconClassName={styles.tabCloseIcon}
             ariaLabel={oldLang('Close')}
             onClick={handleCloseMoreAppsTab}
-          >
-            <Icon className={styles.tabCloseIcon} name="close" />
-          </Button>
+          />
         </div>
         {renderTabCurveBorder(styles.tabButtonRightCurve)}
       </div>
@@ -532,14 +530,13 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
         color="translucent"
         size="tiny"
         onClick={handleOpenMoreAppsTabClick}
-      >
-        <Icon className={styles.icon} name="add" />
-      </Button>
+        iconName="add"
+        iconClassName={styles.icon}
+      />
     );
   }
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
   useHorizontalScroll(containerRef, !isOpen || isMinimizedState || !(containerRef.current));
 
   function renderTabs() {
@@ -556,7 +553,7 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
               className={styles.tabAvatar}
               size="mini"
               peer={tab.bot}
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => handleTabClick(tab)}
             />
           )
@@ -616,9 +613,9 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
               color="translucent"
               size="tiny"
               onClick={handleFullscreenClick}
-            >
-              <Icon className={styles.stateIcon} name="expand-modal" />
-            </Button>
+              iconName="expand-modal"
+              iconClassName={styles.stateIcon}
+            />
           )}
 
           <Button
@@ -630,9 +627,9 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
             color="translucent"
             size="tiny"
             onClick={handleCollapseClick}
-          >
-            <Icon className={styles.stateIcon} name="collapse-modal" />
-          </Button>
+            iconClassName={styles.stateIcon}
+            iconName="collapse-modal"
+          />
         </div>
       </div>
     );
@@ -691,7 +688,7 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
         isFullScreen && styles.fullScreen,
       )}
       dialogStyle={supportMultiTabMode ? draggableStyle : undefined}
-      dialogContent={isDraggingEnabled ? renderResizeHandles() : undefined}
+      dialogContent={isDraggingEnabled && !isMinimizedState ? renderResizeHandles() : undefined}
       isOpen={isOpen}
       isLowStackPriority
       onClose={handleModalClose}
@@ -714,13 +711,13 @@ const WebAppModal: FC<OwnProps & StateProps> = ({
           modalHeight={currentHeight}
         />
       ))}
-      { isMoreAppsTabActive && (<MoreAppsTabContent />)}
+      {isMoreAppsTabActive && (<MoreAppsTabContent />)}
     </Modal>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { modal }): StateProps => {
+  (global, { modal }): Complete<StateProps> => {
     const activeWebApp = modal?.activeWebAppKey ? selectWebApp(global, modal.activeWebAppKey) : undefined;
     const { botId: activeBotId } = activeWebApp || {};
 
@@ -728,16 +725,15 @@ export default memo(withGlobal<OwnProps>(
     const bot = activeBotId ? selectUser(global, activeBotId) : undefined;
     const chat = selectCurrentChat(global);
     const theme = selectTheme(global);
-    const cachedPosition = global.settings.miniAppsCachedPosition;
-    const cachedSize = global.settings.miniAppsCachedSize;
+    const { miniAppsCachedPosition, miniAppsCachedSize } = selectSharedSettings(global);
 
     return {
       attachBot,
       bot,
       chat,
       theme,
-      cachedPosition,
-      cachedSize,
+      cachedPosition: miniAppsCachedPosition,
+      cachedSize: miniAppsCachedSize,
     };
   },
 )(WebAppModal));

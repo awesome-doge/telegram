@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -26,7 +26,6 @@ import AnimatedIconWithPreview from '../../common/AnimatedIconWithPreview';
 import Icon from '../../common/icons/Icon';
 import LinkField from '../../common/LinkField';
 import NothingFound from '../../common/NothingFound';
-import Button from '../../ui/Button';
 import ConfirmDialog from '../../ui/ConfirmDialog';
 import ListItem, { type MenuItemContextAction } from '../../ui/ListItem';
 
@@ -101,9 +100,9 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
   const primaryInvite = exportedInvites?.find(({ isPermanent }) => isPermanent);
   const primaryInviteLink = chatMainUsername ? `${TME_LINK_PREFIX}${chatMainUsername}` : primaryInvite?.link;
   const temporalInvites = useMemo(() => {
-    const invites = chat?.usernames ? exportedInvites : exportedInvites?.filter(({ isPermanent }) => !isPermanent);
+    const invites = chat?.hasUsername ? exportedInvites : exportedInvites?.filter(({ isPermanent }) => !isPermanent);
     return invites?.sort(inviteComparator);
-  }, [chat?.usernames, exportedInvites]);
+  }, [chat?.hasUsername, exportedInvites]);
 
   const editInvite = (invite: ApiExportedInvite) => {
     setEditingExportedInvite({ chatId, invite });
@@ -274,7 +273,7 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="Management ManageInvites">
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         <div className="section">
           <AnimatedIconWithPreview
             tgsUrl={LOCAL_TGS_URLS.Invite}
@@ -295,16 +294,16 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
           </div>
         )}
         <div className="section" teactFastList>
-          <Button isText key="create" className="create-link" onClick={handleCreateNewClick}>
+          <ListItem icon="add" withPrimaryColor key="create" className="create-item" onClick={handleCreateNewClick}>
             {oldLang('CreateNewLink')}
-          </Button>
+          </ListItem>
           {(!temporalInvites || !temporalInvites.length) && <NothingFound text="No links found" key="nothing" />}
           {temporalInvites?.map((invite) => (
             <ListItem
               leftElement={<Icon name="link" className={`link-status-icon ${getInviteIconClass(invite)}`} />}
               secondaryIcon="more"
               multiline
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => showInviteInfo(invite)}
               contextActions={prepareContextActions(invite)}
               key={invite.link}
@@ -333,7 +332,7 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
                 leftElement={<Icon name="link" className={`link-status-icon ${getInviteIconClass(invite)}`} />}
                 secondaryIcon="more"
                 multiline
-                // eslint-disable-next-line react/jsx-no-bind
+
                 onClick={() => showInviteInfo(invite)}
                 contextActions={prepareContextActions(invite)}
                 key={invite.link}
@@ -379,7 +378,7 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const { invites, revokedInvites } = selectTabState(global).management.byChatId[chatId] || {};
     const chat = selectChat(global, chatId);
     const isChannel = chat && isChatChannel(chat);

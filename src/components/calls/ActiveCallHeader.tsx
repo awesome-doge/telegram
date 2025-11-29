@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect } from '../../lib/teact/teact';
+import { memo, useEffect } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiGroupCall, ApiUser } from '../../api/types';
@@ -29,11 +29,11 @@ const ActiveCallHeader: FC<StateProps> = ({
 
   useEffect(() => {
     document.body.classList.toggle('has-call-header', Boolean(isCallPanelVisible));
-    window.electron?.setTrafficLightPosition(isCallPanelVisible ? 'lowered' : 'standard');
+    window.tauri?.markTitleBarOverlay(!isCallPanelVisible);
 
     return () => {
       document.body.classList.toggle('has-call-header', false);
-      window.electron?.setTrafficLightPosition('standard');
+      window.tauri?.markTitleBarOverlay(true);
     };
   }, [isCallPanelVisible]);
 
@@ -57,7 +57,7 @@ const ActiveCallHeader: FC<StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const tabState = selectTabState(global);
     return {
       groupCall: tabState.isMasterTab ? selectActiveGroupCall(global) : undefined,

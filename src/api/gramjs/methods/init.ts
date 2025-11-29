@@ -6,6 +6,7 @@ import type {
 import type { LocalDb } from '../localDb';
 import type { MethodArgs, MethodResponse, Methods } from './types';
 
+import Deferred from '../../../util/Deferred';
 import { updateFullLocalDb } from '../localDb';
 import { init as initUpdateEmitter } from '../updates/apiUpdateEmitter';
 import { init as initClient } from './client';
@@ -16,7 +17,9 @@ export function initApi(_onUpdate: OnApiUpdate, initialArgs: ApiInitialArgs, ini
 
   if (initialLocalDb) updateFullLocalDb(initialLocalDb);
 
-  initClient(initialArgs);
+  const connectDeferred = new Deferred<void>();
+  initClient(initialArgs, () => connectDeferred.resolve());
+  return connectDeferred.promise;
 }
 
 export function callApi<T extends keyof Methods>(fnName: T, ...args: MethodArgs<T>): MethodResponse<T> {

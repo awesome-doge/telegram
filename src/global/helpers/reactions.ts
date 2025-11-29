@@ -68,8 +68,10 @@ export function sortReactions<T extends ApiAvailableReaction | ApiReactionWithPa
   topReactions?: ApiReactionWithPaid[],
 ): T[] {
   return reactions.slice().sort((left, right) => {
-    const reactionOne = left ? ('reaction' in left ? left.reaction : left) as ApiReactionWithPaid : undefined;
-    const reactionTwo = right ? ('reaction' in right ? right.reaction : right) as ApiReactionWithPaid : undefined;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- TS Bug?
+    const reactionOne = left ? ('reaction' in left ? left.reaction : left as ApiReactionWithPaid) : undefined;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- TS Bug?
+    const reactionTwo = right ? ('reaction' in right ? right.reaction : right as ApiReactionWithPaid) : undefined;
 
     if (reactionOne?.type === 'paid') return -1;
     if (reactionTwo?.type === 'paid') return 1;
@@ -122,7 +124,7 @@ export function updateReactionCount(reactionCount: ApiReactionCount[], newReacti
 }
 
 export function addPaidReaction(
-  reactionCount: ApiReactionCount[], count: number, isAnonymous?: boolean,
+  reactionCount: ApiReactionCount[], count: number, isAnonymous?: boolean, peerId?: string,
 ): ApiReactionCount[] {
   const results: ApiReactionCount[] = [];
   const hasPaid = reactionCount.some((current) => current.reaction.type === 'paid');
@@ -134,6 +136,7 @@ export function addPaidReaction(
           localAmount: (current.localAmount || 0) + count,
           chosenOrder: -1,
           localIsPrivate: isAnonymous !== undefined ? isAnonymous : current.localIsPrivate,
+          localPeerId: peerId || current.localPeerId,
           localPreviousChosenOrder: current.chosenOrder,
         });
         return;
@@ -152,6 +155,7 @@ export function addPaidReaction(
       chosenOrder: -1,
       localAmount: count,
       localIsPrivate: isAnonymous,
+      localPeerId: peerId,
     },
     ...reactionCount,
   ];

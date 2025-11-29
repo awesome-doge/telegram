@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type { ApiNotification } from '../../api/types';
@@ -21,12 +21,12 @@ const Notifications: FC<StateProps> = ({ notifications }) => {
   return (
     <div id="Notifications">
       {notifications.map((notification) => (
-        <Notification notification={notification} />
+        <Notification key={notification.localId} notification={notification} />
       ))}
     </div>
   );
 };
 
 export default memo(withGlobal(
-  (global): StateProps => pick(selectTabState(global), ['notifications']),
+  (global): Complete<StateProps> => pick(selectTabState(global), ['notifications']),
 )(Notifications));

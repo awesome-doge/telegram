@@ -1,5 +1,6 @@
-import type { FC, TeactNode } from '../../lib/teact/teact';
-import React, { beginHeavyAnimation, useEffect } from '../../lib/teact/teact';
+import type { ElementRef, FC, TeactNode } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { beginHeavyAnimation, useEffect } from '../../lib/teact/teact';
 
 import type { TextPart } from '../../types';
 
@@ -15,8 +16,8 @@ import useLayoutEffectWithPrevDeps from '../../hooks/useLayoutEffectWithPrevDeps
 import useOldLang from '../../hooks/useOldLang';
 import useShowTransition from '../../hooks/useShowTransition';
 
-import Icon from '../common/icons/Icon';
 import Button, { type OwnProps as ButtonProps } from './Button';
+import ModalStarBalanceBar from './ModalStarBalanceBar';
 import Portal from './Portal';
 
 import './Modal.scss';
@@ -28,6 +29,7 @@ export type OwnProps = {
   className?: string;
   contentClassName?: string;
   headerClassName?: string;
+  dialogClassName?: string;
   isOpen?: boolean;
   header?: TeactNode;
   isSlim?: boolean;
@@ -39,13 +41,16 @@ export type OwnProps = {
   children: React.ReactNode;
   style?: string;
   dialogStyle?: string;
-  dialogRef?: React.RefObject<HTMLDivElement>;
+  dialogRef?: ElementRef<HTMLDivElement>;
   isLowStackPriority?: boolean;
   dialogContent?: React.ReactNode;
   ignoreFreeze?: boolean;
   onClose: () => void;
   onCloseAnimationEnd?: () => void;
   onEnter?: () => void;
+  withBalanceBar?: boolean;
+  currencyInBalanceBar?: 'TON' | 'XTR';
+  isCondensedHeader?: boolean;
 };
 
 const Modal: FC<OwnProps> = ({
@@ -67,9 +72,13 @@ const Modal: FC<OwnProps> = ({
   dialogStyle,
   isLowStackPriority,
   dialogContent,
+  dialogClassName,
   onClose,
   onCloseAnimationEnd,
   onEnter,
+  withBalanceBar,
+  isCondensedHeader,
+  currencyInBalanceBar = 'XTR',
 }) => {
   const {
     ref: modalRef,
@@ -135,30 +144,24 @@ const Modal: FC<OwnProps> = ({
       return header;
     }
 
-    if (!title && !withCloseButton) return undefined;
-    const closeButton = (
+    const closeButton = withCloseButton ? (
       <Button
         className={buildClassName(hasAbsoluteCloseButton && 'modal-absolute-close-button')}
         round
         color={absoluteCloseButtonColor}
         size="smaller"
+        iconName="close"
         ariaLabel={lang('Close')}
         onClick={onClose}
-      >
-        <Icon name="close" />
-      </Button>
-    );
+      />
+    ) : undefined;
 
-    if (hasAbsoluteCloseButton) {
-      return closeButton;
-    }
-
-    return (
-      <div className={buildClassName('modal-header', headerClassName)}>
-        {withCloseButton && closeButton}
+    return title ? (
+      <div className={buildClassName('modal-header', headerClassName, isCondensedHeader && 'modal-header-condensed')}>
+        {closeButton}
         <div className="modal-title">{title}</div>
       </div>
-    );
+    ) : closeButton;
   }
 
   const fullClassName = buildClassName(
@@ -167,6 +170,12 @@ const Modal: FC<OwnProps> = ({
     noBackdrop && 'transparent-backdrop',
     isSlim && 'slim',
     isLowStackPriority && 'low-priority',
+    withBalanceBar && 'with-balance-bar',
+  );
+
+  const modalDialogClassName = buildClassName(
+    'modal-dialog',
+    dialogClassName,
   );
 
   return (
@@ -177,9 +186,15 @@ const Modal: FC<OwnProps> = ({
         tabIndex={-1}
         role="dialog"
       >
+        {withBalanceBar && (
+          <ModalStarBalanceBar
+            isModalOpen={isOpen}
+            currency={currencyInBalanceBar}
+          />
+        )}
         <div className="modal-container">
           <div className="modal-backdrop" onClick={!noBackdropClose ? onClose : undefined} />
-          <div className="modal-dialog" ref={dialogRef} style={dialogStyle}>
+          <div className={modalDialogClassName} ref={dialogRef} style={dialogStyle}>
             {renderHeader()}
             {dialogContent}
             <div className={buildClassName('modal-content custom-scroll', contentClassName)} style={style}>

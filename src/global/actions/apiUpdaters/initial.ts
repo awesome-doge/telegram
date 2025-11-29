@@ -10,13 +10,13 @@ import type { LangCode } from '../../../types';
 import type { RequiredGlobalActions } from '../../index';
 import type { ActionReturnType, GlobalState } from '../../types';
 
-import { SESSION_USER_KEY } from '../../../config';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { getShippingError, shouldClosePaymentModal } from '../../../util/getReadableErrorText';
 import { unique } from '../../../util/iteratees';
 import { oldSetLanguage } from '../../../util/oldLangProvider';
 import { clearWebTokenAuth } from '../../../util/routing';
 import { setServerTimeOffset } from '../../../util/serverTime';
+import { updateSessionUserId } from '../../../util/sessions';
 import { forceWebsync } from '../../../util/websync';
 import { isChatChannel, isChatSuperGroup } from '../../helpers';
 import {
@@ -25,6 +25,7 @@ import {
 import { updateUser, updateUserFullInfo } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
 import { selectTabState } from '../../selectors';
+import { selectSharedSettings } from '../../selectors/sharedState';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
@@ -94,11 +95,24 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       break;
     }
+
+    case 'notSupportedInFrozenAccount': {
+      actions.showNotification({
+        title: {
+          key: 'NotificationTitleNotSupportedInFrozenAccount',
+        },
+        message: {
+          key: 'NotificationMessageNotSupportedInFrozenAccount',
+        },
+        tabId: getCurrentTabId(),
+      });
+      break;
+    }
   }
 });
 
 function onUpdateApiReady<T extends GlobalState>(global: T) {
-  void oldSetLanguage(global.settings.byKey.language as LangCode);
+  void oldSetLanguage(selectSharedSettings(global).language as LangCode);
 }
 
 function onUpdateAuthorizationState<T extends GlobalState>(global: T, update: ApiUpdateAuthorizationState) {
@@ -169,7 +183,7 @@ function onUpdateAuthorizationState<T extends GlobalState>(global: T, update: Ap
       };
       Object.values(global.byTabId).forEach(({ id: tabId }) => {
         global = updateTabState(global, {
-          isInactive: false,
+          inactiveReason: undefined,
         }, tabId);
       });
       setGlobal(global);
@@ -180,10 +194,11 @@ function onUpdateAuthorizationState<T extends GlobalState>(global: T, update: Ap
 }
 
 function onUpdateAuthorizationError<T extends GlobalState>(global: T, update: ApiUpdateAuthorizationError) {
+  // TODO: Investigate why TS is not happy with spread for lang related types
   global = {
     ...global,
-    authErrorKey: update.errorKey,
   };
+  global.authErrorKey = update.errorKey;
   setGlobal(global);
 }
 
@@ -280,14 +295,4 @@ function onUpdateCurrentUser<T extends GlobalState>(global: T, update: ApiUpdate
   setGlobal(global);
 
   updateSessionUserId(currentUser.id);
-}
-
-function updateSessionUserId(currentUserId: string) {
-  const sessionUserAuth = localStorage.getItem(SESSION_USER_KEY);
-  if (!sessionUserAuth) return;
-
-  const userAuth = JSON.parse(sessionUserAuth);
-  userAuth.id = currentUserId;
-
-  localStorage.setItem(SESSION_USER_KEY, JSON.stringify(userAuth));
 }

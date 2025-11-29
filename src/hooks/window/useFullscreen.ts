@@ -1,20 +1,15 @@
+import type { ElementRef } from '../../lib/teact/teact';
 import { useEffect, useLayoutEffect, useState } from '../../lib/teact/teact';
 
-import { ElectronEvent } from '../../types/electron';
-
-import { IS_IOS } from '../../util/windowEnvironment';
-
-type ElementType = HTMLElement;
-type RefType = {
-  current: ElementType | null;
-};
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
+import { IS_IOS } from '../../util/browser/windowEnvironment';
 
 type ReturnType = [boolean, () => void, () => void] | [false];
 type CallbackType = (isPlayed: boolean) => void;
 
 const prop = getBrowserFullscreenElementProp();
 
-export default function useFullscreen(elRef: RefType, exitCallback?: CallbackType,
+export default function useFullscreen<T extends HTMLElement>(elRef: ElementRef<T>, exitCallback?: CallbackType,
   enterCallback?: CallbackType): ReturnType {
   const [isFullscreen, setIsFullscreen] = useState(Boolean(prop && document[prop]));
 
@@ -94,15 +89,27 @@ export const useFullscreenStatus = () => {
       setIsFullscreen(checkIfFullscreen());
     };
 
-    const removeElectronListener = window.electron?.on(ElectronEvent.FULLSCREEN_CHANGE, setIsFullscreen);
-    window.electron?.isFullscreen().then(setIsFullscreen);
+    let removeTauriListener: VoidFunction | undefined;
+    const setupTauriListener = async () => {
+      const tauriWindow = await window.tauri?.getCurrentWindow();
+      removeTauriListener = await tauriWindow.onResized(() => {
+        tauriWindow.isFullscreen().then(setIsFullscreen);
+      });
+    };
+
+    if (IS_TAURI) {
+      window.tauri?.getCurrentWindow().then((tauriWindow) => {
+        tauriWindow.isFullscreen().then(setIsFullscreen);
+      });
+      setupTauriListener();
+    }
 
     document.addEventListener('fullscreenchange', listener, false);
     document.addEventListener('webkitfullscreenchange', listener, false);
     document.addEventListener('mozfullscreenchange', listener, false);
 
     return () => {
-      removeElectronListener?.();
+      removeTauriListener?.();
 
       document.removeEventListener('fullscreenchange', listener, false);
       document.removeEventListener('webkitfullscreenchange', listener, false);
@@ -129,7 +136,7 @@ export function checkIfFullscreen() {
   return Boolean(fullscreenProp && document[fullscreenProp]);
 }
 
-export function safeRequestFullscreen(element: ElementType) {
+export function safeRequestFullscreen(element: HTMLElement) {
   if (element.requestFullscreen) {
     element.requestFullscreen();
   } else if (element.webkitRequestFullscreen) {

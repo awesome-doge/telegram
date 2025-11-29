@@ -1,17 +1,22 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useRef, useState,
+import {
+  memo, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import { DEBUG_LOG_FILENAME } from '../../../config';
+import { selectSharedSettings } from '../../../global/selectors/sharedState';
+import {
+  IS_SNAP_EFFECT_SUPPORTED,
+  IS_WAVE_TRANSFORM_SUPPORTED,
+} from '../../../util/browser/windowEnvironment';
 import { getDebugLogs } from '../../../util/debugConsole';
 import download from '../../../util/download';
-import { IS_ELECTRON, IS_SNAP_EFFECT_SUPPORTED, IS_WAVE_TRANSFORM_SUPPORTED } from '../../../util/windowEnvironment';
+import { getAccountSlotUrl } from '../../../util/multiaccount';
 import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLastCallback from '../../../hooks/useLastCallback';
+import useMultiaccountInfo from '../../../hooks/useMultiaccountInfo';
 import useOldLang from '../../../hooks/useOldLang';
 
 import AnimatedIconWithPreview from '../../common/AnimatedIconWithPreview';
@@ -31,26 +36,22 @@ type StateProps = {
   shouldDebugExportedSenders?: boolean;
 };
 
-const SettingsExperimental: FC<OwnProps & StateProps> = ({
+const SettingsExperimental = ({
   isActive,
-  onReset,
   shouldForceHttpTransport,
   shouldAllowHttpTransport,
   shouldCollectDebugLogs,
   shouldDebugExportedSenders,
-}) => {
-  const { requestConfetti, setSettingOption, requestWave } = getActions();
+  onReset,
+}: OwnProps & StateProps) => {
+  const { requestConfetti, setSharedSettingOption, requestWave } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const snapButtonRef = useRef<HTMLDivElement>(null);
+  const snapButtonRef = useRef<HTMLDivElement>();
   const [isSnapButtonAnimating, setIsSnapButtonAnimating] = useState(false);
 
   const lang = useOldLang();
 
-  const [isAutoUpdateEnabled, setIsAutoUpdateEnabled] = useState(false);
-  useEffect(() => {
-    window.electron?.getIsAutoUpdateEnabled().then(setIsAutoUpdateEnabled);
-  }, []);
+  const accounts = useMultiaccountInfo();
 
   useHistoryBack({
     isActive,
@@ -62,10 +63,6 @@ const SettingsExperimental: FC<OwnProps & StateProps> = ({
     const url = URL.createObjectURL(file);
     download(url, DEBUG_LOG_FILENAME);
   });
-
-  const handleIsAutoUpdateEnabledChange = useCallback((isChecked: boolean) => {
-    window.electron?.setIsAutoUpdateEnabled(isChecked);
-  }, []);
 
   const handleRequestWave = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
     requestWave({ startX: e.clientX, startY: e.clientY });
@@ -88,6 +85,19 @@ const SettingsExperimental: FC<OwnProps & StateProps> = ({
     }
   });
 
+  const newAccountUrl = useMemo(() => {
+    if (!Object.values(accounts).length) {
+      return undefined;
+    }
+
+    let freeIndex = 1;
+    while (accounts[freeIndex]) {
+      freeIndex += 1;
+    }
+
+    return getAccountSlotUrl(freeIndex, true, true);
+  }, [accounts]);
+
   return (
     <div className="settings-content custom-scroll">
       <div className="settings-content-header no-border">
@@ -99,6 +109,14 @@ const SettingsExperimental: FC<OwnProps & StateProps> = ({
           noLoop={false}
         />
         <p className="settings-item-description pt-3" dir="auto">{lang('lng_settings_experimental_about')}</p>
+      </div>
+      <div className="settings-item">
+        <ListItem
+          href={newAccountUrl}
+          icon="add-user"
+        >
+          <div className="title">Login on Test Server</div>
+        </ListItem>
       </div>
       <div className="settings-item">
         <ListItem
@@ -123,43 +141,37 @@ const SettingsExperimental: FC<OwnProps & StateProps> = ({
         >
           <div className="title">Vaporize this button</div>
         </ListItem>
-
+      </div>
+      <div className="settings-item">
         <Checkbox
           label="Allow HTTP Transport"
           checked={Boolean(shouldAllowHttpTransport)}
-          // eslint-disable-next-line react/jsx-no-bind
-          onCheck={() => setSettingOption({ shouldAllowHttpTransport: !shouldAllowHttpTransport })}
+
+          onCheck={() => setSharedSettingOption({ shouldAllowHttpTransport: !shouldAllowHttpTransport })}
         />
 
         <Checkbox
           label="Force HTTP Transport"
           disabled={!shouldAllowHttpTransport}
           checked={Boolean(shouldForceHttpTransport)}
-          // eslint-disable-next-line react/jsx-no-bind
-          onCheck={() => setSettingOption({ shouldForceHttpTransport: !shouldForceHttpTransport })}
-        />
 
+          onCheck={() => setSharedSettingOption({ shouldForceHttpTransport: !shouldForceHttpTransport })}
+        />
+      </div>
+      <div className="settings-item">
         <Checkbox
           label={lang('DebugMenuEnableLogs')}
           checked={Boolean(shouldCollectDebugLogs)}
-          // eslint-disable-next-line react/jsx-no-bind
-          onCheck={() => setSettingOption({ shouldCollectDebugLogs: !shouldCollectDebugLogs })}
+
+          onCheck={() => setSharedSettingOption({ shouldCollectDebugLogs: !shouldCollectDebugLogs })}
         />
 
         <Checkbox
           label="Enable exported senders debug"
           checked={Boolean(shouldDebugExportedSenders)}
-          // eslint-disable-next-line react/jsx-no-bind
-          onCheck={() => setSettingOption({ shouldDebugExportedSenders: !shouldDebugExportedSenders })}
-        />
 
-        {IS_ELECTRON && (
-          <Checkbox
-            label="Enable autoupdates"
-            checked={Boolean(isAutoUpdateEnabled)}
-            onCheck={handleIsAutoUpdateEnabledChange}
-          />
-        )}
+          onCheck={() => setSharedSettingOption({ shouldDebugExportedSenders: !shouldDebugExportedSenders })}
+        />
 
         <ListItem
           onClick={handleDownloadLog}
@@ -173,12 +185,19 @@ const SettingsExperimental: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
+    const {
+      shouldForceHttpTransport,
+      shouldAllowHttpTransport,
+      shouldCollectDebugLogs,
+      shouldDebugExportedSenders,
+    } = selectSharedSettings(global);
+
     return {
-      shouldForceHttpTransport: global.settings.byKey.shouldForceHttpTransport,
-      shouldAllowHttpTransport: global.settings.byKey.shouldAllowHttpTransport,
-      shouldCollectDebugLogs: global.settings.byKey.shouldCollectDebugLogs,
-      shouldDebugExportedSenders: global.settings.byKey.shouldDebugExportedSenders,
+      shouldForceHttpTransport,
+      shouldAllowHttpTransport,
+      shouldCollectDebugLogs,
+      shouldDebugExportedSenders,
     };
   },
 )(SettingsExperimental));

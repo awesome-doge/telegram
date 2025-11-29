@@ -1,4 +1,4 @@
-import React, { memo, useLayoutEffect, useRef } from '../../../../lib/teact/teact';
+import { memo, useLayoutEffect, useRef } from '../../../../lib/teact/teact';
 import { withGlobal } from '../../../../global';
 
 import type { ApiUser } from '../../../../api/types';
@@ -22,6 +22,8 @@ type StateProps = {
   currentUser: ApiUser;
 };
 
+const STORY_COLORS = ['#A667FF', '#55A5FF'];
+
 const STORY_FEATURE_TITLES = {
   stories_order: 'PremiumStoriesPriority',
   stories_stealth: 'PremiumStoriesStealth',
@@ -44,7 +46,7 @@ const STORY_FEATURE_DESCRIPTIONS = {
 
 const STORY_FEATURE_ICONS: Record<string, IconName> = {
   stories_order: 'story-priority',
-  stories_stealth: 'eye-closed-outline',
+  stories_stealth: 'eye-crossed-outline',
   stories_views: 'eye-outline',
   stories_timer: 'timer',
   stories_save: 'arrow-down-circle',
@@ -54,15 +56,15 @@ const STORY_FEATURE_ICONS: Record<string, IconName> = {
 
 const STORY_FEATURE_ORDER = Object.keys(STORY_FEATURE_TITLES) as (keyof typeof STORY_FEATURE_TITLES)[];
 
-const CIRCLE_SIZE = AVATAR_SIZES.giant + 0.25 * REM;
+const CIRCLE_STROKE_WIDTH = 0.25 * REM;
+const CIRCLE_SIZE = AVATAR_SIZES.giant + CIRCLE_STROKE_WIDTH;
 const CIRCLE_SEGMENTS = 8;
 const CIRCLE_READ_SEGMENTS = 0;
 
 const PremiumFeaturePreviewVideo = ({
   currentUser,
 }: StateProps) => {
-  // eslint-disable-next-line no-null/no-null
-  const circleRef = useRef<HTMLCanvasElement>(null);
+  const circleRef = useRef<HTMLCanvasElement>();
 
   const lang = useOldLang();
 
@@ -75,9 +77,10 @@ const PremiumFeaturePreviewVideo = ({
 
     drawGradientCircle({
       canvas: circleRef.current,
-      size: CIRCLE_SIZE * dpr,
+      size: CIRCLE_SIZE,
+      strokeWidth: CIRCLE_STROKE_WIDTH,
       segmentsCount: CIRCLE_SEGMENTS,
-      color: 'purple',
+      colorStops: STORY_COLORS,
       readSegmentsCount: CIRCLE_READ_SEGMENTS,
       readSegmentColor: 'transparent',
       dpr,
@@ -120,7 +123,7 @@ const PremiumFeaturePreviewVideo = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       currentUser: selectUser(global, global.currentUserId!)!,
     };

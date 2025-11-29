@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect,
   useMemo, useState,
 } from '../../../lib/teact/teact';
@@ -86,7 +86,7 @@ const BlockUserModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const {
       users: {
         byId: usersById,

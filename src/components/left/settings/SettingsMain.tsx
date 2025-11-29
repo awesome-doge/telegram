@@ -1,31 +1,32 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useEffect } from '../../../lib/teact/teact';
+import { memo, useEffect } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiStarsAmount } from '../../../api/types';
+import type { ApiStarsAmount, ApiTonAmount } from '../../../api/types';
 import { SettingsScreens } from '../../../types';
 
-import { FAQ_URL, PRIVACY_URL } from '../../../config';
+import { FAQ_URL, PRIVACY_URL, TON_CURRENCY_CODE } from '../../../config';
 import { formatStarsAmount } from '../../../global/helpers/payments';
 import {
   selectIsGiveawayGiftsPurchaseAvailable,
   selectIsPremiumPurchaseBlocked,
 } from '../../../global/selectors';
+import { convertCurrencyFromBaseUnit } from '../../../util/formatCurrency';
 
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
+import Icon from '../../common/icons/Icon';
 import StarIcon from '../../common/icons/StarIcon';
 import ChatExtra from '../../common/profile/ChatExtra';
-import ProfileInfo from '../../common/ProfileInfo';
+import ProfileInfo from '../../common/profile/ProfileInfo';
 import ConfirmDialog from '../../ui/ConfirmDialog';
 import ListItem from '../../ui/ListItem';
 
 type OwnProps = {
   isActive?: boolean;
-  onScreenSelect: (screen: SettingsScreens) => void;
   onReset: () => void;
 };
 
@@ -35,6 +36,7 @@ type StateProps = {
   canBuyPremium?: boolean;
   isGiveawayAvailable?: boolean;
   starsBalance?: ApiStarsAmount;
+  tonBalance?: ApiTonAmount;
 };
 
 const SettingsMain: FC<OwnProps & StateProps> = ({
@@ -44,7 +46,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
   canBuyPremium,
   isGiveawayAvailable,
   starsBalance,
-  onScreenSelect,
+  tonBalance,
   onReset,
 }) => {
   const {
@@ -54,6 +56,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
     openUrl,
     openGiftRecipientPicker,
     openStarsBalanceModal,
+    openSettingsScreen,
   } = getActions();
 
   const [isSupportDialogOpen, openSupportDialog, closeSupportDialog] = useFlag(false);
@@ -83,7 +86,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
           <ProfileInfo
             peerId={currentUserId}
             canPlayVideo={Boolean(isActive)}
-            forceShowSelf
+            isForSettings
           />
         )}
         {currentUserId && (
@@ -97,56 +100,56 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         <ListItem
           icon="settings"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.General)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.General })}
         >
           {lang('TelegramGeneralSettingsViewController')}
         </ListItem>
         <ListItem
           icon="animations"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.Performance)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.Performance })}
         >
           {lang('MenuAnimations')}
         </ListItem>
         <ListItem
           icon="unmute"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.Notifications)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.Notifications })}
         >
           {lang('Notifications')}
         </ListItem>
         <ListItem
           icon="data"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.DataStorage)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.DataStorage })}
         >
           {lang('DataSettings')}
         </ListItem>
         <ListItem
           icon="lock"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.Privacy)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.Privacy })}
         >
           {lang('PrivacySettings')}
         </ListItem>
         <ListItem
           icon="folder"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.Folders)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.Folders })}
         >
           {lang('Filters')}
         </ListItem>
         <ListItem
           icon="active-sessions"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.ActiveSessions)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.ActiveSessions })}
         >
           {lang('SessionsTitle')}
           {sessionCount > 0 && (<span className="settings-item__current-value">{sessionCount}</span>)}
@@ -154,8 +157,8 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         <ListItem
           icon="language"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.Language)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.Language })}
         >
           {lang('Language')}
           <span className="settings-item__current-value">{lang.languageInfo.nativeName}</span>
@@ -163,8 +166,8 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         <ListItem
           icon="stickers"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(SettingsScreens.Stickers)}
+
+          onClick={() => openSettingsScreen({ screen: SettingsScreens.Stickers })}
         >
           {lang('MenuStickers')}
         </ListItem>
@@ -174,7 +177,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
           <ListItem
             leftElement={<StarIcon className="icon ListItem-main-icon" type="premium" size="big" />}
             narrow
-            // eslint-disable-next-line react/jsx-no-bind
+
             onClick={() => openPremiumModal()}
           >
             {lang('TelegramPremium')}
@@ -183,7 +186,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         <ListItem
           leftElement={<StarIcon className="icon ListItem-main-icon" type="gold" size="big" />}
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
+
           onClick={() => openStarsBalanceModal({})}
         >
           {lang('MenuStars')}
@@ -193,11 +196,23 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
             </span>
           )}
         </ListItem>
+        <ListItem
+          leftElement={<Icon className="icon ListItem-main-icon" name="toncoin" />}
+          narrow
+          onClick={() => openStarsBalanceModal({ currency: TON_CURRENCY_CODE })}
+        >
+          {lang('MenuTon')}
+          {Boolean(tonBalance) && (
+            <span className="settings-item__current-value">
+              {convertCurrencyFromBaseUnit(tonBalance.amount, tonBalance.currency)}
+            </span>
+          )}
+        </ListItem>
         {isGiveawayAvailable && (
           <ListItem
             icon="gift"
             narrow
-            // eslint-disable-next-line react/jsx-no-bind
+
             onClick={() => openGiftRecipientPicker()}
           >
             {lang('MenuSendGift')}
@@ -215,7 +230,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         <ListItem
           icon="help"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
+
           onClick={() => openUrl({ url: FAQ_URL })}
         >
           {lang('MenuTelegramFaq')}
@@ -223,7 +238,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         <ListItem
           icon="privacy-policy"
           narrow
-          // eslint-disable-next-line react/jsx-no-bind
+
           onClick={() => openUrl({ url: PRIVACY_URL })}
         >
           {lang('MenuPrivacyPolicy')}
@@ -242,10 +257,11 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { currentUserId } = global;
     const isGiveawayAvailable = selectIsGiveawayGiftsPurchaseAvailable(global);
     const starsBalance = global.stars?.balance;
+    const tonBalance = global.ton?.balance;
 
     return {
       sessionCount: global.activeSessions.orderedHashes.length,
@@ -253,6 +269,7 @@ export default memo(withGlobal<OwnProps>(
       canBuyPremium: !selectIsPremiumPurchaseBlocked(global),
       isGiveawayAvailable,
       starsBalance,
+      tonBalance,
     };
   },
 )(SettingsMain));

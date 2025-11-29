@@ -1,15 +1,17 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
-  memo, useEffect, useRef, useState,
+import type React from '../../lib/teact/teact';
+import {
+  memo, useEffect, useRef, useSignal, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiDimensions } from '../../api/types';
 
+import { IS_IOS, IS_TOUCH_ENV, IS_YA_BROWSER } from '../../util/browser/windowEnvironment';
+import getPointerPosition from '../../util/events/getPointerPosition';
 import { clamp } from '../../util/math';
 import safePlay from '../../util/safePlay';
 import stopEvent from '../../util/stopEvent';
-import { IS_IOS, IS_TOUCH_ENV, IS_YA_BROWSER } from '../../util/windowEnvironment';
 
 import useUnsupportedMedia from '../../hooks/media/useUnsupportedMedia';
 import useAppLayout from '../../hooks/useAppLayout';
@@ -23,7 +25,6 @@ import useFullscreen from '../../hooks/window/useFullscreen';
 import useControlsSignal from './hooks/useControlsSignal';
 import useVideoWaitingSignal from './hooks/useVideoWaitingSignal';
 
-import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
 import ProgressSpinner from '../ui/ProgressSpinner';
 import VideoPlayerControls from './VideoPlayerControls';
@@ -47,10 +48,11 @@ type OwnProps = {
   isProtected?: boolean;
   shouldCloseOnClick?: boolean;
   isForceMobileVersion?: boolean;
-  onClose: (e: React.MouseEvent<HTMLElement, MouseEvent>) => void;
   isClickDisabled?: boolean;
   isSponsoredMessage?: boolean;
+  timestamp?: number;
   handleSponsoredClick?: (isFromMedia?: boolean) => void;
+  onClose: (e: React.MouseEvent<HTMLElement, MouseEvent>) => void;
 };
 
 const MAX_LOOP_DURATION = 30; // Seconds
@@ -69,14 +71,15 @@ const VideoPlayer: FC<OwnProps> = ({
   volume,
   isMuted,
   playbackRate,
-  onClose,
   isForceMobileVersion,
   shouldCloseOnClick,
   isProtected,
   isClickDisabled,
   isPreviewDisabled,
   isSponsoredMessage,
+  timestamp,
   handleSponsoredClick,
+  onClose,
 }) => {
   const {
     setMediaViewerVolume,
@@ -84,8 +87,7 @@ const VideoPlayer: FC<OwnProps> = ({
     setMediaViewerPlaybackRate,
     setMediaViewerHidden,
   } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>();
   const [isPlaying, setIsPlaying] = useState(!IS_TOUCH_ENV || !IS_IOS);
   const [isFullscreen, setFullscreen, exitFullscreen] = useFullscreen(videoRef, setIsPlaying);
   const { isMobile } = useAppLayout();
@@ -110,16 +112,47 @@ const VideoPlayer: FC<OwnProps> = ({
   ] = usePictureInPicture(videoRef, handleEnterFullscreen, handleLeaveFullscreen);
 
   const [, toggleControls, lockControls] = useControlsSignal();
+  const [getIsSeeking, setIsSeeking] = useSignal(false);
+  const lastMousePosition = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const updateMousePosition = (e: MouseEvent | TouchEvent) => {
+      lastMousePosition.current = getPointerPosition(e);
+    };
+
+    window.addEventListener('mousemove', updateMousePosition);
+    window.addEventListener('touchmove', updateMousePosition);
+
+    return () => {
+      window.removeEventListener('mousemove', updateMousePosition);
+      window.removeEventListener('touchmove', updateMousePosition);
+    };
+  }, []);
+
+  const checkMousePositionAndToggleControls = useLastCallback((clientX: number, clientY: number) => {
+    const bounds = videoRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    if (clientX <= bounds.left || clientX >= bounds.right
+      || clientY <= bounds.top || clientY >= bounds.bottom) {
+      if (!getIsSeeking()) {
+        toggleControls(false);
+      }
+    }
+  });
 
   const handleVideoMove = useLastCallback(() => {
     toggleControls(true);
   });
 
   const handleVideoLeave = useLastCallback((e) => {
-    const bounds = videoRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) {
-      toggleControls(false);
+    checkMousePositionAndToggleControls(e.clientX, e.clientY);
+  });
+
+  const handleSeekingChange = useLastCallback((isSeeking: boolean) => {
+    setIsSeeking(isSeeking);
+    if (!isSeeking) {
+      const { x, y } = lastMousePosition.current;
+      checkMousePositionAndToggleControls(x, y);
     }
   });
 
@@ -140,6 +173,9 @@ const VideoPlayer: FC<OwnProps> = ({
   } = useShowTransitionDeprecated(
     IS_IOS && !isPlaying && !shouldRenderSpinner && !isUnsupported, undefined, undefined, 'slow',
   );
+
+  const [, setCurrentTime] = useCurrentTimeSignal();
+  const [, setIsVideoWaiting] = useVideoWaitingSignal();
 
   useEffect(() => {
     lockControls(shouldRenderSpinner);
@@ -163,6 +199,12 @@ const VideoPlayer: FC<OwnProps> = ({
   useEffect(() => {
     videoRef.current!.playbackRate = playbackRate;
   }, [playbackRate]);
+
+  useEffect(() => {
+    if (!timestamp) return;
+    videoRef.current!.currentTime = timestamp;
+    setCurrentTime(timestamp);
+  }, [setCurrentTime, timestamp]);
 
   const togglePlayState = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent> | KeyboardEvent) => {
     e.stopPropagation();
@@ -191,9 +233,6 @@ const VideoPlayer: FC<OwnProps> = ({
   });
 
   useVideoCleanup(videoRef, bufferingHandlers);
-
-  const [, setCurrentTime] = useCurrentTimeSignal();
-  const [, setIsVideoWaiting] = useVideoWaitingSignal();
 
   const handleTimeUpdate = useLastCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
@@ -283,16 +322,14 @@ const VideoPlayer: FC<OwnProps> = ({
   const shouldToggleControls = !IS_TOUCH_ENV && !isForceMobileVersion;
 
   return (
-    // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events
     <div
       className="VideoPlayer"
       onMouseMove={shouldToggleControls ? handleVideoMove : undefined}
-      onMouseOut={shouldToggleControls ? handleVideoLeave : undefined}
+      onMouseLeave={shouldToggleControls ? handleVideoLeave : undefined}
     >
       <div
         style={wrapperStyle}
       >
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
         {isProtected && (
           <div
             onContextMenu={stopEvent}
@@ -316,7 +353,7 @@ const VideoPlayer: FC<OwnProps> = ({
           onEnded={handleEnded}
           onClick={!isMobile && !isFullscreen ? handleClick : undefined}
           onDoubleClick={!IS_TOUCH_ENV ? handleFullscreenChange : undefined}
-          // eslint-disable-next-line react/jsx-props-no-spreading
+
           {...bufferingHandlers}
           onPause={(e) => {
             setIsPlaying(false);
@@ -327,9 +364,7 @@ const VideoPlayer: FC<OwnProps> = ({
         />
       </div>
       {shouldRenderPlayButton && (
-        <Button round className={`play-button ${playButtonClassNames}`} onClick={togglePlayState}>
-          <Icon name="play" />
-        </Button>
+        <Button round className={`play-button ${playButtonClassNames}`} onClick={togglePlayState} iconName="play" />
       )}
       {shouldRenderSpinner && (
         <div className={['spinner-container', spinnerClassNames].join(' ')}>
@@ -367,6 +402,7 @@ const VideoPlayer: FC<OwnProps> = ({
           onVolumeClick={handleVolumeMuted}
           onVolumeChange={handleVolumeChange}
           onPlaybackRateChange={handlePlaybackRateChange}
+          onSeekingChange={handleSeekingChange}
         />
       )}
     </div>

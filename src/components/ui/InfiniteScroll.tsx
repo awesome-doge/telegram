@@ -1,21 +1,22 @@
-import type { RefObject, UIEvent } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, {
+import type { UIEvent } from 'react';
+import type { ElementRef, FC } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import {
   useEffect, useLayoutEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 
 import { LoadMoreDirection } from '../../types';
 
 import { requestForcedReflow } from '../../lib/fasterdom/fasterdom';
+import { IS_ANDROID } from '../../util/browser/windowEnvironment';
 import buildStyle from '../../util/buildStyle';
 import resetScroll from '../../util/resetScroll';
 import { debounce } from '../../util/schedulers';
-import { IS_ANDROID } from '../../util/windowEnvironment';
 
 import useLastCallback from '../../hooks/useLastCallback';
 
 type OwnProps = {
-  ref?: RefObject<HTMLDivElement>;
+  ref?: ElementRef<HTMLDivElement>;
   style?: string;
   className?: string;
   items?: any[];
@@ -36,8 +37,6 @@ type OwnProps = {
   onWheel?: (e: React.WheelEvent<HTMLDivElement>) => void;
   onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onKeyDown?: (e: React.KeyboardEvent<any>) => void;
-  onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void;
 };
 
 const DEFAULT_LIST_SELECTOR = '.ListItem';
@@ -68,11 +67,8 @@ const InfiniteScroll: FC<OwnProps> = ({
   onWheel,
   onClick,
   onKeyDown,
-  onDragOver,
-  onDragLeave,
 }: OwnProps) => {
-  // eslint-disable-next-line no-null/no-null
-  let containerRef = useRef<HTMLDivElement>(null);
+  let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
@@ -137,7 +133,7 @@ const InfiniteScroll: FC<OwnProps> = ({
 
       if (state.currentAnchor && Array.from(state.listItemElements).includes(state.currentAnchor)) {
         const { scrollTop } = scrollContainer;
-        const newAnchorTop = state.currentAnchor!.getBoundingClientRect().top;
+        const newAnchorTop = state.currentAnchor.getBoundingClientRect().top;
         newScrollTop = scrollTop + (newAnchorTop - state.currentAnchorTop!);
       } else {
         const nextAnchor = state.listItemElements[0];
@@ -270,13 +266,11 @@ const InfiniteScroll: FC<OwnProps> = ({
     <div
       ref={containerRef}
       className={className}
-      onWheel={onWheel}
-      teactFastList={!noFastList && !withAbsolutePositioning}
-      onKeyDown={onKeyDown}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onClick={onClick}
       style={style}
+      teactFastList={!noFastList && !withAbsolutePositioning}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      onWheel={onWheel}
     >
       {beforeChildren}
       {withAbsolutePositioning && items?.length ? (

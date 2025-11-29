@@ -21,6 +21,7 @@ import {
   DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, UPLOAD_WORKERS,
 } from '../../../config';
 import { pause } from '../../../util/schedulers';
+import { buildWebPage } from '../apiBuilders/messageContent';
 import {
   buildApiMessage,
   setMessageBuilderCurrentUserId,
@@ -28,9 +29,15 @@ import {
 import { buildApiPeerId } from '../apiBuilders/peers';
 import { buildApiStory } from '../apiBuilders/stories';
 import { buildApiUser, buildApiUserFullInfo } from '../apiBuilders/users';
-import { buildInputPeerFromLocalDb, getEntityTypeById } from '../gramjsBuilders';
+import {
+  buildInputChannelFromLocalDb,
+  buildInputPeerFromLocalDb,
+  DEFAULT_PRIMITIVES,
+  getEntityTypeById,
+} from '../gramjsBuilders';
 import {
   addStoryToLocalDb, addUserToLocalDb,
+  addWebPageMediaToLocalDb,
 } from '../helpers/localDb';
 import {
   isResponseUpdate, log,
@@ -67,7 +74,7 @@ const ABORT_CONTROLLERS = new Map<string, AbortController>();
 let client: TelegramClient;
 let currentUserId: string | undefined;
 
-export async function init(initialArgs: ApiInitialArgs) {
+export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoidFunction) {
   if (DEBUG) {
     // eslint-disable-next-line no-console
     console.log('>>> START INIT API');
@@ -76,14 +83,13 @@ export async function init(initialArgs: ApiInitialArgs) {
   const {
     userAgent, platform, sessionData, isWebmSupported, maxBufferSize, webAuthToken, dcId,
     mockScenario, shouldForceHttpTransport, shouldAllowHttpTransport,
-    shouldDebugExportedSenders, langCode, isTestServerRequested,
+    shouldDebugExportedSenders, langCode, isTestServerRequested, accountIds,
   } = initialArgs;
 
   const session = new sessions.CallbackSession(sessionData, onSessionUpdate);
 
-  // eslint-disable-next-line no-restricted-globals
   (self as any).isWebmSupported = isWebmSupported;
-  // eslint-disable-next-line no-restricted-globals
+
   (self as any).maxBufferSize = maxBufferSize;
 
   client = new TelegramClient(
@@ -113,9 +119,8 @@ export async function init(initialArgs: ApiInitialArgs) {
     if (DEBUG) {
       log('CONNECTING');
 
-      // eslint-disable-next-line no-restricted-globals
       (self as any).invoke = invokeRequest;
-      // eslint-disable-next-line no-restricted-globals
+
       (self as any).GramJs = GramJs;
     }
 
@@ -129,11 +134,12 @@ export async function init(initialArgs: ApiInitialArgs) {
         qrCode: onRequestQrCode,
         onError: onAuthError,
         initialMethod: platform === 'iOS' || platform === 'Android' ? 'phoneNumber' : 'qrCode',
-        shouldThrowIfUnauthorized: Boolean(sessionData),
+        shouldThrowIfUnauthorized: Object.values(sessionData?.keys || {}).length > 0,
         webAuthToken,
         webAuthTokenFailed: onWebAuthTokenFailed,
         mockScenario,
-      });
+        accountIds,
+      }, onConnected);
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error(err);
@@ -188,11 +194,11 @@ export async function destroy(noLogOut = false, noClearLocalDb = false) {
     resetUpdatesManager();
   }
 
-  await client.destroy();
+  client.destroy();
 }
 
-export async function disconnect() {
-  await client.disconnect();
+export function disconnect() {
+  client.disconnect();
 }
 
 export function getClient() {
@@ -217,7 +223,7 @@ export function handleGramJsUpdate(update: any) {
     const updates = 'updates' in update ? update.updates : [update];
     updates.forEach((nestedUpdate: any) => {
       if (!(nestedUpdate instanceof GramJs.UpdateConfig)) return;
-      // eslint-disable-next-line no-underscore-dangle
+
       const currentUser = (nestedUpdate as UpdateConfig)._entities
         ?.find((entity) => entity instanceof GramJs.User && buildApiPeerId(entity.id, 'user') === currentUserId);
       if (!(currentUser instanceof GramJs.User)) return;
@@ -306,6 +312,12 @@ export async function invokeRequest<T extends GramJs.AnyRequest>(
       console.error(err);
     }
 
+    const message = err instanceof RPCError ? err.errorMessage : err.message;
+
+    if (message.includes('FROZEN_METHOD_INVALID')) {
+      dispatchNotSupportedInFrozenAccountUpdate(err, request);
+    }
+
     if (shouldThrow) {
       throw err;
     }
@@ -334,10 +346,15 @@ export async function downloadMedia(
   onProgress?: ApiOnProgress,
 ) {
   try {
-    return (await downloadMediaWithClient(args, client, onProgress));
+    const result = await downloadMediaWithClient(args, client, onProgress);
+    return result;
   } catch (err: unknown) {
     if (err instanceof RPCError) {
       if (err.errorMessage.startsWith('FILE_REFERENCE')) {
+        if (DEBUG) {
+          // eslint-disable-next-line no-console
+          console.warn('Trying to repair file reference', args.url);
+        }
         const isFileReferenceRepaired = await repairFileReference({ url: args.url });
         if (isFileReferenceRepaired) {
           return downloadMediaWithClient(args, client, onProgress);
@@ -440,6 +457,27 @@ export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, req
   });
 }
 
+function dispatchNotSupportedInFrozenAccountUpdate<T extends GramJs.AnyRequest>(err: Error, request: T) {
+  if (!(err instanceof RPCError)) return;
+  const message = err.errorMessage;
+
+  if (
+    request instanceof GramJs.messages.GetPinnedDialogs
+    || request instanceof GramJs.phone.GetGroupParticipants
+    || request instanceof GramJs.channels.GetParticipant
+    || request instanceof GramJs.channels.GetParticipants
+    || request instanceof GramJs.messages.GetForumTopics) {
+    return;
+  }
+
+  sendApiUpdate({
+    '@type': 'notSupportedInFrozenAccount',
+    error: {
+      message,
+    },
+  });
+}
+
 async function handleTerminatedSession() {
   try {
     await invokeRequest(new GramJs.users.GetFullUser({
@@ -448,7 +486,11 @@ async function handleTerminatedSession() {
       shouldThrow: true,
     });
   } catch (err: any) {
-    if (err.errorMessage === 'AUTH_KEY_UNREGISTERED' || err.errorMessage === 'SESSION_REVOKED') {
+    if (
+      err.errorMessage === 'AUTH_KEY_UNREGISTERED'
+      || err.errorMessage === 'SESSION_REVOKED'
+      || err.errorMessage === 'USER_DEACTIVATED'
+    ) {
       sendApiUpdate({
         '@type': 'updateConnectionState',
         connectionState: 'connectionStateBroken',
@@ -463,7 +505,6 @@ export async function repairFileReference({
   url: string;
 }) {
   const parsed = parseMediaUrl(url);
-
   if (!parsed) return undefined;
 
   const {
@@ -488,6 +529,11 @@ export async function repairFileReference({
       const result = await repairMessageMedia(localRepairInfo.peerId, localRepairInfo.id);
       return result;
     }
+
+    if (localRepairInfo.type === 'webPage') {
+      const result = await repairWebPageMedia(localRepairInfo.url);
+      return result;
+    }
   }
 
   return false;
@@ -495,25 +541,30 @@ export async function repairFileReference({
 
 async function repairMessageMedia(peerId: string, messageId: number) {
   const type = getEntityTypeById(peerId);
-  const peer = buildInputPeerFromLocalDb(peerId);
-  if (!peer) return false;
-  const result = await invokeRequest(
-    type === 'channel'
-      ? new GramJs.channels.GetMessages({
-        channel: peer,
-        id: [new GramJs.InputMessageID({ id: messageId })],
-      })
-      : new GramJs.messages.GetMessages({
+  const inputChannel = buildInputChannelFromLocalDb(peerId);
+  let result;
+
+  if (type === 'channel' && inputChannel) {
+    result = await invokeRequest(new GramJs.channels.GetMessages({
+      channel: inputChannel,
+      id: [new GramJs.InputMessageID({ id: messageId })],
+    }), {
+      shouldIgnoreErrors: true,
+    });
+  } else {
+    result = await invokeRequest(
+      new GramJs.messages.GetMessages({
         id: [new GramJs.InputMessageID({ id: messageId })],
       }),
-    {
-      shouldIgnoreErrors: true,
-    },
-  );
+      {
+        shouldIgnoreErrors: true,
+      },
+    );
+  }
 
   if (!result || result instanceof GramJs.messages.MessagesNotModified) return false;
 
-  if (peer && 'pts' in result) {
+  if (inputChannel && 'pts' in result) {
     updateChannelState(peerId, result.pts);
   }
 
@@ -558,6 +609,27 @@ async function repairStoryMedia(peerId: string, storyId: number) {
     });
   });
   return true;
+}
+
+export async function repairWebPageMedia(url: string) {
+  const result = await invokeRequest(new GramJs.messages.GetWebPage({
+    url,
+    hash: DEFAULT_PRIMITIVES.INT,
+  }), {
+    shouldIgnoreErrors: true,
+  });
+
+  if (!result?.webpage) return false;
+  const webPage = buildWebPage(result.webpage);
+  if (!webPage) return false;
+
+  addWebPageMediaToLocalDb(result.webpage);
+  sendApiUpdate({
+    '@type': 'updateWebPage',
+    webPage,
+  });
+
+  return webPage.webpageType === 'full';
 }
 
 export function setForceHttpTransport(forceHttpTransport: boolean) {

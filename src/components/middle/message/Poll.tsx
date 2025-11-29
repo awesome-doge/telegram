@@ -1,5 +1,6 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo,
   useEffect,
   useLayoutEffect,
@@ -25,7 +26,6 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import AvatarList from '../../common/AvatarList';
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import CheckboxGroup from '../../ui/CheckboxGroup';
 import RadioGroup from '../../ui/RadioGroup';
@@ -64,15 +64,13 @@ const Poll: FC<OwnProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [chosenOptions, setChosenOptions] = useState<string[]>([]);
   const [wasSubmitted, setWasSubmitted] = useState<boolean>(false);
-  const [closePeriod, setClosePeriod] = useState<number>(
+  const [closePeriod, setClosePeriod] = useState<number>(() => (
     !summary.closed && summary.closeDate && summary.closeDate > 0
       ? Math.min(summary.closeDate - getServerTime(), summary.closePeriod!)
-      : 0,
-  );
-  // eslint-disable-next-line no-null/no-null
-  const countdownRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const timerCircleRef = useRef<SVGCircleElement>(null);
+      : 0
+  ));
+  const countdownRef = useRef<HTMLDivElement>();
+  const timerCircleRef = useRef<SVGCircleElement>();
   const { results: voteResults, totalVoters } = results;
   const hasVoted = voteResults && voteResults.some((r) => r.isChosen);
   const canVote = !summary.closed && !hasVoted;
@@ -264,17 +262,20 @@ const Poll: FC<OwnProps> = ({
             className="poll-quiz-help"
             onClick={showSolution}
             ariaLabel="Show Solution"
-          >
-            <Icon name="lamp" />
-          </Button>
+            iconName="lamp"
+          />
         )}
       </div>
       {canVote && (
-        <div className="poll-answers" onClick={stopPropagation}>
+        <div
+          className="poll-answers"
+          onClick={stopPropagation}
+        >
           {isMultiple
             ? (
               <CheckboxGroup
                 options={answers}
+                selected={chosenOptions}
                 onChange={handleCheckboxChange}
                 disabled={message.isScheduled || isSubmitting}
                 loadingOptions={isSubmitting ? chosenOptions : undefined}

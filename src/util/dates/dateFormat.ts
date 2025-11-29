@@ -2,8 +2,9 @@ import type { OldLangFn } from '../../hooks/useOldLang';
 import type { TimeFormat } from '../../types';
 import type { LangFn } from '../localization';
 
+import { getServerTime } from '../serverTime';
 import withCache from '../withCache';
-import { getDays } from './units';
+import { getDays, getHours, getMinutes } from './units';
 
 const WEEKDAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS_FULL = [
@@ -78,11 +79,11 @@ export function formatPastTimeShort(lang: OldLangFn, datetime: number | Date, al
   return alwaysShowTime ? lang('FullDateTimeFormat', [formattedDate, time]) : formattedDate;
 }
 
-export function formatFullDate(lang: OldLangFn, datetime: number | Date) {
+export function formatFullDate(lang: OldLangFn | LangFn, datetime: number | Date) {
   return formatDateToString(datetime, lang.code, false, 'numeric');
 }
 
-export function formatMonthAndYear(lang: OldLangFn, date: Date, isShort = false) {
+export function formatMonthAndYear(lang: OldLangFn | LangFn, date: Date, isShort = false) {
   return formatDateToString(date, lang.code, false, isShort ? 'short' : 'long', true);
 }
 
@@ -110,6 +111,24 @@ export function formatCountdown(
   }
 }
 
+export function formatCountdownDays(
+  lang: LangFn,
+  days: number,
+) {
+  if (days < 7) {
+    return lang('Days', { count: days }, { pluralValue: days });
+  } else if (days < 30) {
+    const count = Math.floor(days / 7);
+    return lang('Weeks', { count }, { pluralValue: count });
+  } else if (days < 360) {
+    const count = Math.floor(days / 30);
+    return lang('Months', { count }, { pluralValue: count });
+  } else {
+    const count = Math.floor(days / 360);
+    return lang('Years', { count }, { pluralValue: count });
+  }
+}
+
 export function formatCountdownShort(lang: OldLangFn, msLeft: number): string {
   if (msLeft < 60 * 1000) {
     return Math.ceil(msLeft / 1000).toString();
@@ -122,7 +141,7 @@ export function formatCountdownShort(lang: OldLangFn, msLeft: number): string {
   }
 }
 
-export function formatLastUpdated(lang: OldLangFn, currentTime: number, lastUpdated = currentTime) {
+export function formatLocationLastUpdate(lang: OldLangFn, currentTime: number, lastUpdated = currentTime) {
   const seconds = currentTime - lastUpdated;
   if (seconds < 60) {
     return lang('LiveLocationUpdated.JustNow');
@@ -133,7 +152,7 @@ export function formatLastUpdated(lang: OldLangFn, currentTime: number, lastUpda
   }
 }
 
-export function formatRelativeTime(lang: OldLangFn, currentTime: number, lastUpdated = currentTime) {
+export function formatRelativePastTime(lang: OldLangFn, currentTime: number, lastUpdated = currentTime) {
   const seconds = currentTime - lastUpdated;
 
   if (seconds < 60) {
@@ -160,6 +179,31 @@ export function formatRelativeTime(lang: OldLangFn, currentTime: number, lastUpd
   return lang('Time.AtDate', formatFullDate(lang, lastUpdatedDate));
 }
 
+export function formatPastDatetime(lang: LangFn, pastTime: number, currentTime = getServerTime()) {
+  const seconds = currentTime - pastTime;
+  const minutes = getMinutes(seconds);
+  const hours = getHours(seconds);
+  const days = getDays(seconds);
+
+  if (seconds < 60) {
+    return lang('JustNowAgo');
+  }
+
+  if (minutes < 60) {
+    return lang('MinutesAgo', { count: minutes }, { pluralValue: minutes });
+  }
+
+  if (hours < 24) {
+    return lang('HoursAgo', { count: hours }, { pluralValue: hours });
+  }
+
+  if (days < 28) {
+    return lang('DaysAgo', { count: days }, { pluralValue: days });
+  }
+
+  return lang('AtDateAgo', { date: formatFullDate(lang, pastTime) });
+}
+
 type DurationType = 'Seconds' | 'Minutes' | 'Hours' | 'Days' | 'Weeks';
 
 export function formatTimeDuration(lang: OldLangFn, duration: number, showLast = 2) {
@@ -183,7 +227,7 @@ export function formatTimeDuration(lang: OldLangFn, duration: number, showLast =
       return;
     }
 
-    const modulus = labels[idx === (labels.length - 1) ? idx : idx + 1].multiplier!;
+    const modulus = labels[idx === (labels.length - 1) ? idx : idx + 1].multiplier;
     durationRecords.push({
       duration: Math.floor((duration / t) % modulus),
       type: label.type,
@@ -199,6 +243,21 @@ export function formatTimeDuration(lang: OldLangFn, duration: number, showLast =
 
   // TODO In arabic we don't use "," as delimiter rather we use "and" each time
   return out.map((part) => lang(part.type, part.duration, 'i')).join(', ');
+}
+
+export function formatScheduledDateTime(
+  scheduleDateTimestamp: number,
+  lang: LangFn,
+  oldLang: OldLangFn,
+): string {
+  const scheduleDate = new Date(scheduleDateTimestamp * 1000);
+
+  return lang('FormatDateAtTime', {
+    date: isToday(scheduleDate)
+      ? lang('WeekdayToday')
+      : formatHumanDate(oldLang, scheduleDateTimestamp * 1000, true, false, true),
+    time: formatTime(oldLang, scheduleDateTimestamp * 1000),
+  });
 }
 
 export function formatHumanDate(
@@ -381,7 +440,7 @@ export function formatDateAtTime(
   return lang('formatDateAtTime', [formattedDate, time]);
 }
 
-export function formatShortDuration(lang: LangFn, duration: number) {
+export function formatShortDuration(lang: LangFn, duration: number, hoursPriority?: boolean) {
   if (duration < 0) {
     return lang('RightNow');
   }
@@ -396,7 +455,7 @@ export function formatShortDuration(lang: LangFn, duration: number) {
     return lang('Minutes', { count }, { pluralValue: count });
   }
 
-  if (duration < 60 * 60 * 24) {
+  if (duration < 60 * 60 * 24 || (hoursPriority && duration <= 60 * 60 * 24 * 2)) {
     const count = Math.ceil(duration / (60 * 60));
     return lang('Hours', { count }, { pluralValue: count });
   }
@@ -448,4 +507,11 @@ function lowerFirst(str: string) {
 
 function upperFirst(str: string) {
   return `${str[0].toUpperCase()}${str.slice(1)}`;
+}
+
+export function formatRegistrationMonth(lang: string, dateString: string) {
+  const [month, year] = dateString.split('.');
+  const date = new Date(`${year}-${month}`);
+
+  return new Intl.DateTimeFormat(lang, { month: 'long', year: 'numeric' }).format(date);
 }

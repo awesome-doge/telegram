@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiPhoto, ApiPrivacySettings, BotsPrivacyType } from '../../../api/types';
@@ -13,17 +13,19 @@ import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
+import Icon from '../../common/icons/Icon';
 import ListItem from '../../ui/ListItem';
 import RadioGroup from '../../ui/RadioGroup';
+import Switcher from '../../ui/Switcher';
 import PremiumStatusItem from './PremiumStatusItem';
 import PrivacyLockedOption from './PrivacyLockedOption';
+import SettingsAcceptedGift from './SettingsAcceptedGift';
 import SettingsPrivacyLastSeen from './SettingsPrivacyLastSeen';
 import SettingsPrivacyPublicProfilePhoto from './SettingsPrivacyPublicProfilePhoto';
 
 type OwnProps = {
   screen: SettingsScreens;
   isActive?: boolean;
-  onScreenSelect: (screen: SettingsScreens) => void;
   onReset: () => void;
 };
 
@@ -34,6 +36,8 @@ type StateProps = {
   primaryPrivacy?: ApiPrivacySettings;
   secondaryPrivacy?: ApiPrivacySettings;
   isPremiumRequired?: boolean;
+  shouldDisplayGiftsButton?: boolean;
+  isCurrentUserPremium?: boolean;
 };
 
 const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
@@ -45,12 +49,35 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
   hasCurrentUserFullInfo,
   currentUserFallbackPhoto,
   isPremiumRequired,
-  onScreenSelect,
   onReset,
+  shouldDisplayGiftsButton,
+  isCurrentUserPremium,
 }) => {
+  const { updateGlobalPrivacySettings, showNotification } = getActions();
+
+  const lang = useLang();
+
   useHistoryBack({
     isActive,
     onBack: onReset,
+  });
+
+  const handleShowGiftIconInChats = useLastCallback(() => {
+    if (!isCurrentUserPremium) {
+      showNotification({
+        message: lang('PrivacySubscribeToTelegramPremium'),
+        action: {
+          action: 'openPremiumModal',
+          payload: {},
+        },
+        actionText: { key: 'Open' },
+        icon: 'star',
+      });
+      return;
+    }
+    updateGlobalPrivacySettings({
+      shouldDisplayGiftsButton: !shouldDisplayGiftsButton,
+    });
   });
 
   const secondaryScreen = useMemo(() => {
@@ -67,10 +94,30 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="settings-content custom-scroll">
+      {screen === SettingsScreens.PrivacyGifts && (
+        <div className="settings-item">
+          <ListItem onClick={handleShowGiftIconInChats}>
+            <span>{lang('PrivacyDisplayGiftsButton')}</span>
+            <Switcher
+              id="gift"
+              disabled={!isCurrentUserPremium}
+              label={shouldDisplayGiftsButton ? lang('HideGiftsButton') : lang('DisplayGiftsButton')}
+              checked={shouldDisplayGiftsButton}
+            />
+          </ListItem>
+          <p className="settings-item-description-larger" dir={lang.isRtl ? 'rtl' : undefined}>
+            {lang('PrivacyDisplayGiftIconInChats', {
+              icon: <Icon name="gift" className="gift-icon" />,
+              gift: lang('PrivacyDisplayGift'),
+            }, {
+              withNodes: true,
+            })}
+          </p>
+        </div>
+      )}
       <PrivacySubsection
         screen={screen}
         privacy={primaryPrivacy}
-        onScreenSelect={onScreenSelect}
         isPremiumRequired={isPremiumRequired}
       />
       {screen === SettingsScreens.PrivacyProfilePhoto && primaryPrivacy?.visibility !== 'everybody' && (
@@ -83,11 +130,13 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
       {screen === SettingsScreens.PrivacyLastSeen && (
         <SettingsPrivacyLastSeen visibility={primaryPrivacy?.visibility} />
       )}
-      {secondaryScreen && (
+      {screen === SettingsScreens.PrivacyGifts && (
+        <SettingsAcceptedGift />
+      )}
+      {Boolean(secondaryScreen) && (
         <PrivacySubsection
           screen={secondaryScreen}
           privacy={secondaryPrivacy}
-          onScreenSelect={onScreenSelect}
         />
       )}
     </div>
@@ -97,15 +146,13 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
 function PrivacySubsection({
   screen,
   privacy,
-  onScreenSelect,
   isPremiumRequired,
 }: {
   screen: SettingsScreens;
   privacy?: ApiPrivacySettings;
   isPremiumRequired?: boolean;
-  onScreenSelect: (screen: SettingsScreens) => void;
 }) {
-  const { setPrivacyVisibility } = getActions();
+  const { setPrivacyVisibility, openSettingsScreen } = getActions();
   const oldLang = useOldLang();
   const lang = useLang();
 
@@ -301,7 +348,7 @@ function PrivacySubsection({
   return (
     <>
       <div className="settings-item">
-        <h4 className="settings-item-header" dir={oldLang.isRtl ? 'rtl' : undefined}>{headerText}</h4>
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{headerText}</h4>
         <RadioGroup
           name={`visibility-${privacyKey}`}
           options={visibilityOptions}
@@ -309,21 +356,21 @@ function PrivacySubsection({
           selected={privacy?.visibility}
         />
         {descriptionText && (
-          <p className="settings-item-description-larger" dir={oldLang.isRtl ? 'rtl' : undefined}>{descriptionText}</p>
+          <p className="settings-item-description-larger" dir={lang.isRtl ? 'rtl' : undefined}>{descriptionText}</p>
         )}
       </div>
       {!isPremiumRequired && (primaryExceptionLists.shouldShowAllowed || primaryExceptionLists.shouldShowDenied) && (
         <div className="settings-item">
-          <h4 className="settings-item-header" dir={oldLang.isRtl ? 'rtl' : undefined}>
+          <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
             {oldLang('PrivacyExceptions')}
           </h4>
           {primaryExceptionLists.shouldShowAllowed && (
             <ListItem
               narrow
               icon="add-user"
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => {
-                onScreenSelect(allowedContactsScreen);
+                openSettingsScreen({ screen: allowedContactsScreen });
               }}
             >
               <div className="multiline-item full-size">
@@ -336,9 +383,9 @@ function PrivacySubsection({
             <ListItem
               narrow
               icon="delete-user"
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => {
-                onScreenSelect(deniedContactsScreen);
+                openSettingsScreen({ screen: deniedContactsScreen });
               }}
             >
               <div className="multiline-item full-size">
@@ -355,13 +402,18 @@ function PrivacySubsection({
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global, { screen }): StateProps => {
+  (global, { screen }): Complete<StateProps> => {
     let primaryPrivacy: ApiPrivacySettings | undefined;
     let secondaryPrivacy: ApiPrivacySettings | undefined;
 
     const {
       currentUserId,
-      settings: { privacy },
+      settings: {
+        privacy,
+        byKey: {
+          shouldDisplayGiftsButton,
+        },
+      },
     } = global;
 
     const currentUserFullInfo = selectUserFullInfo(global, currentUserId!);
@@ -416,7 +468,7 @@ export default memo(withGlobal<OwnProps>(
         currentUserId: currentUserId!,
         hasCurrentUserFullInfo: Boolean(currentUserFullInfo),
         currentUserFallbackPhoto: currentUserFullInfo?.fallbackPhoto,
-      };
+      } as Complete<StateProps>;
     }
 
     return {
@@ -426,6 +478,8 @@ export default memo(withGlobal<OwnProps>(
       hasCurrentUserFullInfo: Boolean(currentUserFullInfo),
       currentUserFallbackPhoto: currentUserFullInfo?.fallbackPhoto,
       isPremiumRequired: screen === SettingsScreens.PrivacyVoiceMessages && !selectIsCurrentUserPremium(global),
+      shouldDisplayGiftsButton,
+      isCurrentUserPremium: selectIsCurrentUserPremium(global),
     };
   },
 )(SettingsPrivacyVisibility));
