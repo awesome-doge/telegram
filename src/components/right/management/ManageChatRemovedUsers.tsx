@@ -4,16 +4,18 @@ import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiChatMember, ApiUser } from '../../../api/types';
 
-import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
-import { selectChat, selectChatFullInfo } from '../../../global/selectors';
 import { getHasAdminRight, getUserFullName, isChatChannel } from '../../../global/helpers';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
-import useFlag from '../../../hooks/useFlag';
+import { selectChat, selectChatFullInfo } from '../../../global/selectors';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 
+import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useOldLang from '../../../hooks/useOldLang';
+
+import Icon from '../../common/icons/Icon';
 import PrivateChatInfo from '../../common/PrivateChatInfo';
-import ListItem from '../../ui/ListItem';
 import FloatingActionButton from '../../ui/FloatingActionButton';
+import ListItem, { type MenuItemContextAction } from '../../ui/ListItem';
 import RemoveGroupUserModal from './RemoveGroupUserModal';
 
 type OwnProps = {
@@ -41,7 +43,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
 }) => {
   const { updateChatMemberBannedRights } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [isRemoveUserModalOpen, openRemoveUserModal, closeRemoveUserModal] = useFlag();
 
   useHistoryBack({
@@ -62,7 +64,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
     return lang('UserRemovedBy', getUserFullName(kickedByUser));
   }, [lang, usersById]);
 
-  const getContextActions = useCallback((member: ApiChatMember) => {
+  const getContextActions = useCallback((member: ApiChatMember): MenuItemContextAction[] | undefined => {
     if (!chat) {
       return undefined;
     }
@@ -83,7 +85,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
     <div className="Management">
       <div className="custom-scroll">
         <div className="section" dir={lang.isRtl ? 'rtl' : undefined}>
-          <p className="text-muted">{lang(isChannel ? 'NoBlockedChannel2' : 'NoBlockedGroup2')}</p>
+          <p className="section-help">{lang(isChannel ? 'NoBlockedChannel2' : 'NoBlockedGroup2')}</p>
 
           {removedMembers.map((member) => (
             <ListItem
@@ -105,7 +107,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
               onClick={openRemoveUserModal}
               ariaLabel={lang('Channel.EditAdmin.Permission.BanUsers')}
             >
-              <i className="icon icon-add-user-filled" />
+              <Icon name="add-user-filled" />
             </FloatingActionButton>
           )}
           {chat && canDeleteMembers && (

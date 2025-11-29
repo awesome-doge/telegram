@@ -1,24 +1,23 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import { throttleWithFullyIdle } from '../../../lib/teact/heavyAnimation';
 
 import type { ApiUserStatus } from '../../../api/types';
-
-import {
-  deleteContact, replaceUserStatuses, updateUser, updateUserFullInfo,
-} from '../../reducers';
-import { throttle } from '../../../util/schedulers';
-import { selectIsCurrentUserPremium, selectUserFullInfo } from '../../selectors';
 import type { ActionReturnType, RequiredGlobalState } from '../../types';
 
-const STATUS_UPDATE_THROTTLE = 3000;
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import {
+  deleteContact,
+  replaceUserStatuses,
+  updatePeerStoriesHidden,
+  updateUser,
+  updateUserFullInfo,
+} from '../../reducers';
+import {
+  selectIsChatWithSelf, selectIsCurrentUserPremium, selectUser, selectUserFullInfo,
+} from '../../selectors';
 
-const flushStatusUpdatesThrottled = throttle(flushStatusUpdates, STATUS_UPDATE_THROTTLE, true);
+const updateStatusesOnFullyIdle = throttleWithFullyIdle(flushStatusUpdates);
 
 let pendingStatusUpdates: Record<string, ApiUserStatus> = {};
-
-function scheduleStatusUpdate(userId: string, statusUpdate: ApiUserStatus) {
-  pendingStatusUpdates[userId] = statusUpdate;
-  flushStatusUpdatesThrottled();
-}
 
 function flushStatusUpdates() {
   // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
@@ -41,9 +40,10 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
     case 'updateUser': {
       Object.values(global.byTabId).forEach(({ id: tabId }) => {
-        if (update.id === global.currentUserId && update.user.isPremium !== selectIsCurrentUserPremium(global)) {
-          // TODO Do not display modal if premium is bought from another device
-          if (update.user.isPremium) actions.openPremiumModal({ isSuccess: true, tabId });
+        if (selectIsChatWithSelf(global, update.id) && update.user.isPremium !== selectIsCurrentUserPremium(global)) {
+          if (update.user.isPremium && global.byTabId[tabId].premiumModal) {
+            actions.openPremiumModal({ isSuccess: true, tabId });
+          }
 
           // Reset translation cache cause premium provides additional formatting
           global = {
@@ -55,9 +55,15 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         }
       });
 
+      const localUser = selectUser(global, update.id);
+
       global = updateUser(global, update.id, update.user);
       if (update.fullInfo) {
         global = updateUserFullInfo(global, update.id, update.fullInfo);
+      }
+
+      if (localUser?.areStoriesHidden !== update.user.areStoriesHidden) {
+        global = updatePeerStoriesHidden(global, update.id, update.user.areStoriesHidden || false);
       }
 
       return global;
@@ -74,7 +80,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
     case 'updateUserStatus': {
       // Status updates come very often so we throttle them
-      scheduleStatusUpdate(update.userId, update.status);
+      pendingStatusUpdates[update.userId] = update.status;
+      updateStatusesOnFullyIdle();
       return undefined;
     }
 

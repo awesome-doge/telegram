@@ -1,29 +1,31 @@
 import React from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { TextPart } from '../../../types';
 import type { ApiFormattedText, ApiMessageEntity } from '../../../api/types';
-import { ApiMessageEntityTypes } from '../../../api/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
+import type { TextPart } from '../../../types';
 import type { TextFilter } from './renderText';
+import { ApiMessageEntityTypes } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
-import renderText from './renderText';
 import { copyTextToClipboard } from '../../../util/clipboard';
-import { translate } from '../../../util/langProvider';
+import { oldTranslate } from '../../../util/oldLangProvider';
 import { buildCustomEmojiHtmlFromEntity } from '../../middle/composer/helpers/customEmoji';
+import renderText from './renderText';
 
 import MentionLink from '../../middle/message/MentionLink';
+import Blockquote from '../Blockquote';
+import CodeBlock from '../code/CodeBlock';
+import CustomEmoji from '../CustomEmoji';
 import SafeLink from '../SafeLink';
 import Spoiler from '../spoiler/Spoiler';
-import CustomEmoji from '../CustomEmoji';
-import CodeBlock from '../code/CodeBlock';
 
 interface IOrganizedEntity {
   entity: ApiMessageEntity;
   organizedIndexes: Set<number>;
   nestedEntities: IOrganizedEntity[];
 }
+type RenderTextParams = Parameters<typeof renderText>[2];
 
 const HQ_EMOJI_THRESHOLD = 64;
 
@@ -33,33 +35,51 @@ export function renderTextWithEntities({
   highlight,
   emojiSize,
   shouldRenderAsHtml,
-  messageId,
+  containerId,
   isSimple,
   isProtected,
+  noLineBreaks,
   observeIntersectionForLoading,
   observeIntersectionForPlaying,
   withTranslucentThumbs,
   sharedCanvasRef,
   sharedCanvasHqRef,
   cacheBuster,
+  forcePlayback,
+  noCustomEmojiPlayback,
+  focusedQuote,
+  isInSelectMode,
 }: {
   text: string;
   entities?: ApiMessageEntity[];
   highlight?: string;
   emojiSize?: number;
   shouldRenderAsHtml?: boolean;
-  messageId?: number;
+  containerId?: string;
   isSimple?: boolean;
   isProtected?: boolean;
+  noLineBreaks?: boolean;
   observeIntersectionForLoading?: ObserveFn;
   observeIntersectionForPlaying?: ObserveFn;
   withTranslucentThumbs?: boolean;
   sharedCanvasRef?: React.RefObject<HTMLCanvasElement>;
   sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>;
   cacheBuster?: string;
+  forcePlayback?: boolean;
+  noCustomEmojiPlayback?: boolean;
+  focusedQuote?: string;
+  isInSelectMode?: boolean;
 }) {
-  if (!entities || !entities.length) {
-    return renderMessagePart(text, highlight, emojiSize, shouldRenderAsHtml, isSimple);
+  if (!entities?.length) {
+    return renderMessagePart({
+      content: text,
+      highlight,
+      focusedQuote,
+      emojiSize,
+      shouldRenderAsHtml,
+      isSimple,
+      noLineBreaks,
+    });
   }
 
   const result: TextPart[] = [];
@@ -87,9 +107,15 @@ export function renderTextWithEntities({
         deleteLineBreakAfterPre = false;
       }
       if (textBefore) {
-        renderResult.push(...renderMessagePart(
-          textBefore, highlight, emojiSize, shouldRenderAsHtml, isSimple,
-        ) as TextPart[]);
+        renderResult.push(...renderMessagePart({
+          content: textBefore,
+          highlight,
+          focusedQuote,
+          emojiSize,
+          shouldRenderAsHtml,
+          isSimple,
+          noLineBreaks,
+        }) as TextPart[]);
       }
     }
 
@@ -131,13 +157,15 @@ export function renderTextWithEntities({
     // Render the entity itself
     const newEntity = shouldRenderAsHtml
       ? processEntityAsHtml(entity, entityContent, nestedEntityContent)
-      : processEntity(
+      : processEntity({
         entity,
         entityContent,
         nestedEntityContent,
         highlight,
-        messageId,
+        focusedQuote,
+        containerId,
         isSimple,
+        noLineBreaks,
         isProtected,
         observeIntersectionForLoading,
         observeIntersectionForPlaying,
@@ -146,7 +174,10 @@ export function renderTextWithEntities({
         sharedCanvasRef,
         sharedCanvasHqRef,
         cacheBuster,
-      );
+        forcePlayback,
+        noCustomEmojiPlayback,
+        isInSelectMode,
+      });
 
     if (Array.isArray(newEntity)) {
       renderResult.push(...newEntity);
@@ -162,9 +193,15 @@ export function renderTextWithEntities({
         textAfter = textAfter.substring(1);
       }
       if (textAfter) {
-        renderResult.push(...renderMessagePart(
-          textAfter, highlight, emojiSize, shouldRenderAsHtml, isSimple,
-        ) as TextPart[]);
+        renderResult.push(...renderMessagePart({
+          content: textAfter,
+          highlight,
+          focusedQuote,
+          emojiSize,
+          shouldRenderAsHtml,
+          isSimple,
+          noLineBreaks,
+        }) as TextPart[]);
       }
     }
 
@@ -211,18 +248,36 @@ export function getTextWithEntitiesAsHtml(formattedText?: ApiFormattedText) {
   return result;
 }
 
-function renderMessagePart(
-  content: TextPart | TextPart[],
-  highlight?: string,
-  emojiSize?: number,
-  shouldRenderAsHtml?: boolean,
-  isSimple?: boolean,
-) {
+function renderMessagePart({
+  content,
+  highlight,
+  focusedQuote,
+  emojiSize,
+  shouldRenderAsHtml,
+  isSimple,
+  noLineBreaks,
+} : {
+  content: TextPart | TextPart[];
+  highlight?: string;
+  focusedQuote?: string;
+  emojiSize?: number;
+  shouldRenderAsHtml?: boolean;
+  isSimple?: boolean;
+  noLineBreaks?: boolean;
+}) {
   if (Array.isArray(content)) {
     const result: TextPart[] = [];
 
     content.forEach((c) => {
-      result.push(...renderMessagePart(c, highlight, emojiSize, shouldRenderAsHtml, isSimple));
+      result.push(...renderMessagePart({
+        content: c,
+        highlight,
+        focusedQuote,
+        emojiSize,
+        shouldRenderAsHtml,
+        isSimple,
+        noLineBreaks,
+      }));
     });
 
     return result;
@@ -235,15 +290,21 @@ function renderMessagePart(
   const emojiFilter = emojiSize && emojiSize > HQ_EMOJI_THRESHOLD ? 'hq_emoji' : 'emoji';
 
   const filters: TextFilter[] = [emojiFilter];
-  if (!isSimple) {
+  const params: RenderTextParams = {};
+  if (!isSimple && !noLineBreaks) {
     filters.push('br');
   }
 
   if (highlight) {
-    return renderText(content, filters.concat('highlight'), { highlight });
-  } else {
-    return renderText(content, filters);
+    filters.push('highlight');
+    params.highlight = highlight;
   }
+  if (focusedQuote) {
+    filters.push('quote');
+    params.quote = focusedQuote;
+  }
+
+  return renderText(content, filters, params);
 }
 
 // Organize entities in a tree-like structure to better represent how the text will be displayed
@@ -312,29 +373,59 @@ function organizeEntity(
   };
 }
 
-function processEntity(
-  entity: ApiMessageEntity,
-  entityContent: TextPart,
-  nestedEntityContent: TextPart[],
-  highlight?: string,
-  messageId?: number,
-  isSimple?: boolean,
-  isProtected?: boolean,
-  observeIntersectionForLoading?: ObserveFn,
-  observeIntersectionForPlaying?: ObserveFn,
-  withTranslucentThumbs?: boolean,
-  emojiSize?: number,
-  sharedCanvasRef?: React.RefObject<HTMLCanvasElement>,
-  sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>,
-  cacheBuster?: string,
-) {
+function processEntity({
+  entity,
+  entityContent,
+  nestedEntityContent,
+  highlight,
+  focusedQuote,
+  containerId,
+  isSimple,
+  noLineBreaks,
+  isProtected,
+  observeIntersectionForLoading,
+  observeIntersectionForPlaying,
+  withTranslucentThumbs,
+  emojiSize,
+  sharedCanvasRef,
+  sharedCanvasHqRef,
+  cacheBuster,
+  forcePlayback,
+  noCustomEmojiPlayback,
+  isInSelectMode,
+} : {
+  entity: ApiMessageEntity;
+  entityContent: TextPart;
+  nestedEntityContent: TextPart[];
+  highlight?: string;
+  focusedQuote?: string;
+  containerId?: string;
+  isSimple?: boolean;
+  noLineBreaks?: boolean;
+  isProtected?: boolean;
+  observeIntersectionForLoading?: ObserveFn;
+  observeIntersectionForPlaying?: ObserveFn;
+  withTranslucentThumbs?: boolean;
+  emojiSize?: number;
+  sharedCanvasRef?: React.RefObject<HTMLCanvasElement>;
+  sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>;
+  cacheBuster?: string;
+  forcePlayback?: boolean;
+  noCustomEmojiPlayback?: boolean;
+  isInSelectMode?: boolean;
+}) {
   const entityText = typeof entityContent === 'string' && entityContent;
   const renderedContent = nestedEntityContent.length ? nestedEntityContent : entityContent;
 
   function renderNestedMessagePart() {
-    return renderMessagePart(
-      renderedContent, highlight, undefined, undefined, isSimple,
-    );
+    return renderMessagePart({
+      content: renderedContent,
+      highlight,
+      focusedQuote,
+      emojiSize,
+      isSimple,
+      noLineBreaks,
+    });
   }
 
   if (!entityText) {
@@ -353,13 +444,15 @@ function processEntity(
           key={cacheBuster ? `${cacheBuster}-${entity.offset}` : undefined}
           documentId={entity.documentId}
           size={emojiSize}
+          isSelectable
           withSharedAnimation
           sharedCanvasRef={sharedCanvasRef}
           sharedCanvasHqRef={sharedCanvasHqRef}
-          withGridFix={!emojiSize}
           observeIntersectionForLoading={observeIntersectionForLoading}
           observeIntersectionForPlaying={observeIntersectionForPlaying}
           withTranslucentThumb={withTranslucentThumbs}
+          forceAlways={forcePlayback}
+          noPlay={noCustomEmojiPlayback}
         />
       );
     }
@@ -370,7 +463,11 @@ function processEntity(
     case ApiMessageEntityTypes.Bold:
       return <strong data-entity-type={entity.type}>{renderNestedMessagePart()}</strong>;
     case ApiMessageEntityTypes.Blockquote:
-      return <blockquote data-entity-type={entity.type}>{renderNestedMessagePart()}</blockquote>;
+      return (
+        <Blockquote canBeCollapsible={entity.canCollapse} isToggleDisabled={isInSelectMode}>
+          {renderNestedMessagePart()}
+        </Blockquote>
+      );
     case ApiMessageEntityTypes.BotCommand:
       return (
         <a
@@ -382,10 +479,11 @@ function processEntity(
           {renderNestedMessagePart()}
         </a>
       );
-    case ApiMessageEntityTypes.Hashtag:
+    case ApiMessageEntityTypes.Hashtag: {
+      const [tag, username] = entityContent.split('@');
       return (
         <a
-          onClick={handleHashtagClick}
+          onClick={() => handleHashtagClick(tag, username)}
           className="text-entity-link"
           dir="auto"
           data-entity-type={entity.type}
@@ -393,10 +491,12 @@ function processEntity(
           {renderNestedMessagePart()}
         </a>
       );
-    case ApiMessageEntityTypes.Cashtag:
+    }
+    case ApiMessageEntityTypes.Cashtag: {
+      const [tag, username] = entityContent.split('@');
       return (
         <a
-          onClick={handleHashtagClick}
+          onClick={() => handleHashtagClick(tag, username)}
           className="text-entity-link"
           dir="auto"
           data-entity-type={entity.type}
@@ -404,11 +504,12 @@ function processEntity(
           {renderNestedMessagePart()}
         </a>
       );
+    }
     case ApiMessageEntityTypes.Code:
       return (
         <code
-          className={buildClassName('text-entity-code', !isProtected && 'clickable')}
-          onClick={!isProtected ? handleCodeClick : undefined}
+          className={buildClassName('text-entity-code', 'clickable')}
+          onClick={handleCodeClick}
           role="textbox"
           tabIndex={0}
           data-entity-type={entity.type}
@@ -471,20 +572,22 @@ function processEntity(
     case ApiMessageEntityTypes.Underline:
       return <ins data-entity-type={entity.type}>{renderNestedMessagePart()}</ins>;
     case ApiMessageEntityTypes.Spoiler:
-      return <Spoiler messageId={messageId}>{renderNestedMessagePart()}</Spoiler>;
+      return <Spoiler containerId={containerId}>{renderNestedMessagePart()}</Spoiler>;
     case ApiMessageEntityTypes.CustomEmoji:
       return (
         <CustomEmoji
           key={cacheBuster ? `${cacheBuster}-${entity.offset}` : undefined}
           documentId={entity.documentId}
           size={emojiSize}
+          isSelectable
           withSharedAnimation
           sharedCanvasRef={sharedCanvasRef}
           sharedCanvasHqRef={sharedCanvasHqRef}
-          withGridFix={!emojiSize}
           observeIntersectionForLoading={observeIntersectionForLoading}
           observeIntersectionForPlaying={observeIntersectionForPlaying}
           withTranslucentThumb={withTranslucentThumbs}
+          forceAlways={forcePlayback}
+          noPlay={noCustomEmojiPlayback}
         />
       );
     default:
@@ -546,6 +649,11 @@ function processEntityAsHtml(
         >${renderedContent}</span>`;
     case ApiMessageEntityTypes.CustomEmoji:
       return buildCustomEmojiHtmlFromEntity(rawEntityText, entity);
+    case ApiMessageEntityTypes.Blockquote:
+      return `<blockquote
+        class="blockquote"
+        data-entity-type="${ApiMessageEntityTypes.Blockquote}"
+        >${renderedContent}</blockquote>`;
     default:
       return renderedContent;
   }
@@ -560,14 +668,24 @@ function handleBotCommandClick(e: React.MouseEvent<HTMLAnchorElement>) {
   getActions().sendBotCommand({ command: e.currentTarget.innerText });
 }
 
-function handleHashtagClick(e: React.MouseEvent<HTMLAnchorElement>) {
-  getActions().setLocalTextSearchQuery({ query: e.currentTarget.innerText });
-  getActions().searchTextMessagesLocal();
+function handleHashtagClick(hashtag?: string, username?: string) {
+  if (!hashtag) return;
+  if (username) {
+    getActions().openChatByUsername({
+      username,
+      onChatChanged: {
+        action: 'searchHashtag',
+        payload: { hashtag },
+      },
+    });
+    return;
+  }
+  getActions().searchHashtag({ hashtag });
 }
 
 function handleCodeClick(e: React.MouseEvent<HTMLElement>) {
   copyTextToClipboard(e.currentTarget.innerText);
   getActions().showNotification({
-    message: translate('TextCopied'),
+    message: oldTranslate('TextCopied'),
   });
 }

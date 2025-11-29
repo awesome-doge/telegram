@@ -1,36 +1,44 @@
 import type { RefObject } from 'react';
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import React, { getIsHeavyAnimating, memo } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { MessageListType } from '../../global/types';
-import type { PinnedIntersectionChangedCallback } from './hooks/usePinnedMessage';
+import type { MessageListType, ThreadId } from '../../types';
 import type { Signal } from '../../util/signals';
+import type { MessageDateGroup } from './helpers/groupMessages';
+import type { OnIntersectPinnedMessage } from './hooks/usePinnedMessage';
+import { MAIN_THREAD_ID } from '../../api/types';
 
 import { SCHEDULED_WHEN_ONLINE } from '../../config';
-import { MAIN_THREAD_ID } from '../../api/types';
-import buildClassName from '../../util/buildClassName';
-import { compact } from '../../util/iteratees';
-import { formatHumanDate } from '../../util/dateFormat';
 import {
-  getMessageHtmlId, getMessageOriginalId, isActionMessage, isOwnMessage, isServiceNotificationMessage,
+  getMessageHtmlId,
+  getMessageOriginalId,
+  isActionMessage,
+  isOwnMessage,
+  isServiceNotificationMessage,
 } from '../../global/helpers';
-import useLang from '../../hooks/useLang';
-import type { MessageDateGroup } from './helpers/groupMessages';
+import buildClassName from '../../util/buildClassName';
+import { formatHumanDate } from '../../util/dates/dateFormat';
+import { compact } from '../../util/iteratees';
 import { isAlbum } from './helpers/groupMessages';
 import { preventMessageInputBlur } from './helpers/preventMessageInputBlur';
-import useScrollHooks from './hooks/useScrollHooks';
-import useMessageObservers from './hooks/useMessageObservers';
-import usePrevious from '../../hooks/usePrevious';
 
-import Message from './message/Message';
-import SponsoredMessage from './message/SponsoredMessage';
+import useDerivedSignal from '../../hooks/useDerivedSignal';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
+import useMessageObservers from './hooks/useMessageObservers';
+import useScrollHooks from './hooks/useScrollHooks';
+
 import ActionMessage from './ActionMessage';
+import Message from './message/Message';
+import SenderGroupContainer from './message/SenderGroupContainer';
+import SponsoredMessage from './message/SponsoredMessage';
+import MessageListBotInfo from './MessageListBotInfo';
 
 interface OwnProps {
-  isCurrentUserPremium?: boolean;
+  canShowAds?: boolean;
   chatId: string;
-  threadId: number;
+  threadId: ThreadId;
   messageIds: number[];
   messageGroups: MessageDateGroup[];
   getContainerHeight: Signal<number | undefined>;
@@ -38,6 +46,7 @@ interface OwnProps {
   isUnread: boolean;
   withUsers: boolean;
   isChannelChat: boolean | undefined;
+  isEmptyThread?: boolean;
   isComments?: boolean;
   noAvatars: boolean;
   containerRef: RefObject<HTMLDivElement>;
@@ -46,19 +55,20 @@ interface OwnProps {
   memoFirstUnreadIdRef: { current: number | undefined };
   type: MessageListType;
   isReady: boolean;
-  threadTopMessageId: number | undefined;
   hasLinkedChat: boolean | undefined;
   isSchedule: boolean;
+  shouldRenderBotInfo?: boolean;
   noAppearanceAnimation: boolean;
-  onFabToggle: AnyToVoidFunction;
+  isSavedDialog?: boolean;
+  onScrollDownToggle: BooleanToVoidFunction;
   onNotchToggle: AnyToVoidFunction;
-  onPinnedIntersectionChange: PinnedIntersectionChangedCallback;
+  onIntersectPinnedMessage: OnIntersectPinnedMessage;
 }
 
 const UNREAD_DIVIDER_CLASS = 'unread-divider';
 
 const MessageListContent: FC<OwnProps> = ({
-  isCurrentUserPremium,
+  canShowAds,
   chatId,
   threadId,
   messageIds,
@@ -67,6 +77,7 @@ const MessageListContent: FC<OwnProps> = ({
   isViewportNewest,
   isUnread,
   isComments,
+  isEmptyThread,
   withUsers,
   isChannelChat,
   noAvatars,
@@ -76,23 +87,30 @@ const MessageListContent: FC<OwnProps> = ({
   memoFirstUnreadIdRef,
   type,
   isReady,
-  threadTopMessageId,
   hasLinkedChat,
   isSchedule,
+  shouldRenderBotInfo,
   noAppearanceAnimation,
-  onFabToggle,
+  isSavedDialog,
+  onScrollDownToggle,
   onNotchToggle,
-  onPinnedIntersectionChange,
+  onIntersectPinnedMessage,
 }) => {
   const { openHistoryCalendar } = getActions();
+
+  const getIsHeavyAnimating2 = getIsHeavyAnimating;
+  const getIsReady = useDerivedSignal(() => isReady && !getIsHeavyAnimating2(), [isReady, getIsHeavyAnimating2]);
+
+  const areDatesClickable = !isSavedDialog && !isSchedule;
 
   const {
     observeIntersectionForReading,
     observeIntersectionForLoading,
     observeIntersectionForPlaying,
-  } = useMessageObservers(type, containerRef, memoFirstUnreadIdRef, onPinnedIntersectionChange, chatId);
+  } = useMessageObservers(type, containerRef, memoFirstUnreadIdRef, onIntersectPinnedMessage, chatId);
 
   const {
+    withHistoryTriggers,
     backwardsTriggerRef,
     forwardsTriggerRef,
     fabTriggerRef,
@@ -103,12 +121,12 @@ const MessageListContent: FC<OwnProps> = ({
     getContainerHeight,
     isViewportNewest,
     isUnread,
-    onFabToggle,
+    onScrollDownToggle,
     onNotchToggle,
     isReady,
   );
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const unreadDivider = (
     <div className={buildClassName(UNREAD_DIVIDER_CLASS, 'local-action-message')} key="unread-messages">
@@ -120,17 +138,15 @@ const MessageListContent: FC<OwnProps> = ({
   }, 0);
   let appearanceIndex = 0;
 
-  const prevMessageIds = usePrevious(messageIds);
+  const prevMessageIds = usePreviousDeprecated(messageIds);
   const isNewMessage = Boolean(
     messageIds && prevMessageIds && messageIds[messageIds.length - 2] === prevMessageIds[prevMessageIds.length - 1],
   );
 
-  const dateGroups = messageGroups.map((
-    dateGroup: MessageDateGroup,
-    dateGroupIndex: number,
-    dateGroupsArray: MessageDateGroup[],
-  ) => {
-    const senderGroups = dateGroup.senderGroups.map((
+  function calculateSenderGroups(
+    dateGroup: MessageDateGroup, dateGroupIndex: number, dateGroupsArray: MessageDateGroup[],
+  ) {
+    return dateGroup.senderGroups.map((
       senderGroup,
       senderGroupIndex,
       senderGroupsArray,
@@ -154,7 +170,7 @@ const MessageListContent: FC<OwnProps> = ({
             message={message}
             threadId={threadId}
             messageListType={type}
-            isInsideTopic={Boolean(threadId && threadId !== MAIN_THREAD_ID)}
+            isInsideTopic={Boolean(threadId && threadId !== MAIN_THREAD_ID && !isSavedDialog)}
             observeIntersectionForReading={observeIntersectionForReading}
             observeIntersectionForLoading={observeIntersectionForLoading}
             observeIntersectionForPlaying={observeIntersectionForPlaying}
@@ -162,14 +178,14 @@ const MessageListContent: FC<OwnProps> = ({
             appearanceOrder={messageCountToAnimate - ++appearanceIndex}
             isJustAdded={isLastInList && isNewMessage}
             isLastInList={isLastInList}
-            onPinnedIntersectionChange={onPinnedIntersectionChange}
+            onIntersectPinnedMessage={onIntersectPinnedMessage}
           />,
         ]);
       }
 
       let currentDocumentGroupId: string | undefined;
 
-      return senderGroup.map((
+      const senderGroupElements = senderGroup.map((
         messageOrAlbum,
         messageIndex,
       ) => {
@@ -185,6 +201,7 @@ const MessageListContent: FC<OwnProps> = ({
 
         const documentGroupId = !isMessageAlbum && message.groupedId ? message.groupedId : undefined;
         const nextDocumentGroupId = nextMessage && !isAlbum(nextMessage) ? nextMessage.groupedId : undefined;
+        const isTopicTopMessage = message.id === threadId;
 
         const position = {
           isFirstInGroup: messageIndex === 0,
@@ -206,8 +223,6 @@ const MessageListContent: FC<OwnProps> = ({
 
         const noComments = hasLinkedChat === false || !isChannelChat;
 
-        const isTopicTopMessage = message.id === threadTopMessageId;
-
         return compact([
           message.id === memoUnreadDividerBeforeIdRef.current && unreadDivider,
           <Message
@@ -223,7 +238,7 @@ const MessageListContent: FC<OwnProps> = ({
             threadId={threadId}
             messageListType={type}
             noComments={noComments}
-            noReplies={!noComments || threadId !== MAIN_THREAD_ID}
+            noReplies={!noComments || threadId !== MAIN_THREAD_ID || type === 'scheduled'}
             appearanceOrder={messageCountToAnimate - ++appearanceIndex}
             isJustAdded={position.isLastInList && isNewMessage}
             isFirstInGroup={position.isFirstInGroup}
@@ -232,29 +247,69 @@ const MessageListContent: FC<OwnProps> = ({
             isLastInDocumentGroup={position.isLastInDocumentGroup}
             isLastInList={position.isLastInList}
             memoFirstUnreadIdRef={memoFirstUnreadIdRef}
-            onPinnedIntersectionChange={onPinnedIntersectionChange}
+            onIntersectPinnedMessage={onIntersectPinnedMessage}
+            getIsMessageListReady={getIsReady}
           />,
-          message.id === threadTopMessageId && (
+          message.id === threadId && (
             <div className="local-action-message" key="discussion-started">
-              <span>{lang('DiscussionStarted')}</span>
+              <span>{lang(isEmptyThread
+                ? (isComments ? 'NoComments' : 'NoReplies') : 'DiscussionStarted')}
+              </span>
             </div>
           ),
         ]);
       }).flat();
+
+      if (!withUsers) return senderGroupElements;
+
+      const lastMessageOrAlbum = senderGroup[senderGroup.length - 1];
+      const lastMessage = isAlbum(lastMessageOrAlbum) ? lastMessageOrAlbum.mainMessage : lastMessageOrAlbum;
+      const lastMessageId = getMessageOriginalId(lastMessage);
+
+      const isTopicTopMessage = lastMessage.id === threadId;
+      const isOwn = isOwnMessage(lastMessage);
+
+      const firstMessageOrAlbum = senderGroup[0];
+      const firstMessage = isAlbum(firstMessageOrAlbum) ? firstMessageOrAlbum.mainMessage : firstMessageOrAlbum;
+      const firstMessageId = getMessageOriginalId(firstMessage);
+
+      const key = `${firstMessageId}-${lastMessageId}`;
+      const id = (firstMessageId === lastMessageId) ? `message-group-${firstMessageId}`
+        : `message-group-${firstMessageId}-${lastMessageId}`;
+
+      const withAvatar = withUsers && !isOwn && (!isTopicTopMessage || !isComments);
+      return (
+        <SenderGroupContainer
+          key={key}
+          id={id}
+          message={lastMessage}
+          withAvatar={withAvatar}
+        >
+          {senderGroupElements}
+        </SenderGroupContainer>
+      );
     });
+  }
+
+  const dateGroups = messageGroups.map((
+    dateGroup: MessageDateGroup,
+    dateGroupIndex: number,
+    dateGroupsArray: MessageDateGroup[],
+  ) => {
+    const senderGroups = calculateSenderGroups(dateGroup, dateGroupIndex, dateGroupsArray);
 
     return (
       <div
-        className="message-date-group"
+        className={buildClassName('message-date-group', dateGroupIndex === 0 && 'first-message-date-group')}
         key={dateGroup.datetime}
         onMouseDown={preventMessageInputBlur}
         teactFastList
       >
         <div
-          className={buildClassName('sticky-date', !isSchedule && 'interactive')}
+          className={buildClassName('sticky-date', areDatesClickable && 'interactive')}
           key="date-header"
           onMouseDown={preventMessageInputBlur}
-          onClick={!isSchedule ? () => openHistoryCalendar({ selectedAt: dateGroup.datetime }) : undefined}
+          onClick={areDatesClickable ? () => openHistoryCalendar({ selectedAt: dateGroup.datetime }) : undefined}
         >
           <span dir="auto">
             {isSchedule && dateGroup.originalDate === SCHEDULED_WHEN_ONLINE && (
@@ -273,21 +328,30 @@ const MessageListContent: FC<OwnProps> = ({
 
   return (
     <div className="messages-container" teactFastList>
-      <div ref={backwardsTriggerRef} key="backwards-trigger" className="backwards-trigger" />
+      {withHistoryTriggers && <div ref={backwardsTriggerRef} key="backwards-trigger" className="backwards-trigger" />}
+      {shouldRenderBotInfo && <MessageListBotInfo isInMessageList key={`bot_info_${chatId}`} chatId={chatId} />}
       {dateGroups.flat()}
-      {!isCurrentUserPremium && isViewportNewest && (
-        <SponsoredMessage key={chatId} chatId={chatId} containerRef={containerRef} />
+      {withHistoryTriggers && (
+        <div
+          ref={forwardsTriggerRef}
+          key="forwards-trigger"
+          className="forwards-trigger"
+        />
       )}
-      <div
-        ref={forwardsTriggerRef}
-        key="forwards-trigger"
-        className="forwards-trigger"
-      />
       <div
         ref={fabTriggerRef}
         key="fab-trigger"
         className="fab-trigger"
       />
+      {canShowAds && isViewportNewest && (
+        <SponsoredMessage
+          key={chatId}
+          chatId={chatId}
+          containerRef={containerRef}
+          observeIntersectionForLoading={observeIntersectionForLoading}
+          observeIntersectionForPlaying={observeIntersectionForPlaying}
+        />
+      )}
     </div>
   );
 };

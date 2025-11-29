@@ -1,14 +1,15 @@
 import type { ApiChat, ApiMessage, ApiUser } from '../../../../api/types';
+import type { OldLangFn } from '../../../../hooks/useOldLang';
+
 import {
   getChatTitle,
-  getSenderTitle,
-  isUserId,
+  getPeerTitle,
   isChatGroup,
+  isUserId,
 } from '../../../../global/helpers';
-import type { LangFn } from '../../../../hooks/useLang';
 
 export function getSenderName(
-  lang: LangFn, message: ApiMessage, chatsById: Record<string, ApiChat>, usersById: Record<string, ApiUser>,
+  lang: OldLangFn, message: ApiMessage, chatsById: Record<string, ApiChat>, usersById: Record<string, ApiUser>,
 ) {
   const { senderId } = message;
   if (!senderId) {
@@ -17,11 +18,11 @@ export function getSenderName(
 
   const sender = isUserId(senderId) ? usersById[senderId] : chatsById[senderId];
 
-  let senderName = getSenderTitle(lang, sender);
+  let senderName = getPeerTitle(lang, sender);
 
   const chat = chatsById[message.chatId];
   if (chat) {
-    if (isUserId(senderId) && (sender as ApiUser).isSelf) {
+    if ('isSelf' in sender && sender.isSelf) {
       senderName = `${lang('FromYou')} → ${getChatTitle(lang, chat)}`;
     } else if (isChatGroup(chat)) {
       senderName += ` → ${getChatTitle(lang, chat)}`;

@@ -1,22 +1,31 @@
-/* eslint-disable eslint-multitab-tt/set-global-only-variable */
 import type { FC, FC_withDebug, Props } from './teact';
-import React, { useEffect, useState } from './teact';
-import { requestMeasure } from '../fasterdom/fasterdom';
 
 import { DEBUG, DEBUG_MORE } from '../../config';
-import useForceUpdate from '../../hooks/useForceUpdate';
-import generateIdFor from '../../util/generateIdFor';
-import { throttleWithTickEnd } from '../../util/schedulers';
-import arePropsShallowEqual, { getUnequalProps } from '../../util/arePropsShallowEqual';
-import { orderBy } from '../../util/iteratees';
+import arePropsShallowEqual, { logUnequalProps } from '../../util/arePropsShallowEqual';
 import { handleError } from '../../util/handleError';
-import { isHeavyAnimating } from '../../hooks/useHeavyAnimationCheck';
+import { orderBy } from '../../util/iteratees';
+import { throttleWithTickEnd } from '../../util/schedulers';
+import React, { DEBUG_resolveComponentName, getIsHeavyAnimating, useUnmountCleanup } from './teact';
+
+import useForceUpdate from '../../hooks/useForceUpdate';
+import useUniqueId from '../../hooks/useUniqueId';
 
 export default React;
 
+interface Container {
+  mapStateToProps: MapStateToProps<any>;
+  activationFn?: ActivationFn<any>;
+  stuckTo?: any;
+  ownProps: Props;
+  mappedProps?: Props;
+  forceUpdate: Function;
+  DEBUG_updates: number;
+  DEBUG_componentName: string;
+}
+
 type GlobalState =
   AnyLiteral
-  & { DEBUG_capturedId?: number };
+  & { DEBUG_randomId?: number };
 type ActionNames = string;
 type ActionPayload = any;
 
@@ -24,7 +33,7 @@ export interface ActionOptions {
   forceOnHeavyAnimation?: boolean;
   // Workaround for iOS gesture history navigation
   forceSyncOnIOs?: boolean;
-  noUpdate?: boolean;
+  forceOutdated?: boolean;
 }
 
 type Actions = Record<ActionNames, (payload?: ActionPayload, options?: ActionOptions) => void>;
@@ -35,68 +44,57 @@ type ActionHandler = (
   payload: any,
 ) => GlobalState | void | Promise<void>;
 
-type DetachWhenChanged = (current: any) => void;
-type MapStateToProps<OwnProps = undefined> = (
-  (global: GlobalState, ownProps: OwnProps, detachWhenChanged: DetachWhenChanged) => AnyLiteral
-  );
+type MapStateToProps<OwnProps = undefined> = (global: GlobalState, ownProps: OwnProps) => AnyLiteral;
+type StickToFirstFn = (value: any) => boolean;
+type ActivationFn<OwnProps = undefined> = (
+  global: GlobalState, ownProps: OwnProps, stickToFirst: StickToFirstFn,
+) => boolean;
 
-let currentGlobal = {} as GlobalState;
+let currentGlobal = {
+  isInited: false,
+} as GlobalState;
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
-let DEBUG_currentCapturedId: number | undefined;
+let DEBUG_currentRandomId: number | undefined;
 // eslint-disable-next-line @typescript-eslint/naming-convention
-const DEBUG_releaseCapturedIdThrottled = throttleWithTickEnd(() => {
-  DEBUG_currentCapturedId = undefined;
+const DEBUG_invalidateGlobalOnTickEnd = throttleWithTickEnd(() => {
+  DEBUG_currentRandomId = Math.random();
 });
 
 const actionHandlers: Record<string, ActionHandler[]> = {};
 const callbacks: Function[] = [updateContainers];
-const immediateCallbacks: Function[] = [];
 const actions = {} as Actions;
-const containers = new Map<string, {
-  mapStateToProps: MapStateToProps<any>;
-  ownProps: Props;
-  mappedProps?: Props;
-  forceUpdate: Function;
-  isDetached: boolean;
-  detachReason: any;
-  detachWhenChanged: DetachWhenChanged;
-  DEBUG_updates: number;
-  DEBUG_componentName: string;
-}>();
+const containers = new Map<string, Container>();
 
 const runCallbacksThrottled = throttleWithTickEnd(runCallbacks);
 
 let forceOnHeavyAnimation = true;
 
-function runImmediateCallbacks() {
-  immediateCallbacks.forEach((cb) => cb(currentGlobal));
-}
-
 function runCallbacks() {
   if (forceOnHeavyAnimation) {
     forceOnHeavyAnimation = false;
-  } else if (isHeavyAnimating()) {
-    requestMeasure(runCallbacksThrottled);
+  } else if (getIsHeavyAnimating()) {
+    getIsHeavyAnimating.once(runCallbacksThrottled);
     return;
   }
 
   callbacks.forEach((cb) => cb(currentGlobal));
 }
 
-export function setGlobal(newGlobal?: GlobalState, options?: ActionOptions) {
+export function setUntypedGlobal(newGlobal?: GlobalState, options?: ActionOptions) {
   if (typeof newGlobal === 'object' && newGlobal !== currentGlobal) {
     if (DEBUG) {
-      if (newGlobal.DEBUG_capturedId && newGlobal.DEBUG_capturedId !== DEBUG_currentCapturedId) {
+      if (
+        !options?.forceOutdated
+        && newGlobal.DEBUG_randomId && newGlobal.DEBUG_randomId !== DEBUG_currentRandomId
+      ) {
         throw new Error('[TeactN.setGlobal] Attempt to set an outdated global');
       }
 
-      DEBUG_currentCapturedId = undefined;
+      DEBUG_currentRandomId = Math.random();
     }
 
     currentGlobal = newGlobal;
-
-    if (!options?.noUpdate) runImmediateCallbacks();
 
     if (options?.forceSyncOnIOs) {
       forceOnHeavyAnimation = true;
@@ -111,21 +109,24 @@ export function setGlobal(newGlobal?: GlobalState, options?: ActionOptions) {
   }
 }
 
-export function getGlobal() {
+export function getUntypedGlobal() {
   if (DEBUG) {
-    DEBUG_currentCapturedId = Math.random();
     currentGlobal = {
       ...currentGlobal,
-      DEBUG_capturedId: DEBUG_currentCapturedId,
+      DEBUG_randomId: DEBUG_currentRandomId,
     };
-    DEBUG_releaseCapturedIdThrottled();
+    DEBUG_invalidateGlobalOnTickEnd();
   }
 
   return currentGlobal;
 }
 
-export function getActions() {
+export function getUntypedActions() {
   return actions;
+}
+
+export function forceOnHeavyAnimationOnce() {
+  forceOnHeavyAnimation = true;
 }
 
 let actionQueue: NoneToVoidFunction[] = [];
@@ -133,12 +134,13 @@ let actionQueue: NoneToVoidFunction[] = [];
 function handleAction(name: string, payload?: ActionPayload, options?: ActionOptions) {
   actionQueue.push(() => {
     actionHandlers[name]?.forEach((handler) => {
-      const response = handler(DEBUG ? getGlobal() : currentGlobal, actions, payload);
+      const response = handler(DEBUG ? getUntypedGlobal() : currentGlobal, actions, payload);
       if (!response || typeof response.then === 'function') {
         return;
       }
 
-      setGlobal(response as GlobalState, options);
+      // eslint-disable-next-line eslint-multitab-tt/set-global-only-variable
+      setUntypedGlobal(response as GlobalState, options);
     });
   });
 
@@ -164,21 +166,17 @@ function updateContainers() {
   // eslint-disable-next-line no-restricted-syntax
   for (const container of containers.values()) {
     const {
-      mapStateToProps, ownProps, mappedProps, forceUpdate, isDetached, detachWhenChanged,
+      mapStateToProps, ownProps, mappedProps, forceUpdate,
     } = container;
 
-    if (isDetached) {
+    if (!activateContainer(container, currentGlobal, ownProps)) {
       continue;
     }
 
     let newMappedProps;
 
     try {
-      newMappedProps = mapStateToProps(currentGlobal, ownProps, detachWhenChanged);
-
-      if (container.isDetached) {
-        continue;
-      }
+      newMappedProps = mapStateToProps(currentGlobal, ownProps);
     } catch (err: any) {
       handleError(err);
 
@@ -197,12 +195,10 @@ function updateContainers() {
 
     if (Object.keys(newMappedProps).length && !arePropsShallowEqual(mappedProps!, newMappedProps)) {
       if (DEBUG_MORE) {
-        // eslint-disable-next-line no-console
-        console.log(
-          '[TeactN] Will update',
-          container.DEBUG_componentName,
-          'caused by',
-          getUnequalProps(mappedProps!, newMappedProps).join(', '),
+        logUnequalProps(
+          mappedProps!,
+          newMappedProps,
+          `[TeactN] Will update ${container.DEBUG_componentName} caused by:`,
         );
       }
 
@@ -222,7 +218,7 @@ function updateContainers() {
   }
 }
 
-export function addActionHandler(name: ActionNames, handler: ActionHandler) {
+export function addUntypedActionHandler(name: ActionNames, handler: ActionHandler) {
   if (!actionHandlers[name]) {
     actionHandlers[name] = [];
 
@@ -234,51 +230,37 @@ export function addActionHandler(name: ActionNames, handler: ActionHandler) {
   actionHandlers[name].push(handler);
 }
 
-export function addCallback(cb: Function, isImmediate = false) {
-  (isImmediate ? immediateCallbacks : callbacks).push(cb);
+export function addCallback(cb: Function) {
+  callbacks.push(cb);
 }
 
-export function removeCallback(cb: Function, isImmediate = false) {
-  const index = (isImmediate ? immediateCallbacks : callbacks).indexOf(cb);
+export function removeCallback(cb: Function) {
+  const index = callbacks.indexOf(cb);
   if (index !== -1) {
-    (isImmediate ? immediateCallbacks : callbacks).splice(index, 1);
+    callbacks.splice(index, 1);
   }
 }
 
-export function withGlobal<OwnProps extends AnyLiteral>(
+export function withUntypedGlobal<OwnProps extends AnyLiteral>(
   mapStateToProps: MapStateToProps<OwnProps> = () => ({}),
+  activationFn?: ActivationFn<OwnProps>,
 ) {
   return (Component: FC) => {
-    return function TeactNContainer(props: OwnProps) {
-      (TeactNContainer as FC_withDebug).DEBUG_contentComponentName = Component.name;
-
-      const [id] = useState(generateIdFor(containers));
+    function TeactNContainer(props: OwnProps) {
+      const id = useUniqueId();
       const forceUpdate = useForceUpdate();
 
-      useEffect(() => {
-        return () => {
-          containers.delete(id);
-        };
-      }, [id]);
+      useUnmountCleanup(() => {
+        containers.delete(id);
+      });
 
       let container = containers.get(id)!;
       if (!container) {
         container = {
           mapStateToProps,
+          activationFn,
           ownProps: props,
           forceUpdate,
-          isDetached: false,
-          detachReason: undefined,
-          // This allows to ignore changes in global during animation before unmount
-          detachWhenChanged: (current) => {
-            const { detachReason } = container!;
-
-            if (detachReason === undefined && current !== undefined) {
-              container!.detachReason = current;
-            } else if (detachReason !== undefined && detachReason !== current) {
-              container!.isDetached = true;
-            }
-          },
           DEBUG_updates: 0,
           DEBUG_componentName: Component.name,
         };
@@ -286,22 +268,41 @@ export function withGlobal<OwnProps extends AnyLiteral>(
         containers.set(id, container);
       }
 
-      if (!container.mappedProps || !arePropsShallowEqual(container.ownProps, props)) {
-        container.ownProps = props;
-
-        if (!container.isDetached) {
-          try {
-            container.mappedProps = mapStateToProps(currentGlobal, props, container.detachWhenChanged);
-          } catch (err: any) {
-            handleError(err);
-          }
+      if (!container.mappedProps || (
+        !arePropsShallowEqual(container.ownProps, props) && activateContainer(container, currentGlobal, props)
+      )) {
+        try {
+          container.mappedProps = mapStateToProps(currentGlobal, props);
+        } catch (err: any) {
+          handleError(err);
         }
       }
 
+      container.ownProps = props;
+
       // eslint-disable-next-line react/jsx-props-no-spreading
       return <Component {...container.mappedProps} {...props} />;
-    };
+    }
+
+    (TeactNContainer as FC_withDebug).DEBUG_contentComponentName = DEBUG_resolveComponentName(Component);
+
+    return TeactNContainer;
   };
+}
+
+function activateContainer(container: Container, global: GlobalState, props: Props) {
+  const { activationFn, stuckTo } = container;
+  if (!activationFn) {
+    return true;
+  }
+
+  return activationFn(global, props, (stickTo: any) => {
+    if (stickTo && !stuckTo) {
+      container.stuckTo = stickTo;
+    }
+
+    return stickTo && (!stuckTo || stuckTo === stickTo);
+  });
 }
 
 export function typify<
@@ -329,23 +330,23 @@ export function typify<
   };
 
   return {
-    getGlobal: getGlobal as <T extends ProjectGlobalState>() => T,
-    setGlobal: setGlobal as (state: ProjectGlobalState, options?: ActionOptions) => void,
-    getActions: getActions as () => ProjectActions,
-    addActionHandler: addActionHandler as <ActionName extends ProjectActionNames>(
+    getGlobal: getUntypedGlobal as <T extends ProjectGlobalState>() => T,
+    setGlobal: setUntypedGlobal as (state: ProjectGlobalState, options?: ActionOptions) => void,
+    getActions: getUntypedActions as () => ProjectActions,
+    addActionHandler: addUntypedActionHandler as <ActionName extends ProjectActionNames>(
       name: ActionName,
       handler: ActionHandlers[ActionName],
     ) => void,
-    withGlobal: withGlobal as <OwnProps extends AnyLiteral>(
-      mapStateToProps: (
-        (global: ProjectGlobalState, ownProps: OwnProps, detachWhenChanged: DetachWhenChanged) => AnyLiteral),
+    withGlobal: withUntypedGlobal as <OwnProps extends AnyLiteral>(
+      mapStateToProps: (global: ProjectGlobalState, ownProps: OwnProps) => AnyLiteral,
+      activationFn?: (global: ProjectGlobalState, ownProps: OwnProps, stickToFirst: StickToFirstFn) => boolean,
     ) => (Component: FC) => FC<OwnProps>,
   };
 }
 
 if (DEBUG) {
-  (window as any).getGlobal = getGlobal;
-  (window as any).setGlobal = setGlobal;
+  (window as any).getGlobal = getUntypedGlobal;
+  (window as any).setGlobal = setUntypedGlobal;
 
   document.addEventListener('dblclick', () => {
     // eslint-disable-next-line no-console

@@ -1,15 +1,13 @@
 {
   "extends": [
-    "react-app",
-    "plugin:teactn/recommended",
+    "teact-app",
     "airbnb",
     "airbnb-typescript"
   ],
   "plugins": [
-    "jsx-expressions",
     "no-async-without-await",
-    "teactn",
     "no-null",
+    "simple-import-sort",
     "react-hooks-static-deps",
     "eslint-multitab-tt"
   ],
@@ -30,7 +28,8 @@
       "error",
       {
         "code": 120,
-        "ignoreComments": true
+        "ignoreComments": true,
+        "ignorePattern": "\\sd=\".+\"" // Ignore lines with "d" attribute
       }
     ],
     "array-bracket-newline": [
@@ -45,12 +44,13 @@
     "react-hooks-static-deps/exhaustive-deps": [
       "error",
       {
-        "additionalHooks": "(useSyncEffect|useAsync|useDebouncedCallback|useThrottledCallback|useEffectWithPrevDeps|useLayoutEffectWithPrevDeps|useDerivedState|useDerivedSignal|useThrottledResolver|useDebouncedResolver)$",
+        "additionalHooks": "(useSyncEffect|useAsync|useDebouncedCallback|useThrottledCallback|useEffectWithPrevDeps|useLayoutEffectWithPrevDeps|useDerivedState|useDerivedSignal|useThrottledResolver|useDebouncedResolver|useThrottleForHeavyAnimation)$",
         "staticHooks": {
           "getActions": true,
           "useFlag": [false, true, true],
           "useForceUpdate": true,
-          "useReducer": [false, true]
+          "useReducer": [false, true],
+          "useLastCallback": true
         }
       }
     ],
@@ -114,13 +114,8 @@
         "ignoreDOMComponents": true
       }
     ],
-    "jsx-expressions/strict-logical-expressions": [
-      "error",
-      {
-        "allowString": true
-      }
-    ],
     "jsx-a11y/click-events-have-key-events": "off",
+    "jsx-a11y/mouse-events-have-key-events": "off",
     "jsx-a11y/no-static-element-interactions": "off",
     "jsx-a11y/label-has-associated-control": "off",
     "jsx-a11y/anchor-is-valid": "off",
@@ -147,10 +142,64 @@
         "disallowTypeAnnotations": false
       }
     ],
-    "teactn/prefer-separate-component-file": "off"
+    "simple-import-sort/imports": [
+      "error",
+      {
+        "groups": [
+          // Side effect imports
+          ["^\\u0000"],
+          // Lib and global imports
+          [
+            "^react",
+            "^@?\\w",
+            "dist(/.*|$)",
+            "^(\\.+/)+(lib/(teact|gramjs))(/.*|$)",
+            "^(\\.+/)+global$"
+          ],
+          // Type imports
+          [
+            "^(\\.+/)+.+\\u0000$",
+            "^(\\.+/|\\w+/)+(types)(/.*|$)",
+            "^(\\.+/|\\w+/)+(types)\\u0000"
+          ],
+          // Config, utils, helpers
+          [
+            "^(\\.+/)+config",
+            "^(\\.+/)+(lib)(?!/(gramjs|teact))(/.*|$)",
+            "^(\\.+/)+global/.+",
+            "^(\\.+/)+(util)(/.*|$)",
+            "^\\.\\.(?!/?$)",
+            "^\\.\\./?$",
+            "^\\./(?=.*/)(?!/?$)",
+            "^\\.(?!/?$)",
+            "^\\./?$"
+          ],
+          // Hooks
+          [
+            ".+(/hooks/)(.*|$)"
+          ],
+          // Components
+          [
+            "\/[A-Z](([a-z]+[A-Z]?)*)"
+          ],
+          // Styles and CSS modules
+          [
+            "^.+\\.s?css$"
+          ],
+          // Assets: images, stickers, etc
+          [
+            "^(\\.+/)+(assets)(/.*|$)"
+          ]
+        ]
+      }
+    ]
   },
   "settings": {
-    "import/resolver": "webpack",
+    "import/resolver": {
+      "webpack": {
+        "extensions": [".js", ".jsx", ".ts", ".tsx"]
+      }
+    },
     "import/core-modules": [
       "fs",
       "path",

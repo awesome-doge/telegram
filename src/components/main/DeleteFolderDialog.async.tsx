@@ -1,8 +1,9 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
-import { Bundles } from '../../util/moduleLoader';
+import React from '../../lib/teact/teact';
 
 import type { OwnProps } from './DeleteFolderDialog';
+
+import { Bundles } from '../../util/moduleLoader';
 
 import useModuleLoader from '../../hooks/useModuleLoader';
 
@@ -14,4 +15,4 @@ const DeleteFolderDialogAsync: FC<OwnProps> = (props) => {
   return DeleteFolderDialog ? <DeleteFolderDialog {...props} /> : undefined;
 };
 
-export default memo(DeleteFolderDialogAsync);
+export default DeleteFolderDialogAsync;

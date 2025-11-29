@@ -1,7 +1,7 @@
-import {
-  useCallback, useEffect, useLayoutEffect, useState,
-} from '../../lib/teact/teact';
+import { useEffect, useLayoutEffect, useState } from '../../lib/teact/teact';
+
 import { getPropertyHexColor } from '../../util/themeStyle';
+import useLastCallback from '../useLastCallback';
 import useResizeObserver from '../useResizeObserver';
 
 // Transition required to detect `color` property change.
@@ -10,10 +10,11 @@ import useResizeObserver from '../useResizeObserver';
 const TRANSITION_PROPERTY = 'color';
 const TRANSITION_STYLE = `50ms ${TRANSITION_PROPERTY} linear`;
 
-export default function useDynamicColorListener(ref: React.RefObject<HTMLElement>, isDisabled?: boolean) {
+export default function useDynamicColorListener(ref: React.RefObject<HTMLElement>,
+  isDisabled?: boolean) {
   const [hexColor, setHexColor] = useState<string | undefined>();
 
-  const updateColor = useCallback(() => {
+  const updateColor = useLastCallback(() => {
     if (!ref.current || isDisabled) {
       setHexColor(undefined);
       return;
@@ -21,7 +22,7 @@ export default function useDynamicColorListener(ref: React.RefObject<HTMLElement
 
     const currentHexColor = getPropertyHexColor(getComputedStyle(ref.current), TRANSITION_PROPERTY);
     setHexColor(currentHexColor);
-  }, [isDisabled, ref]);
+  });
 
   // Element does not receive `transitionend` event if parent has `display: none`.
   // We will receive `resize` event when parent is shown again.

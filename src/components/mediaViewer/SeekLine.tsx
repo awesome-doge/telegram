@@ -1,20 +1,24 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  useRef, useState, useCallback, useEffect, memo, useMemo, useLayoutEffect,
+  memo, useEffect, useLayoutEffect,
+  useMemo, useRef, useSignal, useState,
 } from '../../lib/teact/teact';
 
-import type { BufferedRange } from '../../hooks/useBuffering';
 import type { ApiDimensions } from '../../api/types';
+import type { BufferedRange } from '../../hooks/useBuffering';
 
-import useSignal from '../../hooks/useSignal';
-import useCurrentTimeSignal from './hooks/currentTimeSignal';
-
-import { captureEvents } from '../../util/captureEvents';
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+import { createVideoPreviews, getPreviewDimensions, renderVideoPreview } from '../../lib/video-preview/VideoPreview';
+import { animateNumber } from '../../util/animation';
 import buildClassName from '../../util/buildClassName';
-import { formatMediaDuration } from '../../util/dateFormat';
+import { captureEvents } from '../../util/captureEvents';
+import { formatMediaDuration } from '../../util/dates/dateFormat';
 import { clamp, round } from '../../util/math';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 
-import { createVideoPreviews, renderVideoPreview, getPreviewDimensions } from '../../lib/video-preview/VideoPreview';
+import { useThrottledSignal } from '../../hooks/useAsyncResolvers';
+import useCurrentTimeSignal from '../../hooks/useCurrentTimeSignal';
+import useLastCallback from '../../hooks/useLastCallback';
+import useVideoWaitingSignal from './hooks/useVideoWaitingSignal';
 
 import ShowTransition from '../ui/ShowTransition';
 
@@ -24,7 +28,9 @@ type OwnProps = {
   url?: string;
   duration: number;
   bufferedRanges: BufferedRange[];
+  playbackRate: number;
   isActive?: boolean;
+  isPlaying?: boolean;
   isPreviewDisabled?: boolean;
   isReady: boolean;
   posterSize?: ApiDimensions;
@@ -32,20 +38,27 @@ type OwnProps = {
   onSeekStart: () => void;
 };
 
-const SeekLine: React.FC<OwnProps> = ({
+const LOCK_TIMEOUT = 250;
+let cancelAnimation: Function | undefined;
+
+const SeekLine: FC<OwnProps> = ({
   duration,
   bufferedRanges,
   isReady,
   posterSize,
+  playbackRate,
   url,
   isActive,
+  isPlaying,
   isPreviewDisabled,
   onSeek,
   onSeekStart,
 }) => {
   // eslint-disable-next-line no-null/no-null
   const seekerRef = useRef<HTMLDivElement>(null);
-  const [getCurrentTime] = useCurrentTimeSignal();
+  const [getCurrentTimeSignal] = useCurrentTimeSignal();
+  const [getIsWaiting] = useVideoWaitingSignal();
+  const getCurrentTime = useThrottledSignal(getCurrentTimeSignal, LOCK_TIMEOUT);
   const [getSelectedTime, setSelectedTime] = useSignal(getCurrentTime());
   const [getPreviewOffset, setPreviewOffset] = useSignal(0);
   const [getPreviewTime, setPreviewTime] = useSignal(0);
@@ -65,11 +78,11 @@ const SeekLine: React.FC<OwnProps> = ({
     return getPreviewDimensions(posterSize?.width || 0, posterSize?.height || 0);
   }, [posterSize]);
 
-  const setPreview = useCallback((time: number) => {
+  const setPreview = useLastCallback((time: number) => {
     time = Math.floor(time);
     setPreviewTime(time);
     renderVideoPreview(time);
-  }, [setPreviewTime]);
+  });
 
   useEffect(() => {
     if (isPreviewDisabled || !url || !isReady) return undefined;
@@ -81,10 +94,42 @@ const SeekLine: React.FC<OwnProps> = ({
   }, [isActive]);
 
   useEffect(() => {
+    if (cancelAnimation) cancelAnimation();
+    cancelAnimation = undefined;
     if (!isLockedRef.current && !isSeeking) {
-      setSelectedTime(getCurrentTime());
+      const time = getCurrentTime();
+      const remaining = duration - time;
+      cancelAnimation = animateNumber({
+        from: time,
+        to: duration,
+        duration: (remaining * 1000) / playbackRate,
+        onUpdate: setSelectedTime,
+      });
     }
-  }, [getCurrentTime, isSeeking, setSelectedTime]);
+  }, [getCurrentTime, isSeeking, setSelectedTime, playbackRate, duration]);
+
+  useEffect(() => {
+    if (!isPlaying || getIsWaiting()) {
+      if (cancelAnimation) cancelAnimation();
+      cancelAnimation = undefined;
+    }
+  }, [isPlaying, getSelectedTime, getIsWaiting]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      if (cancelAnimation) cancelAnimation();
+      cancelAnimation = undefined;
+      const time = getCurrentTime();
+      const remaining = duration - time;
+      cancelAnimation = animateNumber({
+        from: time,
+        to: duration,
+        duration: (remaining * 1000) / playbackRate,
+        onUpdate: setSelectedTime,
+      });
+    }
+    // eslint-disable-next-line
+  }, [isPlaying, playbackRate, duration]);
 
   useLayoutEffect(() => {
     if (!progressRef.current) return;
@@ -122,7 +167,13 @@ const SeekLine: React.FC<OwnProps> = ({
       return [t, o];
     };
 
+    const stopAnimation = () => {
+      if (cancelAnimation) cancelAnimation();
+      cancelAnimation = undefined;
+    };
+
     const handleSeek = (e: MouseEvent | TouchEvent) => {
+      stopAnimation();
       setPreviewVisible(true);
       ([time, offset] = getPreviewProps(e));
       void setPreview(time);
@@ -131,12 +182,14 @@ const SeekLine: React.FC<OwnProps> = ({
     };
 
     const handleStartSeek = () => {
+      stopAnimation();
       setPreviewVisible(true);
       setIsSeeking(true);
       onSeekStart();
     };
 
     const handleStopSeek = () => {
+      stopAnimation();
       isLockedRef.current = true;
       setPreviewVisible(false);
       setIsSeeking(false);
@@ -145,7 +198,7 @@ const SeekLine: React.FC<OwnProps> = ({
       // Prevent current time updates from overriding the selected time
       setTimeout(() => {
         isLockedRef.current = false;
-      }, 500);
+      }, LOCK_TIMEOUT);
     };
 
     const cleanup = captureEvents(seeker, {
@@ -190,6 +243,7 @@ const SeekLine: React.FC<OwnProps> = ({
     setSelectedTime,
     setIsSeeking,
     isPreviewDisabled,
+    playbackRate,
   ]);
 
   return (
@@ -216,6 +270,7 @@ const SeekLine: React.FC<OwnProps> = ({
           <div
             key={`${start}-${end}`}
             className={styles.buffered}
+            // @ts-ignore
             style={`left: ${start * 100}%; right: ${100 - end * 100}%`}
           />
         ))}

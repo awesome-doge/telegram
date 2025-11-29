@@ -1,4 +1,5 @@
 const isTest = process.env.APP_ENV === 'test';
+const isMocked = Boolean(process.env.APP_MOCKED_CLIENT);
 
 module.exports = {
   presets: [
@@ -13,10 +14,9 @@ module.exports = {
     ],
   ],
   plugins: [
-    '@babel/plugin-proposal-class-properties',
-    '@babel/plugin-proposal-nullish-coalescing-operator',
+    '@babel/plugin-transform-class-properties',
     '@babel/plugin-syntax-nullish-coalescing-operator',
-    '@babel/plugin-proposal-logical-assignment-operators',
-    ...(isTest ? ['babel-plugin-transform-import-meta'] : []),
+    '@babel/plugin-transform-logical-assignment-operators',
+    ...(isTest && !isMocked ? ['babel-plugin-transform-import-meta'] : []),
   ],
 };

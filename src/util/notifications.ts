@@ -1,18 +1,19 @@
-import { callApi } from '../api/gramjs';
+import { getActions, getGlobal, setGlobal } from '../global';
+
 import type {
-  ApiChat, ApiMessage, ApiPhoneCall, ApiUser, ApiUserReaction,
+  ApiChat, ApiMessage, ApiPeer, ApiPeerReaction,
+  ApiPhoneCall, ApiUser,
 } from '../api/types';
 import { ApiMediaFormat } from '../api/types';
-import { renderActionMessageText } from '../components/common/helpers/renderActionMessageText';
+
 import { APP_NAME, DEBUG, IS_TEST } from '../config';
-import { getActions, getGlobal, setGlobal } from '../global';
 import {
   getChatAvatarHash,
   getChatTitle,
   getMessageAction,
   getMessageRecentReaction,
   getMessageSenderName,
-  getMessageSummaryText,
+  getMessageStatefulContent,
   getPrivateChatUserId,
   getUserFullName,
   isActionMessage,
@@ -20,20 +21,26 @@ import {
   selectIsChatMuted,
   selectShouldShowMessagePreview,
 } from '../global/helpers';
+import { getMessageSummaryText } from '../global/helpers/messageSummary';
+import { getMessageReplyInfo } from '../global/helpers/replies';
 import { addNotifyExceptions, replaceSettings } from '../global/reducers';
 import {
+  selectChat,
   selectChatMessage,
   selectCurrentMessageList,
-  selectTopicFromMessage,
+  selectIsChatWithSelf,
   selectNotifyExceptions,
   selectNotifySettings,
+  selectTopicFromMessage,
   selectUser,
 } from '../global/selectors';
-import { IS_SERVICE_WORKER_SUPPORTED, IS_TOUCH_ENV } from './windowEnvironment';
-import { translate } from './langProvider';
-import * as mediaLoader from './mediaLoader';
-import { debounce } from './schedulers';
+import { callApi } from '../api/gramjs';
+import { renderActionMessageText } from '../components/common/helpers/renderActionMessageText';
 import { buildCollectionByKey } from './iteratees';
+import * as mediaLoader from './mediaLoader';
+import { oldTranslate } from './oldLangProvider';
+import { debounce } from './schedulers';
+import { IS_ELECTRON, IS_SERVICE_WORKER_SUPPORTED, IS_TOUCH_ENV } from './windowEnvironment';
 
 function getDeviceToken(subscription: PushSubscription) {
   const data = subscription.toJSON();
@@ -44,7 +51,8 @@ function getDeviceToken(subscription: PushSubscription) {
 }
 
 function checkIfPushSupported() {
-  if (!IS_SERVICE_WORKER_SUPPORTED) return false;
+  if (!IS_SERVICE_WORKER_SUPPORTED || IS_ELECTRON) return false;
+
   if (!('showNotification' in ServiceWorkerRegistration.prototype)) {
     if (DEBUG) {
       // eslint-disable-next-line no-console
@@ -70,6 +78,7 @@ function checkIfPushSupported() {
     }
     return false;
   }
+
   return true;
 }
 
@@ -291,7 +300,9 @@ function checkIfShouldNotify(chat: ApiChat, message: Partial<ApiMessage>) {
   if (!areSettingsLoaded) return false;
   const global = getGlobal();
   const isMuted = selectIsChatMuted(chat, selectNotifySettings(global), selectNotifyExceptions(global));
-  if ((isMuted && !message.isMentioned) || chat.isNotJoined || !chat.isListed) {
+  const shouldNotifyAboutMessage = !message.content?.action?.phoneCall;
+  if (isMuted || !shouldNotifyAboutMessage
+     || chat.isNotJoined || !chat.isListed || selectIsChatWithSelf(global, chat.id)) {
     return false;
   }
   // On touch devices show notifications when chat is not active
@@ -306,22 +317,22 @@ function checkIfShouldNotify(chat: ApiChat, message: Partial<ApiMessage>) {
   return !document.hasFocus();
 }
 
-function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: ApiUserReaction) {
+function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: ApiPeerReaction) {
   const global = getGlobal();
-  const {
-    replyToMessageId,
-  } = message;
   let {
     senderId,
   } = message;
   const hasReaction = Boolean(reaction);
-  if (hasReaction) senderId = reaction.userId;
+  if (hasReaction) senderId = reaction.peerId;
 
   const { isScreenLocked } = global.passcode;
-  const messageSender = senderId ? selectUser(global, senderId) : undefined;
+  const messageSenderChat = senderId ? selectChat(global, senderId) : undefined;
+  const messageSenderUser = senderId ? selectUser(global, senderId) : undefined;
   const messageAction = getMessageAction(message as ApiMessage);
-  const actionTargetMessage = messageAction && replyToMessageId
-    ? selectChatMessage(global, chat.id, replyToMessageId)
+
+  const replyInfo = getMessageReplyInfo(message);
+  const actionTargetMessage = messageAction && replyInfo?.replyToMsgId
+    ? selectChatMessage(global, replyInfo?.replyFrom?.fromChatId || chat.id, replyInfo.replyToMsgId)
     : undefined;
   const {
     targetUserIds: actionTargetUserIds,
@@ -342,14 +353,14 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
     !isScreenLocked
     && selectShouldShowMessagePreview(chat, selectNotifySettings(global), selectNotifyExceptions(global))
   ) {
-    if (isActionMessage(message)) {
-      const isChat = chat && (isChatChannel(chat) || message.senderId === message.chatId);
+    const isChat = chat && (isChatChannel(chat) || message.senderId === message.chatId);
 
+    if (isActionMessage(message)) {
       body = renderActionMessageText(
-        translate,
+        oldTranslate,
         message,
-        !isChat ? messageSender : undefined,
-        isChat ? chat : undefined,
+        messageSenderUser,
+        chat,
         actionTargetUsers,
         actionTargetMessage,
         actionTargetChatId,
@@ -358,12 +369,13 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
       ) as string;
     } else {
       // TODO[forums] Support ApiChat
-      const senderName = getMessageSenderName(translate, chat.id, messageSender);
-      let summary = getMessageSummaryText(translate, message, hasReaction, 60);
+      const senderName = getMessageSenderName(oldTranslate, chat.id, isChat ? messageSenderChat : messageSenderUser);
+      const statefulContent = getMessageStatefulContent(global, message);
+      let summary = getMessageSummaryText(oldTranslate, message, statefulContent, hasReaction, 60);
 
       if (hasReaction) {
         const emoji = getReactionEmoji(reaction);
-        summary = translate('PushReactText', [emoji, summary]);
+        summary = oldTranslate('PushReactText', [emoji, summary]);
       }
 
       body = senderName ? `${senderName}: ${summary}` : summary;
@@ -372,7 +384,7 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
     body = 'New message';
   }
 
-  let title = isScreenLocked ? APP_NAME : getChatTitle(translate, chat, isSelf);
+  let title = isScreenLocked ? APP_NAME : getChatTitle(oldTranslate, chat, isSelf);
 
   if (message.isSilent) {
     title += ' 🔕';
@@ -381,7 +393,7 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
   return { title, body };
 }
 
-async function getAvatar(chat: ApiChat | ApiUser) {
+async function getAvatar(chat: ApiPeer) {
   const imageHash = getChatAvatarHash(chat);
   if (!imageHash) return undefined;
   let mediaData = mediaLoader.getFromMemory(imageHash);
@@ -392,12 +404,13 @@ async function getAvatar(chat: ApiChat | ApiUser) {
   return mediaData;
 }
 
-function getReactionEmoji(reaction: ApiUserReaction) {
+function getReactionEmoji(reaction: ApiPeerReaction) {
   let emoji;
-  if ('emoticon' in reaction.reaction) {
+  if (reaction.reaction.type === 'emoji') {
     emoji = reaction.reaction.emoticon;
   }
-  if ('documentId' in reaction.reaction) {
+
+  if (reaction.reaction.type === 'custom') {
     // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
     emoji = getGlobal().customEmojis.byId[reaction.reaction.documentId]?.emoji;
   }
@@ -424,10 +437,11 @@ export async function notifyAboutCall({
   };
 
   if ('vibrate' in navigator) {
+    // @ts-ignore
     options.vibrate = [200, 100, 200];
   }
 
-  const notification = new Notification(translate('VoipIncoming'), options);
+  const notification = new Notification(oldTranslate('VoipIncoming'), options);
 
   notification.onclick = () => {
     notification.close();
@@ -446,7 +460,7 @@ export async function notifyAboutMessage({
   if (!checkIfShouldNotify(chat, message)) return;
   const areNotificationsSupported = checkIfNotificationsSupported();
   if (!hasWebNotifications || !areNotificationsSupported) {
-    if (!message.isSilent && !isReaction) {
+    if (!message.isSilent && !isReaction && !IS_ELECTRON) {
       // Only play sound if web notifications are disabled
       playNotifySoundDebounced(String(message.id) || chat.id);
     }
@@ -462,7 +476,7 @@ export async function notifyAboutMessage({
   if (isReaction && !activeReaction) return;
 
   // If this is a custom emoji reaction we need to make sure it is loaded
-  if (isReaction && activeReaction && 'documentId' in activeReaction.reaction) {
+  if (isReaction && activeReaction && activeReaction.reaction.type === 'custom') {
     await loadCustomEmoji(activeReaction.reaction.documentId);
   }
 
@@ -500,6 +514,7 @@ export async function notifyAboutMessage({
     };
 
     if ('vibrate' in navigator) {
+      // @ts-ignore
       options.vibrate = [200, 100, 200];
     }
 
@@ -520,7 +535,7 @@ export async function notifyAboutMessage({
     // Play sound when notification is displayed
     notification.onshow = () => {
       // TODO Update when reaction badges are implemented
-      if (isReaction || message.isSilent) return;
+      if (isReaction || message.isSilent || IS_ELECTRON) return;
       playNotifySoundDebounced(String(message.id) || chat.id);
     };
   }

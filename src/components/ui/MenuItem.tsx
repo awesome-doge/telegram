@@ -1,16 +1,20 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useCallback } from '../../lib/teact/teact';
+import React from '../../lib/teact/teact';
+
+import type { IconName } from '../../types/icons';
 
 import { IS_TEST } from '../../config';
 import buildClassName from '../../util/buildClassName';
-import useLang from '../../hooks/useLang';
+
 import useAppLayout from '../../hooks/useAppLayout';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+
+import Icon from '../common/icons/Icon';
 
 import './MenuItem.scss';
 
 export type MenuItemProps = {
-  icon?: string;
-  isCharIcon?: boolean;
   customIcon?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
@@ -23,7 +27,14 @@ export type MenuItemProps = {
   destructive?: boolean;
   ariaLabel?: string;
   withWrap?: boolean;
-};
+  withPreventDefaultOnMouseDown?: boolean;
+} & ({
+  icon: 'A' | 'K';
+  isCharIcon: true;
+} | {
+  icon?: IconName;
+  isCharIcon?: false;
+});
 
 const MenuItem: FC<MenuItemProps> = (props) => {
   const {
@@ -41,35 +52,36 @@ const MenuItem: FC<MenuItemProps> = (props) => {
     withWrap,
     onContextMenu,
     clickArg,
+    withPreventDefaultOnMouseDown,
   } = props;
 
-  const lang = useLang();
+  const lang = useOldLang();
   const { isTouchScreen } = useAppLayout();
-  const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const handleClick = useLastCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled || !onClick) {
-      e.stopPropagation();
       e.preventDefault();
-
       return;
     }
-
     onClick(e, clickArg);
-  }, [clickArg, disabled, onClick]);
+  });
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = useLastCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.keyCode !== 13 && e.keyCode !== 32) {
       return;
     }
 
     if (disabled || !onClick) {
-      e.stopPropagation();
       e.preventDefault();
 
       return;
     }
-
     onClick(e, clickArg);
-  }, [clickArg, disabled, onClick]);
+  });
+  const handleMouseDown = useLastCallback((e: React.SyntheticEvent<HTMLDivElement | HTMLAnchorElement>) => {
+    if (withPreventDefaultOnMouseDown) {
+      e.preventDefault();
+    }
+  });
 
   const fullClassName = buildClassName(
     'MenuItem',
@@ -83,10 +95,7 @@ const MenuItem: FC<MenuItemProps> = (props) => {
   const content = (
     <>
       {!customIcon && icon && (
-        <i
-          className={isCharIcon ? 'icon icon-char' : `icon icon-${icon}`}
-          data-char={isCharIcon ? icon : undefined}
-        />
+        <Icon name={isCharIcon ? 'char' : icon} character={isCharIcon ? icon : undefined} />
       )}
       {customIcon}
       {children}
@@ -106,6 +115,7 @@ const MenuItem: FC<MenuItemProps> = (props) => {
         rel="noopener noreferrer"
         dir={lang.isRtl ? 'rtl' : undefined}
         onClick={onClick}
+        onMouseDown={handleMouseDown}
       >
         {content}
       </a>
@@ -119,6 +129,7 @@ const MenuItem: FC<MenuItemProps> = (props) => {
       className={fullClassName}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
+      onMouseDown={handleMouseDown}
       onContextMenu={onContextMenu}
       aria-label={ariaLabel}
       title={ariaLabel}

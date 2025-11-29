@@ -1,29 +1,43 @@
 import { addCallback } from '../../../lib/teact/teactn';
-import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
-import {
-  IS_ANDROID, IS_IOS, IS_MAC_OS, IS_SAFARI, IS_TOUCH_ENV,
-} from '../../../util/windowEnvironment';
-import { setLanguage } from '../../../util/langProvider';
-import switchTheme from '../../../util/switchTheme';
-import {
-  selectTabState, selectNotifySettings, selectTheme, selectPerformanceSettings, selectCanAnimateInterface,
-} from '../../selectors';
-import { startWebsync, stopWebsync } from '../../../util/websync';
-import { subscribe, unsubscribe } from '../../../util/notifications';
-import { clearCaching, setupCaching } from '../../cache';
-import { decryptSessionByCurrentHash } from '../../../util/passcode';
-import { hasStoredSession, storeSession } from '../../../util/sessions';
-import { callApi } from '../../../api/gramjs';
+import type { LangCode } from '../../../types';
 import type { ActionReturnType, GlobalState } from '../../types';
-import { updateTabState } from '../../reducers/tabs';
+
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { subscribe, unsubscribe } from '../../../util/notifications';
+import { oldSetLanguage } from '../../../util/oldLangProvider';
+import { decryptSessionByCurrentHash } from '../../../util/passcode';
 import { applyPerformanceSettings } from '../../../util/perfomanceSettings';
+import { hasStoredSession, storeSession } from '../../../util/sessions';
+import switchTheme from '../../../util/switchTheme';
+import { getSystemTheme, setSystemThemeChangeCallback } from '../../../util/systemTheme';
+import { startWebsync, stopWebsync } from '../../../util/websync';
+import {
+  IS_ANDROID, IS_ELECTRON, IS_IOS, IS_LINUX,
+  IS_MAC_OS, IS_SAFARI, IS_TOUCH_ENV, IS_WINDOWS,
+} from '../../../util/windowEnvironment';
+import { callApi } from '../../../api/gramjs';
+import { clearCaching, setupCaching } from '../../cache';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import { replaceSettings } from '../../reducers';
+import { updateTabState } from '../../reducers/tabs';
+import {
+  selectCanAnimateInterface,
+  selectNotifySettings, selectPerformanceSettings, selectTabState, selectTheme,
+} from '../../selectors';
 
 const HISTORY_ANIMATION_DURATION = 450;
 
-subscribeToSystemThemeChange();
+setSystemThemeChangeCallback((theme) => {
+  // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
+  let global = getGlobal();
+
+  if (!global.isInited || !global.settings.byKey.shouldUseSystemTheme) return;
+
+  global = replaceSettings(global, { theme });
+  setGlobal(global);
+});
 
 addActionHandler('switchMultitabRole', async (global, actions, payload): Promise<void> => {
   const { isMasterTab, tabId = getCurrentTabId() } = payload;
@@ -51,7 +65,7 @@ addActionHandler('switchMultitabRole', async (global, actions, payload): Promise
       storeSession(session, session.userId);
     }
 
-    if (hasStoredSession(true)) {
+    if (hasStoredSession()) {
       setupCaching();
     }
 
@@ -114,10 +128,14 @@ addCallback((global: GlobalState) => {
   }, tabState.id);
 
   const { messageTextSize, language } = global.settings.byKey;
-  const theme = selectTheme(global);
+
+  const globalTheme = selectTheme(global);
+  const systemTheme = getSystemTheme();
+  const theme = global.settings.byKey.shouldUseSystemTheme ? systemTheme : globalTheme;
+
   const performanceType = selectPerformanceSettings(global);
 
-  void setLanguage(language, undefined, true);
+  void oldSetLanguage(language as LangCode, undefined, true);
 
   requestMutation(() => {
     document.documentElement.style.setProperty(
@@ -136,13 +154,24 @@ addCallback((global: GlobalState) => {
       document.body.classList.add('is-android');
     } else if (IS_MAC_OS) {
       document.body.classList.add('is-macos');
+    } else if (IS_WINDOWS) {
+      document.body.classList.add('is-windows');
+    } else if (IS_LINUX) {
+      document.body.classList.add('is-linux');
     }
     if (IS_SAFARI) {
       document.body.classList.add('is-safari');
     }
+    if (IS_ELECTRON) {
+      document.body.classList.add('is-electron');
+    }
   });
 
-  switchTheme(theme, selectCanAnimateInterface(global));
+  const canAnimate = selectCanAnimateInterface(global);
+
+  switchTheme(theme, canAnimate);
+  // Make sure global has the latest theme. Will cause `switchTheme` on change
+  global = replaceSettings(global, { theme });
 
   startWebsync();
 
@@ -188,10 +217,10 @@ addActionHandler('setAuthRememberMe', (global, actions, payload): ActionReturnTy
   };
 });
 
-addActionHandler('clearAuthError', (global): ActionReturnType => {
+addActionHandler('clearAuthErrorKey', (global): ActionReturnType => {
   return {
     ...global,
-    authError: undefined,
+    authErrorKey: undefined,
   };
 });
 
@@ -215,27 +244,3 @@ addActionHandler('disableHistoryAnimations', (global, actions, payload): ActionR
   }, tabId);
   setGlobal(global, { forceSyncOnIOs: true });
 });
-
-function subscribeToSystemThemeChange() {
-  function handleSystemThemeChange() {
-    const currentThemeMatch = document.documentElement.className.match(/theme-(\w+)/);
-    const currentTheme = currentThemeMatch ? currentThemeMatch[1] : 'light';
-    // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
-    let global = getGlobal();
-    const nextTheme = selectTheme(global);
-
-    if (nextTheme !== currentTheme) {
-      switchTheme(nextTheme, selectCanAnimateInterface(global));
-      // Force-update component containers
-      global = { ...global };
-      setGlobal(global);
-    }
-  }
-
-  const mql = window.matchMedia('(prefers-color-scheme: dark)');
-  if (typeof mql.addEventListener === 'function') {
-    mql.addEventListener('change', handleSystemThemeChange);
-  } else if (typeof mql.addListener === 'function') {
-    mql.addListener(handleSystemThemeChange);
-  }
-}

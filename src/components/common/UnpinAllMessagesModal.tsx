@@ -1,10 +1,10 @@
 import type { FC } from '../../lib/teact/teact';
 import React, { memo } from '../../lib/teact/teact';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
-import Modal from '../ui/Modal';
 import Button from '../ui/Button';
+import Modal from '../ui/Modal';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -20,7 +20,7 @@ const UnpinAllMessagesModal: FC<OwnProps> = ({
   onClose,
   onUnpin,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   return (
     <Modal

@@ -1,25 +1,26 @@
+import type { FC, TeactNode } from '../../../lib/teact/teact';
 import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import type { TabState } from '../../../global/types';
 import type { ApiChatFolder } from '../../../api/types';
+import type { TabState } from '../../../global/types';
 
 import { selectChatFolder } from '../../../global/selectors';
+import { renderTextWithEntities } from '../../common/helpers/renderTextWithEntities';
 
-import usePrevious from '../../../hooks/usePrevious';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
 
-import ChatlistNew from './ChatlistNew';
-import ChatlistAlready from './ChatlistAlready';
-import ChatlistDelete from './ChatlistDelete';
 import Modal from '../../ui/Modal';
 import Tab from '../../ui/Tab';
+import ChatlistAlready from './ChatlistAlready';
+import ChatlistDelete from './ChatlistDelete';
+import ChatlistNew from './ChatlistNew';
 
 import styles from './ChatlistModal.module.scss';
 
 export type OwnProps = {
-  info?: TabState['chatlistModal'];
+  modal?: TabState['chatlistModal'];
 };
 
 type StateProps = {
@@ -27,16 +28,16 @@ type StateProps = {
 };
 
 const ChatlistInviteModal: FC<OwnProps & StateProps> = ({
-  info,
+  modal,
   folder,
 }) => {
   const { closeChatlistModal } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
-  const isOpen = Boolean(info);
-  const renderingInfo = usePrevious(info) || info;
-  const renderingFolder = usePrevious(folder) || folder;
+  const isOpen = Boolean(modal);
+  const renderingInfo = usePreviousDeprecated(modal) || modal;
+  const renderingFolder = usePreviousDeprecated(folder) || folder;
 
   const title = useMemo(() => {
     if (!renderingInfo) return undefined;
@@ -55,8 +56,20 @@ const ChatlistInviteModal: FC<OwnProps & StateProps> = ({
   }, [lang, renderingInfo]);
 
   const renderingFolderTitle = useMemo(() => {
-    if (renderingFolder) return renderingFolder.title;
-    if (renderingInfo?.invite && 'title' in renderingInfo.invite) return renderingInfo.invite.title;
+    if (renderingFolder) {
+      return renderTextWithEntities({
+        text: renderingFolder.title.text,
+        entities: renderingFolder.title.entities,
+        noCustomEmojiPlayback: renderingFolder.noTitleAnimations,
+      });
+    }
+    if (renderingInfo?.invite && 'title' in renderingInfo.invite) {
+      return renderTextWithEntities({
+        text: renderingInfo.invite.title.text,
+        entities: renderingInfo.invite.title.entities,
+        noCustomEmojiPlayback: renderingInfo.invite.noTitleAnimations,
+      });
+    }
     return undefined;
   }, [renderingFolder, renderingInfo]);
 
@@ -66,12 +79,18 @@ const ChatlistInviteModal: FC<OwnProps & StateProps> = ({
     return undefined;
   }, [renderingInfo]);
 
-  function renderFolders(folderTitle: string) {
+  function renderFolders(folderTitle: TeactNode) {
     return (
       <div className={styles.foldersWrapper}>
         <div className={styles.folders}>
           <Tab className={styles.folder} title={lang('FolderLinkPreviewLeft')} />
-          <Tab className={styles.folder} isActive badgeCount={folderTabNumber} isBadgeActive title={folderTitle} />
+          <Tab
+            className={styles.folder}
+            isActive
+            badgeCount={folderTabNumber}
+            isBadgeActive
+            title={folderTitle}
+          />
           <Tab className={styles.folder} title={lang('FolderLinkPreviewRight')} />
         </div>
       </div>
@@ -111,8 +130,8 @@ const ChatlistInviteModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { info }): StateProps => {
-    const { invite, removal } = info || {};
+  (global, { modal }): StateProps => {
+    const { invite, removal } = modal || {};
     const folderId = removal?.folderId || (invite && 'folderId' in invite ? invite.folderId : undefined);
     const folder = folderId ? selectChatFolder(global, folderId) : undefined;
 

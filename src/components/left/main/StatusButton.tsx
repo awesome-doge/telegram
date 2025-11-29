@@ -1,31 +1,33 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback, useRef } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import type { ApiEmojiStatus, ApiSticker } from '../../../api/types';
+import type { ApiEmojiStatusCollectible, ApiEmojiStatusType, ApiSticker } from '../../../api/types';
 
 import { EMOJI_STATUS_LOOP_LIMIT } from '../../../config';
 import { selectUser } from '../../../global/selectors';
-import useFlag from '../../../hooks/useFlag';
-import useAppLayout from '../../../hooks/useAppLayout';
-import useTimeout from '../../../hooks/useTimeout';
-import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
-import { getServerTimeOffset } from '../../../util/serverTime';
+import { getServerTime } from '../../../util/serverTime';
 
-import Button from '../../ui/Button';
+import useTimeout from '../../../hooks/schedulers/useTimeout';
+import useAppLayout from '../../../hooks/useAppLayout';
+import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
+import useFlag from '../../../hooks/useFlag';
+
 import CustomEmoji from '../../common/CustomEmoji';
-import PremiumIcon from '../../common/PremiumIcon';
-import CustomEmojiEffect from '../../middle/message/CustomEmojiEffect';
+import StarIcon from '../../common/icons/StarIcon';
+import CustomEmojiEffect from '../../common/reactions/CustomEmojiEffect';
+import Button from '../../ui/Button';
 import StatusPickerMenu from './StatusPickerMenu.async';
 
 interface StateProps {
-  emojiStatus?: ApiEmojiStatus;
+  emojiStatus?: ApiEmojiStatusType;
+  collectibleStatuses?: ApiEmojiStatusType[];
 }
 
 const EFFECT_DURATION_MS = 1500;
 const EMOJI_STATUS_SIZE = 24;
 
-const StatusButton: FC<StateProps> = ({ emojiStatus }) => {
+const StatusButton: FC<StateProps> = ({ emojiStatus, collectibleStatuses }) => {
   const { setEmojiStatus, loadCurrentUser } = getActions();
 
   // eslint-disable-next-line no-null/no-null
@@ -35,20 +37,25 @@ const StatusButton: FC<StateProps> = ({ emojiStatus }) => {
   const [isStatusPickerOpen, openStatusPicker, closeStatusPicker] = useFlag(false);
   const { isMobile } = useAppLayout();
 
-  const delay = emojiStatus?.until ? emojiStatus.until * 1000 - Date.now() + getServerTimeOffset() * 1000 : undefined;
+  const delay = emojiStatus?.until ? (emojiStatus.until - getServerTime()) * 1000 : undefined;
   useTimeout(loadCurrentUser, delay);
 
   useEffectWithPrevDeps(([prevEmojiStatus]) => {
-    if (shouldShowEffect && emojiStatus && prevEmojiStatus && emojiStatus.documentId !== prevEmojiStatus.documentId) {
+    if (shouldShowEffect && emojiStatus && emojiStatus.documentId !== prevEmojiStatus?.documentId) {
       showEffect();
       unmarkShouldShowEffect();
     }
   }, [emojiStatus, shouldShowEffect, showEffect, unmarkShouldShowEffect]);
 
   const handleEmojiStatusSet = useCallback((sticker: ApiSticker) => {
+    const collectibleStatus = collectibleStatuses?.find(
+      ((status) => 'collectibleId' in status && status.documentId === sticker.id),
+    ) as ApiEmojiStatusCollectible | undefined;
     markShouldShowEffect();
-    setEmojiStatus({ emojiStatus: sticker });
-  }, [markShouldShowEffect, setEmojiStatus]);
+    setEmojiStatus({
+      emojiStatus: collectibleStatus || { type: 'regular', documentId: sticker.id },
+    });
+  }, [markShouldShowEffect, setEmojiStatus, collectibleStatuses]);
 
   useTimeout(hideEffect, isEffectShown ? EFFECT_DURATION_MS : undefined);
 
@@ -80,8 +87,9 @@ const StatusButton: FC<StateProps> = ({ emojiStatus }) => {
             documentId={emojiStatus.documentId}
             size={EMOJI_STATUS_SIZE}
             loopLimit={EMOJI_STATUS_LOOP_LIMIT}
+            withSparkles={emojiStatus?.type === 'collectible'}
           />
-        ) : <PremiumIcon />}
+        ) : <StarIcon />}
       </Button>
       <StatusPickerMenu
         statusButtonRef={buttonRef}
@@ -96,8 +104,10 @@ const StatusButton: FC<StateProps> = ({ emojiStatus }) => {
 export default memo(withGlobal((global): StateProps => {
   const { currentUserId } = global;
   const currentUser = currentUserId ? selectUser(global, currentUserId) : undefined;
+  const collectibleStatuses = global.collectibleEmojiStatuses?.statuses;
 
   return {
     emojiStatus: currentUser?.emojiStatus,
+    collectibleStatuses,
   };
 })(StatusButton));

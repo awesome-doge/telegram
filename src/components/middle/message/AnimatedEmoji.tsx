@@ -3,16 +3,17 @@ import React, { memo } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
 import type { ApiSticker } from '../../../api/types';
-import type { ActiveEmojiInteraction } from '../../../global/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
+import type { ActiveEmojiInteraction } from '../../../types';
 
-import { LIKE_STICKER_ID } from '../../common/helpers/mediaDimensions';
 import {
   selectAnimatedEmoji,
   selectAnimatedEmojiEffect,
   selectAnimatedEmojiSound,
 } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
+import { LIKE_STICKER_ID } from '../../common/helpers/mediaDimensions';
+
 import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
 import useAnimatedEmoji from '../../common/hooks/useAnimatedEmoji';
 
@@ -25,7 +26,6 @@ type OwnProps = {
   withEffects?: boolean;
   isOwn?: boolean;
   observeIntersection?: ObserveFn;
-  lastSyncTime?: number;
   forceLoadPreview?: boolean;
   messageId?: number;
   chatId?: string;
@@ -43,7 +43,6 @@ const QUALITY = 1;
 const AnimatedEmoji: FC<OwnProps & StateProps> = ({
   isOwn,
   observeIntersection,
-  lastSyncTime,
   forceLoadPreview,
   messageId,
   chatId,
@@ -67,9 +66,8 @@ const AnimatedEmoji: FC<OwnProps & StateProps> = ({
       quality={QUALITY}
       noLoad={!isIntersecting}
       forcePreview={forceLoadPreview}
-      lastSyncTime={lastSyncTime}
       play={isIntersecting}
-      forceOnHeavyAnimation
+      forceAlways
       ref={ref}
       className={buildClassName('AnimatedEmoji media-inner', sticker?.id === LIKE_STICKER_ID && 'like-sticker-thumb')}
       style={style}

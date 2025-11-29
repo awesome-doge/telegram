@@ -1,11 +1,9 @@
-import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
-
 import type { FC } from '../../lib/teact/teact';
+import React, { memo, useRef } from '../../lib/teact/teact';
+
 import type { ApiMessage } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 
-import { formatMediaDuration } from '../../util/dateFormat';
-import stopEvent from '../../util/stopEvent';
 import {
   getMessageHtmlId,
   getMessageIsSpoiler,
@@ -14,11 +12,14 @@ import {
   getMessageVideo,
 } from '../../global/helpers';
 import buildClassName from '../../util/buildClassName';
+import { formatMediaDuration } from '../../util/dates/dateFormat';
+import stopEvent from '../../util/stopEvent';
 
-import useMedia from '../../hooks/useMedia';
-import useMediaTransition from '../../hooks/useMediaTransition';
 import useFlag from '../../hooks/useFlag';
 import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
+import useMediaTransitionDeprecated from '../../hooks/useMediaTransitionDeprecated';
 
 import MediaSpoiler from './MediaSpoiler';
 
@@ -45,17 +46,17 @@ const Media: FC<OwnProps> = ({
   const isIntersecting = useIsIntersecting(ref, observeIntersection);
   const thumbDataUri = getMessageMediaThumbDataUri(message);
   const mediaBlobUrl = useMedia(getMessageMediaHash(message, 'pictogram'), !isIntersecting);
-  const transitionClassNames = useMediaTransition(mediaBlobUrl);
+  const transitionClassNames = useMediaTransitionDeprecated(mediaBlobUrl);
 
   const video = getMessageVideo(message);
 
   const hasSpoiler = getMessageIsSpoiler(message);
   const [isSpoilerShown, , hideSpoiler] = useFlag(hasSpoiler);
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     hideSpoiler();
     onClick!(message.id, message.chatId);
-  }, [hideSpoiler, message, onClick]);
+  });
 
   return (
     <div

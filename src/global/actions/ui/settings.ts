@@ -1,33 +1,44 @@
 import { addCallback } from '../../../lib/teact/teactn';
-import { requestMutation } from '../../../lib/fasterdom/fasterdom';
-import { addActionHandler, getActions } from '../../index';
 
-import { SettingsScreens } from '../../../types';
 import type { ActionReturnType, GlobalState } from '../../types';
+import { type LangCode, SettingsScreens } from '../../../types';
 
-import { replaceSettings, replaceThemeSettings } from '../../reducers';
-import switchTheme from '../../../util/switchTheme';
-import { setLanguage, setTimeFormat } from '../../../util/langProvider';
-import { IS_IOS } from '../../../util/windowEnvironment';
-import { updateTabState } from '../../reducers/tabs';
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
+import { disableDebugConsole, initDebugConsole } from '../../../util/debugConsole';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { oldSetLanguage, setTimeFormat } from '../../../util/oldLangProvider';
 import { applyPerformanceSettings } from '../../../util/perfomanceSettings';
+import switchTheme from '../../../util/switchTheme';
+import { updatePeerColors } from '../../../util/theme';
+import { IS_IOS } from '../../../util/windowEnvironment';
+import { callApi, setShouldEnableDebugLog } from '../../../api/gramjs';
+import {
+  addActionHandler, getActions, getGlobal, setGlobal,
+} from '../../index';
+import { replaceSettings, replaceThemeSettings } from '../../reducers';
+import { updateTabState } from '../../reducers/tabs';
 import { selectCanAnimateInterface, selectChatFolder } from '../../selectors';
 
 let prevGlobal: GlobalState | undefined;
 
 addCallback((global: GlobalState) => {
   // eslint-disable-next-line eslint-multitab-tt/no-getactions-in-actions
-  const { updatePageTitle } = getActions();
+  const { updatePageTitle, updateShouldDebugExportedSenders, updateShouldEnableDebugLog } = getActions();
 
-  const settings = global.settings.byKey;
-  const prevSettings = prevGlobal?.settings.byKey;
-  const performance = global.settings.performance;
-  const prevPerformance = prevGlobal?.settings.performance;
+  const oldGlobal = prevGlobal;
   prevGlobal = global;
 
-  if (!prevSettings) {
-    return;
+  if (!oldGlobal) return;
+
+  const settings = global.settings.byKey;
+  const prevSettings = oldGlobal.settings.byKey;
+  const performance = global.settings.performance;
+  const prevPerformance = oldGlobal.settings.performance;
+  const peerColors = global.peerColors;
+  const prevPeerColors = oldGlobal.peerColors;
+
+  if (peerColors && peerColors !== prevPeerColors) {
+    updatePeerColors(peerColors.general);
   }
 
   if (performance !== prevPerformance) {
@@ -42,7 +53,7 @@ addCallback((global: GlobalState) => {
   }
 
   if (settings.language !== prevSettings.language) {
-    setLanguage(settings.language);
+    oldSetLanguage(settings.language as LangCode);
   }
 
   if (settings.timeFormat !== prevSettings.timeFormat) {
@@ -62,6 +73,53 @@ addCallback((global: GlobalState) => {
   if (settings.canDisplayChatInTitle !== prevSettings.canDisplayChatInTitle) {
     updatePageTitle();
   }
+
+  if (settings.shouldForceHttpTransport !== prevSettings.shouldForceHttpTransport) {
+    callApi('setForceHttpTransport', Boolean(settings.shouldForceHttpTransport));
+  }
+
+  if (settings.shouldAllowHttpTransport !== prevSettings.shouldAllowHttpTransport) {
+    callApi('setAllowHttpTransport', Boolean(settings.shouldAllowHttpTransport));
+    if (!settings.shouldAllowHttpTransport && settings.shouldForceHttpTransport) {
+      global = getGlobal();
+      global = {
+        ...global,
+        settings: {
+          ...global.settings,
+          byKey: {
+            ...global.settings.byKey,
+            shouldForceHttpTransport: false,
+          },
+        },
+      };
+      setGlobal(global);
+    }
+  }
+
+  if (settings.shouldDebugExportedSenders !== prevSettings.shouldDebugExportedSenders) {
+    updateShouldDebugExportedSenders();
+  }
+
+  if (settings.shouldCollectDebugLogs !== prevSettings.shouldCollectDebugLogs) {
+    updateShouldEnableDebugLog();
+  }
+});
+
+addActionHandler('updateShouldEnableDebugLog', (global): ActionReturnType => {
+  const { settings } = global;
+
+  if (settings.byKey.shouldCollectDebugLogs) {
+    setShouldEnableDebugLog(true);
+    initDebugConsole();
+  } else {
+    setShouldEnableDebugLog(false);
+    disableDebugConsole();
+  }
+});
+
+addActionHandler('updateShouldDebugExportedSenders', (global): ActionReturnType => {
+  const { settings } = global;
+  callApi('setShouldDebugExportedSenders', Boolean(settings.byKey.shouldDebugExportedSenders));
 });
 
 addActionHandler('setSettingOption', (global, actions, payload): ActionReturnType => {

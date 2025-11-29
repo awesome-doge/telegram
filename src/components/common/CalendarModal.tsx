@@ -1,18 +1,21 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useState, useEffect, useMemo, useCallback,
+  memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
+
+import type { OldLangFn } from '../../hooks/useOldLang';
 
 import { MAX_INT_32 } from '../../config';
 import buildClassName from '../../util/buildClassName';
-import { formatTime, formatDateToString, getDayStart } from '../../util/dateFormat';
-import type { LangFn } from '../../hooks/useLang';
-import useLang from '../../hooks/useLang';
-import usePrevious from '../../hooks/usePrevious';
-import useFlag from '../../hooks/useFlag';
+import { formatDateToString, formatTime, getDayStart } from '../../util/dates/dateFormat';
 
-import Modal from '../ui/Modal';
+import useFlag from '../../hooks/useFlag';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
+
 import Button from '../ui/Button';
+import Modal from '../ui/Modal';
+import Icon from './icons/Icon';
 
 import './CalendarModal.scss';
 
@@ -58,7 +61,7 @@ const CalendarModal: FC<OwnProps> = ({
   onSubmit,
   onSecondButtonClick,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
   const now = new Date();
 
   const minDate = useMemo(() => {
@@ -71,8 +74,8 @@ const CalendarModal: FC<OwnProps> = ({
   }, [isPastMode, maxAt]);
 
   const passedSelectedDate = useMemo(() => (selectedAt ? new Date(selectedAt) : new Date()), [selectedAt]);
-  const prevIsOpen = usePrevious(isOpen);
-  const [isTimeInputFocused, markTimeInputAsFocused, unmarkTimeInputAsFocused] = useFlag(false);
+  const prevIsOpen = usePreviousDeprecated(isOpen);
+  const [isTimeInputFocused, markTimeInputAsFocused] = useFlag(false);
 
   const [selectedDate, setSelectedDate] = useState<Date>(passedSelectedDate);
   const [currentMonthAndYear, setCurrentMonthAndYear] = useState<Date>(
@@ -88,6 +91,9 @@ const CalendarModal: FC<OwnProps> = ({
   const selectedDay = formatDay(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
   const currentYear = currentMonthAndYear.getFullYear();
   const currentMonth = currentMonthAndYear.getMonth();
+
+  const isDisabled = (isFutureMode && selectedDate.getTime() < minDate.getTime())
+    || (isPastMode && selectedDate.getTime() > maxDate.getTime());
 
   useEffect(() => {
     if (!prevIsOpen && isOpen) {
@@ -167,8 +173,14 @@ const CalendarModal: FC<OwnProps> = ({
   }
 
   const handleSubmit = useCallback(() => {
-    onSubmit(selectedDate);
-  }, [onSubmit, selectedDate]);
+    if (isFutureMode && selectedDate < minDate) {
+      onSubmit(minDate);
+    } else if (isPastMode && selectedDate > maxDate) {
+      onSubmit(maxDate);
+    } else {
+      onSubmit(selectedDate);
+    }
+  }, [isFutureMode, isPastMode, minDate, maxDate, onSubmit, selectedDate]);
 
   const handleChangeHours = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/[^\d]+/g, '');
@@ -218,7 +230,6 @@ const CalendarModal: FC<OwnProps> = ({
           value={selectedHours}
           onChange={handleChangeHours}
           onFocus={markTimeInputAsFocused}
-          onBlur={unmarkTimeInputAsFocused}
         />
         :
         <input
@@ -228,7 +239,6 @@ const CalendarModal: FC<OwnProps> = ({
           value={selectedMinutes}
           onChange={handleChangeMinutes}
           onFocus={markTimeInputAsFocused}
-          onBlur={unmarkTimeInputAsFocused}
         />
       </div>
     );
@@ -249,7 +259,7 @@ const CalendarModal: FC<OwnProps> = ({
             color="translucent"
             onClick={onClose}
           >
-            <i className="icon icon-close" />
+            <Icon name="close" />
           </Button>
 
           <h4>
@@ -265,7 +275,7 @@ const CalendarModal: FC<OwnProps> = ({
             disabled={shouldDisablePrevMonth}
             onClick={!shouldDisablePrevMonth ? handlePrevMonth : undefined}
           >
-            <i className="icon icon-previous" />
+            <Icon name="previous" />
           </Button>
 
           <Button
@@ -275,7 +285,7 @@ const CalendarModal: FC<OwnProps> = ({
             disabled={shouldDisableNextMonth}
             onClick={!shouldDisableNextMonth ? handleNextMonth : undefined}
           >
-            <i className="icon icon-next" />
+            <Icon name="next" />
           </Button>
         </div>
       </div>
@@ -320,14 +330,19 @@ const CalendarModal: FC<OwnProps> = ({
       {withTimePicker && renderTimePicker()}
 
       <div className="footer">
-        <Button onClick={handleSubmit}>
-          {submitLabel}
-        </Button>
-        {secondButtonLabel && (
-          <Button onClick={onSecondButtonClick} isText>
-            {secondButtonLabel}
+        <div className="footer">
+          <Button
+            onClick={handleSubmit}
+            disabled={isDisabled}
+          >
+            {submitLabel}
           </Button>
-        )}
+          {secondButtonLabel && (
+            <Button onClick={onSecondButtonClick} isText>
+              {secondButtonLabel}
+            </Button>
+          )}
+        </div>
       </div>
     </Modal>
   );
@@ -387,7 +402,7 @@ function formatDay(year: number, month: number, day: number) {
   return `${year}-${month + 1}-${day}`;
 }
 
-function formatSubmitLabel(lang: LangFn, date: Date) {
+function formatSubmitLabel(lang: OldLangFn, date: Date) {
   const day = formatDateToString(date, lang.code);
   const today = formatDateToString(new Date(), lang.code);
 

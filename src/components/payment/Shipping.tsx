@@ -1,13 +1,15 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useCallback, memo, useMemo, useEffect,
+  memo, useCallback, useEffect,
+  useMemo,
 } from '../../lib/teact/teact';
 
+import type { FormEditDispatch, FormState } from '../../hooks/reducers/usePaymentReducer';
 import type { ShippingOption } from '../../types';
 
 import { formatCurrency } from '../../util/formatCurrency';
-import type { FormState, FormEditDispatch } from '../../hooks/reducers/usePaymentReducer';
-import useLang from '../../hooks/useLang';
+
+import useOldLang from '../../hooks/useOldLang';
 
 import RadioGroup from '../ui/RadioGroup';
 
@@ -26,7 +28,7 @@ const Shipping: FC<OwnProps> = ({
   currency,
   dispatch,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   useEffect(() => {
     if (!shippingOptions || !shippingOptions.length || state.shipping) {

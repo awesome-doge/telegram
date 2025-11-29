@@ -1,13 +1,21 @@
-import type { TabState, GlobalState, TabArgs } from '../types';
-import type { ApiUser, ApiUserFullInfo, ApiUserStatus } from '../../api/types';
+import type {
+  ApiMissingInvitedUser,
+  ApiSavedStarGift,
+  ApiUser,
+  ApiUserCommonChats,
+  ApiUserFullInfo,
+  ApiUserStatus,
+} from '../../api/types';
+import type { BotAppPermissions } from '../../types';
+import type { GlobalState, TabArgs, TabState } from '../types';
 
-import { omit, pick } from '../../util/iteratees';
+import { areDeepEqual } from '../../util/areDeepEqual';
+import { getCurrentTabId } from '../../util/establishMultitabRole';
+import { omit, omitUndefined, unique } from '../../util/iteratees';
 import { MEMO_EMPTY_ARRAY } from '../../util/memo';
+import { selectTabState } from '../selectors';
 import { updateChat } from './chats';
 import { updateTabState } from './tabs';
-import { selectTabState } from '../selectors';
-import { getCurrentTabId } from '../../util/establishMultitabRole';
-import { areDeepEqual } from '../../util/areDeepEqual';
 
 export function replaceUsers<T extends GlobalState>(global: T, newById: Record<string, ApiUser>): T {
   return {
@@ -24,19 +32,19 @@ function updateContactList<T extends GlobalState>(global: T, updatedUsers: ApiUs
 
   if (!contactUserIds) return global;
 
-  const newContactUserIds = updatedUsers
-    .filter((user) => user?.isContact && !contactUserIds.includes(user.id))
+  const contactUserIdsFromUpdate = updatedUsers
+    .filter((user) => user?.isContact)
     .map((user) => user.id);
 
-  if (newContactUserIds.length === 0) return global;
+  if (contactUserIdsFromUpdate.length === 0) return global;
 
   return {
     ...global,
     contactList: {
-      userIds: [
-        ...newContactUserIds,
+      userIds: unique([
+        ...contactUserIdsFromUpdate,
         ...contactUserIds,
-      ],
+      ]),
     },
   };
 }
@@ -83,15 +91,21 @@ export function addUsers<T extends GlobalState>(global: T, newById: Record<strin
   let isUpdated = false;
 
   const addedById = Object.keys(newById).reduce<Record<string, ApiUser>>((acc, id) => {
-    if (!byId[id] || (byId[id].isMin && !newById[id].isMin)) {
-      const updatedUser = getUpdatedUser(global, id, newById[id]);
-      if (updatedUser) {
-        acc[id] = updatedUser;
-        if (!isUpdated) {
-          isUpdated = true;
-        }
+    const existingUser = byId[id];
+    const newUser = newById[id];
+
+    if (existingUser && !existingUser.isMin && (newUser.isMin || existingUser.accessHash === newUser.accessHash)) {
+      return acc;
+    }
+
+    const updatedUser = getUpdatedUser(global, id, newUser);
+    if (updatedUser) {
+      acc[id] = updatedUser;
+      if (!isUpdated) {
+        isUpdated = true;
       }
     }
+
     return acc;
   }, {});
 
@@ -115,15 +129,8 @@ function getUpdatedUser(global: GlobalState, userId: string, userUpdate: Partial
   const user = byId[userId];
   const omitProps: (keyof ApiUser)[] = [];
 
-  const shouldIgnoreUndefinedFields = userUpdate.isMin && user && !user.isMin;
-  if (shouldIgnoreUndefinedFields) {
-    omitProps.push('isMin', 'accessHash');
-    Object.keys(userUpdate).forEach((key) => {
-      const prop = key as keyof ApiUser;
-      if (userUpdate[prop] === undefined) {
-        omitProps.push(prop);
-      }
-    });
+  if (userUpdate.isMin && user && !user.isMin) {
+    return undefined; // Do not apply updates from min constructor
   }
 
   if (areDeepEqual(user?.usernames, userUpdate.usernames)) {
@@ -133,13 +140,13 @@ function getUpdatedUser(global: GlobalState, userId: string, userUpdate: Partial
   const updatedUser = {
     ...user,
     ...omit(userUpdate, omitProps),
-  };
+  } as ApiUser;
 
   if (!updatedUser.id || !updatedUser.type) {
     return undefined;
   }
 
-  return updatedUser;
+  return omitUndefined(updatedUser);
 }
 
 export function deleteContact<T extends GlobalState>(global: T, userId: string): T {
@@ -160,6 +167,17 @@ export function deleteContact<T extends GlobalState>(global: T, userId: string):
       isContact: undefined,
     },
   });
+
+  global = {
+    ...global,
+    stories: {
+      ...global.stories,
+      orderedPeerIds: {
+        active: global.stories.orderedPeerIds.active.filter((id) => id !== userId),
+        archived: global.stories.orderedPeerIds.archived.filter((id) => id !== userId),
+      },
+    },
+  };
 
   return updateChat(global, userId, {
     settings: undefined,
@@ -228,18 +246,28 @@ export function updateUserFullInfo<T extends GlobalState>(
   };
 }
 
+export function updateUserCommonChats<T extends GlobalState>(
+  global: T, userId: string, commonChats: ApiUserCommonChats,
+): T {
+  return {
+    ...global,
+    users: {
+      ...global.users,
+      commonChatsById: {
+        ...global.users.commonChatsById,
+        [userId]: commonChats,
+      },
+    },
+  };
+}
+
 // @optimization Allows to avoid redundant updates which cause a lot of renders
 export function addUserStatuses<T extends GlobalState>(global: T, newById: Record<string, ApiUserStatus>): T {
   const { statusesById } = global.users;
 
-  const newKeys = Object.keys(newById).filter((id) => !statusesById[id]);
-  if (!newKeys.length) {
-    return global;
-  }
-
   global = replaceUserStatuses(global, {
     ...statusesById,
-    ...pick(newById, newKeys),
+    ...newById,
   });
 
   return global;
@@ -251,5 +279,70 @@ export function closeNewContactDialog<T extends GlobalState>(
 ): T {
   return updateTabState(global, {
     newContact: undefined,
+  }, tabId);
+}
+
+export function updateMissingInvitedUsers<T extends GlobalState>(
+  global: T,
+  chatId: string,
+  missingUsers: ApiMissingInvitedUser[],
+  ...[tabId = getCurrentTabId()]: TabArgs<T>
+): T {
+  if (!missingUsers.length) {
+    return updateTabState(global, {
+      inviteViaLinkModal: undefined,
+    }, tabId);
+  }
+
+  return updateTabState(global, {
+    inviteViaLinkModal: {
+      missingUsers,
+      chatId,
+    },
+  }, tabId);
+}
+
+export function updateBotAppPermissions<T extends GlobalState>(
+  global: T,
+  botId: string,
+  permissions: BotAppPermissions,
+): T {
+  const { botAppPermissionsById } = global.users;
+
+  return {
+    ...global,
+    users: {
+      ...global.users,
+      botAppPermissionsById: {
+        ...botAppPermissionsById,
+        [botId]: {
+          ...botAppPermissionsById[botId],
+          ...permissions,
+        },
+      },
+    },
+  };
+}
+
+export function replacePeerSavedGifts<T extends GlobalState>(
+  global: T,
+  peerId: string,
+  gifts: ApiSavedStarGift[],
+  nextOffset?: string,
+  ...[tabId = getCurrentTabId()]: TabArgs<T>
+): T {
+  const tabState = selectTabState(global, tabId);
+
+  return updateTabState(global, {
+    savedGifts: {
+      ...tabState.savedGifts,
+      giftsByPeerId: {
+        ...tabState.savedGifts.giftsByPeerId,
+        [peerId]: {
+          gifts,
+          nextOffset,
+        },
+      },
+    },
   }, tabId);
 }

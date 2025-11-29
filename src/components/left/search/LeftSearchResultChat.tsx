@@ -1,26 +1,34 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback } from '../../../lib/teact/teact';
-import { withGlobal } from '../../../global';
+import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiUser } from '../../../api/types';
+import { StoryViewerOrigin } from '../../../types';
+
+import { isUserId, selectIsChatMuted } from '../../../global/helpers';
+import {
+  selectChat, selectIsChatPinned, selectNotifyExceptions,
+  selectNotifySettings, selectUser,
+} from '../../../global/selectors';
+import { extractCurrentThemeParams } from '../../../util/themeStyle';
 
 import useChatContextActions from '../../../hooks/useChatContextActions';
 import useFlag from '../../../hooks/useFlag';
-import { isUserId, getPrivateChatUserId, selectIsChatMuted } from '../../../global/helpers';
-import {
-  selectChat, selectUser, selectIsChatPinned, selectNotifySettings, selectNotifyExceptions,
-} from '../../../global/selectors';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 import useSelectWithEnter from '../../../hooks/useSelectWithEnter';
 
-import PrivateChatInfo from '../../common/PrivateChatInfo';
 import GroupChatInfo from '../../common/GroupChatInfo';
-import DeleteChatModal from '../../common/DeleteChatModal';
+import PrivateChatInfo from '../../common/PrivateChatInfo';
+import Button from '../../ui/Button';
 import ListItem from '../../ui/ListItem';
 import ChatFolderModal from '../ChatFolderModal.async';
+import MuteChatModal from '../MuteChatModal.async';
 
 type OwnProps = {
   chatId: string;
   withUsername?: boolean;
+  withOpenAppButton?: boolean;
   onClick: (id: string) => void;
 };
 
@@ -35,15 +43,31 @@ type StateProps = {
 const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
   chatId,
   withUsername,
-  onClick,
   chat,
   user,
   isPinned,
   isMuted,
   canChangeFolder,
+  withOpenAppButton,
+  onClick,
 }) => {
-  const [isDeleteModalOpen, openDeleteModal, closeDeleteModal] = useFlag();
+  const { requestMainWebView } = getActions();
+  const oldLang = useOldLang();
+
+  const [isMuteModalOpen, openMuteModal, closeMuteModal] = useFlag();
   const [isChatFolderModalOpen, openChatFolderModal, closeChatFolderModal] = useFlag();
+  const [shouldRenderChatFolderModal, markRenderChatFolderModal, unmarkRenderChatFolderModal] = useFlag();
+  const [shouldRenderMuteModal, markRenderMuteModal, unmarkRenderMuteModal] = useFlag();
+
+  const handleChatFolderChange = useCallback(() => {
+    markRenderChatFolderModal();
+    openChatFolderModal();
+  }, [markRenderChatFolderModal, openChatFolderModal]);
+
+  const handleMute = useCallback(() => {
+    markRenderMuteModal();
+    openMuteModal();
+  }, [markRenderMuteModal, openMuteModal]);
 
   const contextActions = useChatContextActions({
     chat,
@@ -51,19 +75,26 @@ const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
     isPinned,
     isMuted,
     canChangeFolder,
-    handleDelete: openDeleteModal,
-    handleChatFolderChange: openChatFolderModal,
+    handleMute,
+    handleChatFolderChange,
   }, true);
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     onClick(chatId);
-  }, [chatId, onClick]);
+  });
+
+  const handleOpenApp = useLastCallback((e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
+    e.stopPropagation();
+
+    const theme = extractCurrentThemeParams();
+    requestMainWebView({
+      botId: chatId,
+      peerId: chatId,
+      theme,
+    });
+  });
 
   const buttonRef = useSelectWithEnter(handleClick);
-
-  if (!chat) {
-    return undefined;
-  }
 
   return (
     <ListItem
@@ -73,20 +104,49 @@ const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
       buttonRef={buttonRef}
     >
       {isUserId(chatId) ? (
-        <PrivateChatInfo userId={chatId} withUsername={withUsername} avatarSize="large" />
+        <PrivateChatInfo
+          userId={chatId}
+          withUsername={withUsername}
+          withStory
+          avatarSize="medium"
+          storyViewerOrigin={StoryViewerOrigin.SearchResult}
+        />
       ) : (
-        <GroupChatInfo chatId={chatId} withUsername={withUsername} avatarSize="large" />
+        <GroupChatInfo
+          chatId={chatId}
+          withUsername={withUsername}
+          avatarSize="medium"
+          withStory
+          storyViewerOrigin={StoryViewerOrigin.SearchResult}
+        />
       )}
-      <DeleteChatModal
-        isOpen={isDeleteModalOpen}
-        onClose={closeDeleteModal}
-        chat={chat}
-      />
-      <ChatFolderModal
-        isOpen={isChatFolderModalOpen}
-        onClose={closeChatFolderModal}
-        chatId={chatId}
-      />
+      {withOpenAppButton && user?.hasMainMiniApp && (
+        <Button
+          className="ChatBadge miniapp"
+          pill
+          fluid
+          size="tiny"
+          onClick={handleOpenApp}
+        >
+          {oldLang('BotOpen')}
+        </Button>
+      )}
+      {shouldRenderMuteModal && (
+        <MuteChatModal
+          isOpen={isMuteModalOpen}
+          onClose={closeMuteModal}
+          onCloseAnimationEnd={unmarkRenderMuteModal}
+          chatId={chatId}
+        />
+      )}
+      {shouldRenderChatFolderModal && (
+        <ChatFolderModal
+          isOpen={isChatFolderModalOpen}
+          onClose={closeChatFolderModal}
+          onCloseAnimationEnd={unmarkRenderChatFolderModal}
+          chatId={chatId}
+        />
+      )}
     </ListItem>
   );
 };
@@ -94,8 +154,7 @@ const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { chatId }): StateProps => {
     const chat = selectChat(global, chatId);
-    const privateChatUserId = chat && getPrivateChatUserId(chat);
-    const user = privateChatUserId ? selectUser(global, privateChatUserId) : undefined;
+    const user = selectUser(global, chatId);
     const isPinned = selectIsChatPinned(global, chatId);
     const isMuted = chat
       ? selectIsChatMuted(chat, selectNotifySettings(global), selectNotifyExceptions(global))

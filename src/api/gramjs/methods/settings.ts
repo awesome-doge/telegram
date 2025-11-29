@@ -1,43 +1,51 @@
 import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
+import { RPCError } from '../../../lib/gramjs/errors';
 
+import type { LANG_PACKS } from '../../../config';
 import type {
   ApiAppConfig,
   ApiConfig,
-  ApiError,
-  ApiLangString,
+  ApiInputPrivacyRules,
   ApiLanguage,
-  ApiNotifyException, ApiPhoto, ApiUser,
+  ApiNotifyException,
+  ApiPhoto,
+  ApiPrivacyKey,
+  ApiUser,
 } from '../../types';
-import type { ApiPrivacyKey, InputPrivacyRules, LangCode } from '../../../types';
-import type { LANG_PACKS } from '../../../config';
 
-import { BLOCKED_LIST_LIMIT, DEFAULT_LANG_PACK, MAX_INT_32 } from '../../../config';
-import { ACCEPTABLE_USERNAME_ERRORS } from './management';
+import {
+  ACCEPTABLE_USERNAME_ERRORS,
+  BLOCKED_LIST_LIMIT,
+  LANG_PACK,
+  MAX_INT_32,
+} from '../../../config';
+import { buildCollectionByKey } from '../../../util/iteratees';
+import { getServerTime } from '../../../util/serverTime';
+import { buildAppConfig } from '../apiBuilders/appConfig';
+import { buildApiPhoto, buildPrivacyRules } from '../apiBuilders/common';
 import {
   buildApiConfig,
   buildApiCountryList,
+  buildApiLanguage,
   buildApiNotifyException,
+  buildApiPeerColors,
   buildApiSession,
+  buildApiTimezone,
   buildApiWallpaper,
   buildApiWebSession,
-  buildPrivacyRules,
+  buildLangStrings,
+  oldBuildLangPack,
 } from '../apiBuilders/misc';
-
-import { buildApiPhoto } from '../apiBuilders/common';
-import { buildApiUser } from '../apiBuilders/users';
-import { buildApiChatFromPreview } from '../apiBuilders/chats';
 import { getApiChatIdFromMtpPeer } from '../apiBuilders/peers';
-import { buildAppConfig } from '../apiBuilders/appConfig';
-import { omitVirtualClassFields } from '../apiBuilders/helpers';
 import {
-  buildInputEntity, buildInputPeer, buildInputPrivacyKey, buildInputPhoto,
+  buildInputEntity, buildInputPeer, buildInputPhoto,
+  buildInputPrivacyKey,
+  buildInputPrivacyRules,
 } from '../gramjsBuilders';
-import { getClient, invokeRequest, uploadFile } from './client';
-import { buildCollectionByKey } from '../../../util/iteratees';
-import { getServerTime } from '../../../util/serverTime';
-import { addEntitiesWithPhotosToLocalDb, addPhotoToLocalDb } from '../helpers';
+import { addPhotoToLocalDb } from '../helpers/localDb';
 import localDb from '../localDb';
+import { getClient, invokeRequest, uploadFile } from './client';
 
 const BETA_LANG_CODES = ['ar', 'fa', 'id', 'ko', 'uz', 'en'];
 
@@ -54,32 +62,36 @@ export function updateProfile({
     firstName: firstName || '',
     lastName: lastName || '',
     about: about || '',
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export async function checkUsername(username: string) {
   try {
     const result = await invokeRequest(new GramJs.account.CheckUsername({
       username,
-    }), undefined, true);
+    }), {
+      shouldThrow: true,
+    });
 
     return { result, error: undefined };
-  } catch (error) {
-    const errorMessage = (error as ApiError).message;
-
-    if (ACCEPTABLE_USERNAME_ERRORS.has(errorMessage)) {
+  } catch (err: unknown) {
+    if (err instanceof RPCError && ACCEPTABLE_USERNAME_ERRORS.has(err.errorMessage)) {
       return {
         result: false,
-        error: errorMessage,
+        error: err.errorMessage,
       };
     }
 
-    throw error;
+    throw err;
   }
 }
 
 export function updateUsername(username: string) {
-  return invokeRequest(new GramJs.account.UpdateUsername({ username }), true);
+  return invokeRequest(new GramJs.account.UpdateUsername({ username }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export async function updateProfilePhoto(photo?: ApiPhoto, isFallback?: boolean) {
@@ -90,31 +102,30 @@ export async function updateProfilePhoto(photo?: ApiPhoto, isFallback?: boolean)
   }));
   if (!result) return undefined;
 
-  addEntitiesWithPhotosToLocalDb(result.users);
   if (result.photo instanceof GramJs.Photo) {
     addPhotoToLocalDb(result.photo);
     return {
-      users: result.users.map(buildApiUser).filter(Boolean),
       photo: buildApiPhoto(result.photo),
     };
   }
   return undefined;
 }
 
-export async function uploadProfilePhoto(file: File, isFallback?: boolean, isVideo = false, videoTs = 0) {
+export async function uploadProfilePhoto(
+  file: File, isFallback?: boolean, isVideo = false, videoTs = 0, bot?: ApiUser,
+) {
   const inputFile = await uploadFile(file);
   const result = await invokeRequest(new GramJs.photos.UploadProfilePhoto({
+    ...(bot ? { bot: buildInputPeer(bot.id, bot.accessHash) } : undefined),
     ...(isVideo ? { video: inputFile, videoStartTs: videoTs } : { file: inputFile }),
     ...(isFallback ? { fallback: true } : undefined),
   }));
 
   if (!result) return undefined;
 
-  addEntitiesWithPhotosToLocalDb(result.users);
   if (result.photo instanceof GramJs.Photo) {
     addPhotoToLocalDb(result.photo);
     return {
-      users: result.users.map(buildApiUser).filter(Boolean),
       photo: buildApiPhoto(result.photo),
     };
   }
@@ -137,27 +148,23 @@ export async function uploadContactProfilePhoto({
 
   if (!result) return undefined;
 
-  addEntitiesWithPhotosToLocalDb(result.users);
-
-  const users = result.users.map(buildApiUser).filter(Boolean);
-
   if (result.photo instanceof GramJs.Photo) {
     addPhotoToLocalDb(result.photo);
     return {
-      users,
       photo: buildApiPhoto(result.photo),
     };
   }
 
   return {
-    users,
     photo: undefined,
   };
 }
 
 export async function deleteProfilePhotos(photos: ApiPhoto[]) {
   const photoIds = photos.map(buildInputPhoto).filter(Boolean);
-  const isDeleted = await invokeRequest(new GramJs.photos.DeletePhotos({ id: photoIds }), true);
+  const isDeleted = await invokeRequest(new GramJs.photos.DeletePhotos({ id: photoIds }), {
+    shouldReturnTrue: true,
+  });
   if (isDeleted) {
     photos.forEach((photo) => {
       delete localDb.photos[photo.id];
@@ -216,33 +223,48 @@ export async function uploadWallpaper(file: File) {
   return { wallpaper };
 }
 
-export async function fetchBlockedContacts() {
+export async function fetchBlockedUsers({
+  isOnlyStories,
+}: {
+  isOnlyStories?: true;
+}) {
   const result = await invokeRequest(new GramJs.contacts.GetBlocked({
+    myStoriesFrom: isOnlyStories,
     limit: BLOCKED_LIST_LIMIT,
   }));
   if (!result) {
     return undefined;
   }
 
-  updateLocalDb(result);
-
   return {
-    users: result.users.map(buildApiUser).filter(Boolean),
-    chats: result.chats.map((chat) => buildApiChatFromPreview(chat)).filter(Boolean),
     blockedIds: result.blocked.map((blocked) => getApiChatIdFromMtpPeer(blocked.peerId)),
     totalCount: result instanceof GramJs.contacts.BlockedSlice ? result.count : result.blocked.length,
   };
 }
 
-export function blockContact(chatOrUserId: string, accessHash?: string) {
+export function blockUser({
+  user,
+  isOnlyStories,
+}: {
+  user: ApiUser;
+  isOnlyStories?: true;
+}) {
   return invokeRequest(new GramJs.contacts.Block({
-    id: buildInputPeer(chatOrUserId, accessHash),
+    id: buildInputPeer(user.id, user.accessHash),
+    myStoriesFrom: isOnlyStories,
   }));
 }
 
-export function unblockContact(chatOrUserId: string, accessHash?: string) {
+export function unblockUser({
+  user,
+  isOnlyStories,
+}: {
+  user: ApiUser;
+  isOnlyStories?: true;
+}) {
   return invokeRequest(new GramJs.contacts.Unblock({
-    id: buildInputPeer(chatOrUserId, accessHash),
+    id: buildInputPeer(user.id, user.accessHash),
+    myStoriesFrom: isOnlyStories,
   }));
 }
 
@@ -271,10 +293,8 @@ export async function fetchWebAuthorizations() {
   if (!result) {
     return undefined;
   }
-  addEntitiesWithPhotosToLocalDb(result.users);
 
   return {
-    users: result.users.map(buildApiUser).filter(Boolean),
     webAuthorizations: buildCollectionByKey(result.authorizations.map(buildApiWebSession), 'hash'),
   };
 }
@@ -290,13 +310,13 @@ export function terminateAllWebAuthorizations() {
 export async function fetchNotificationExceptions() {
   const result = await invokeRequest(new GramJs.account.GetNotifyExceptions({
     compareSound: true,
-  }), undefined, undefined, true);
+  }), {
+    shouldIgnoreUpdates: true,
+  });
 
   if (!(result instanceof GramJs.Updates || result instanceof GramJs.UpdatesCombined)) {
     return undefined;
   }
-
-  updateLocalDb(result);
 
   return result.updates.reduce((acc, update) => {
     if (!(update instanceof GramJs.UpdateNotifySettings && update.peer instanceof GramJs.NotifyPeer)) {
@@ -394,18 +414,108 @@ export function updateNotificationSettings(peerType: 'contact' | 'group' | 'broa
   }));
 }
 
-export async function fetchLanguages(): Promise<ApiLanguage[] | undefined> {
-  const result = await invokeRequest(new GramJs.langpack.GetLanguages({
-    langPack: DEFAULT_LANG_PACK,
+export async function fetchLangPack({
+  langPack,
+  langCode,
+}: {
+  langPack: string;
+  langCode: string;
+}) {
+  const result = await invokeRequest(new GramJs.langpack.GetLangPack({
+    langPack,
+    langCode,
   }));
   if (!result) {
     return undefined;
   }
 
-  return result.map(omitVirtualClassFields);
+  const { strings, keysToRemove } = buildLangStrings(result.strings);
+
+  return {
+    version: result.version,
+    strings,
+    keysToRemove,
+  };
 }
 
-export async function fetchLangPack({ sourceLangPacks, langCode }: {
+export async function fetchLangDifference({
+  langPack,
+  langCode,
+  fromVersion,
+}: {
+  langPack: string;
+  langCode: string;
+  fromVersion: number;
+}) {
+  const result = await invokeRequest(new GramJs.langpack.GetDifference({
+    langPack,
+    langCode,
+    fromVersion,
+  }));
+  if (!result) {
+    return undefined;
+  }
+
+  const { strings, keysToRemove } = buildLangStrings(result.strings);
+
+  return {
+    version: result.version,
+    strings,
+    keysToRemove,
+  };
+}
+
+export async function fetchLanguages(): Promise<ApiLanguage[] | undefined> {
+  const result = await invokeRequest(new GramJs.langpack.GetLanguages({
+    langPack: LANG_PACK,
+  }));
+  if (!result) {
+    return undefined;
+  }
+
+  return result.map(buildApiLanguage);
+}
+
+export async function fetchLanguage({
+  langPack,
+  langCode,
+}: {
+  langPack: string;
+  langCode: string;
+}): Promise<ApiLanguage | undefined> {
+  const result = await invokeRequest(new GramJs.langpack.GetLanguage({
+    langPack,
+    langCode,
+  }));
+  if (!result) {
+    return undefined;
+  }
+
+  return buildApiLanguage(result);
+}
+
+export async function fetchLangStrings({
+  langPack,
+  langCode,
+  keys,
+}: {
+  langPack: string;
+  langCode: string;
+  keys: string[];
+}) {
+  const result = await invokeRequest(new GramJs.langpack.GetStrings({
+    langPack,
+    langCode,
+    keys,
+  }));
+  if (!result) {
+    return undefined;
+  }
+
+  return buildLangStrings(result);
+}
+
+export async function oldFetchLangPack({ sourceLangPacks, langCode }: {
   sourceLangPacks: typeof LANG_PACKS;
   langCode: string;
 }) {
@@ -416,33 +526,12 @@ export async function fetchLangPack({ sourceLangPacks, langCode }: {
     }));
   }));
 
-  const collections = results
-    .filter(Boolean)
-    .map((result) => {
-      return buildCollectionByKey(result.strings.map<ApiLangString>(omitVirtualClassFields), 'key');
-    });
-
+  const collections = results.filter(Boolean).map(oldBuildLangPack);
   if (!collections.length) {
     return undefined;
   }
 
   return { langPack: Object.assign({}, ...collections.reverse()) as typeof collections[0] };
-}
-
-export async function fetchLangStrings({ langPack, langCode, keys }: {
-  langPack: string; langCode: string; keys: string[];
-}) {
-  const result = await invokeRequest(new GramJs.langpack.GetStrings({
-    langPack,
-    langCode: BETA_LANG_CODES.includes(langCode) ? `${langCode}-raw` : langCode,
-    keys,
-  }));
-
-  if (!result) {
-    return undefined;
-  }
-
-  return result.map(omitVirtualClassFields);
 }
 
 export async function fetchPrivacySettings(privacyKey: ApiPrivacyKey) {
@@ -453,10 +542,7 @@ export async function fetchPrivacySettings(privacyKey: ApiPrivacyKey) {
     return undefined;
   }
 
-  updateLocalDb(result);
-
   return {
-    users: result.users.map(buildApiUser).filter(Boolean),
     rules: buildPrivacyRules(result.rules),
   };
 }
@@ -482,48 +568,10 @@ export function unregisterDevice(token: string) {
 }
 
 export async function setPrivacySettings(
-  privacyKey: ApiPrivacyKey, rules: InputPrivacyRules,
+  privacyKey: ApiPrivacyKey, rules: ApiInputPrivacyRules,
 ) {
   const key = buildInputPrivacyKey(privacyKey);
-  const privacyRules: GramJs.TypeInputPrivacyRule[] = [];
-
-  if (rules.allowedUsers) {
-    privacyRules.push(new GramJs.InputPrivacyValueAllowUsers({
-      users: rules.allowedUsers.map(({ id, accessHash }) => buildInputEntity(id, accessHash) as GramJs.InputUser),
-    }));
-  }
-  if (rules.allowedChats) {
-    privacyRules.push(new GramJs.InputPrivacyValueAllowChatParticipants({
-      chats: rules.allowedChats.map(({ id }) => buildInputEntity(id) as BigInt.BigInteger),
-    }));
-  }
-  if (rules.blockedUsers) {
-    privacyRules.push(new GramJs.InputPrivacyValueDisallowUsers({
-      users: rules.blockedUsers.map(({ id, accessHash }) => buildInputEntity(id, accessHash) as GramJs.InputUser),
-    }));
-  }
-  if (rules.blockedChats) {
-    privacyRules.push(new GramJs.InputPrivacyValueDisallowChatParticipants({
-      chats: rules.blockedChats.map(({ id }) => buildInputEntity(id) as BigInt.BigInteger),
-    }));
-  }
-  switch (rules.visibility) {
-    case 'everybody':
-      privacyRules.push(new GramJs.InputPrivacyValueAllowAll());
-      break;
-
-    case 'contacts':
-      privacyRules.push(new GramJs.InputPrivacyValueAllowContacts());
-      break;
-
-    case 'nonContacts':
-      privacyRules.push(new GramJs.InputPrivacyValueDisallowContacts());
-      break;
-
-    case 'nobody':
-      privacyRules.push(new GramJs.InputPrivacyValueDisallowAll());
-      break;
-  }
+  const privacyRules = buildInputPrivacyRules(rules);
 
   const result = await invokeRequest(new GramJs.account.SetPrivacy({ key, rules: privacyRules }));
 
@@ -531,10 +579,7 @@ export async function setPrivacySettings(
     return undefined;
   }
 
-  updateLocalDb(result);
-
   return {
-    users: result.users.map(buildApiUser).filter(Boolean),
     rules: buildPrivacyRules(result.rules),
   };
 }
@@ -576,17 +621,38 @@ export async function fetchConfig(): Promise<ApiConfig | undefined> {
   return buildApiConfig(result);
 }
 
-function updateLocalDb(
-  result: (
-    GramJs.account.PrivacyRules | GramJs.contacts.Blocked | GramJs.contacts.BlockedSlice |
-    GramJs.Updates | GramJs.UpdatesCombined
-  ),
-) {
-  addEntitiesWithPhotosToLocalDb(result.users);
-  addEntitiesWithPhotosToLocalDb(result.chats);
+export async function fetchPeerColors(hash?: number) {
+  const result = await invokeRequest(new GramJs.help.GetPeerColors({
+    hash,
+  }));
+  if (!result) return undefined;
+
+  const colors = buildApiPeerColors(result);
+  if (!colors) return undefined;
+
+  const newHash = result instanceof GramJs.help.PeerColors ? result.hash : undefined;
+
+  return {
+    colors,
+    hash: newHash,
+  };
 }
 
-export async function fetchCountryList({ langCode = 'en' }: { langCode?: LangCode }) {
+export async function fetchTimezones(hash?: number) {
+  const result = await invokeRequest(new GramJs.help.GetTimezonesList({
+    hash,
+  }));
+  if (!result || result instanceof GramJs.help.TimezonesListNotModified) return undefined;
+
+  const timezones = result.timezones.map(buildApiTimezone);
+
+  return {
+    timezones,
+    hash: result.hash,
+  };
+}
+
+export async function fetchCountryList({ langCode = 'en' }: { langCode?: string }) {
   const countryList = await invokeRequest(new GramJs.help.GetCountriesList({
     langCode,
   }));
@@ -606,15 +672,25 @@ export async function fetchGlobalPrivacySettings() {
 
   return {
     shouldArchiveAndMuteNewNonContact: Boolean(result.archiveAndMuteNewNoncontactPeers),
+    shouldHideReadMarks: Boolean(result.hideReadMarks),
+    shouldNewNonContactPeersRequirePremium: Boolean(result.newNoncontactPeersRequirePremium),
   };
 }
 
-export async function updateGlobalPrivacySettings({ shouldArchiveAndMuteNewNonContact } : {
-  shouldArchiveAndMuteNewNonContact: boolean;
+export async function updateGlobalPrivacySettings({
+  shouldArchiveAndMuteNewNonContact,
+  shouldHideReadMarks,
+  shouldNewNonContactPeersRequirePremium,
+}: {
+  shouldArchiveAndMuteNewNonContact?: boolean;
+  shouldHideReadMarks?: boolean;
+  shouldNewNonContactPeersRequirePremium?: boolean;
 }) {
   const result = await invokeRequest(new GramJs.account.SetGlobalPrivacySettings({
     settings: new GramJs.GlobalPrivacySettings({
-      archiveAndMuteNewNoncontactPeers: shouldArchiveAndMuteNewNonContact,
+      ...(shouldArchiveAndMuteNewNonContact && { archiveAndMuteNewNoncontactPeers: true }),
+      ...(shouldHideReadMarks && { hideReadMarks: true }),
+      ...(shouldNewNonContactPeersRequirePremium && { newNoncontactPeersRequirePremium: true }),
     }),
   }));
 
@@ -624,6 +700,8 @@ export async function updateGlobalPrivacySettings({ shouldArchiveAndMuteNewNonCo
 
   return {
     shouldArchiveAndMuteNewNonContact: Boolean(result.archiveAndMuteNewNoncontactPeers),
+    shouldHideReadMarks: Boolean(result.hideReadMarks),
+    shouldNewNonContactPeersRequirePremium: Boolean(result.newNoncontactPeersRequirePremium),
   };
 }
 

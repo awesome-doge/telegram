@@ -1,21 +1,25 @@
-import { addActionHandler } from '../../index';
+import type { ActionReturnType } from '../../types';
+import { GlobalSearchContent } from '../../../types';
 
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { addActionHandler } from '../../index';
 import { updateGlobalSearch, updateGlobalSearchContent } from '../../reducers';
 import { selectTabState } from '../../selectors';
-import type { ActionReturnType } from '../../types';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
 
 const MAX_RECENTLY_FOUND_IDS = 10;
 
 addActionHandler('setGlobalSearchQuery', (global, actions, payload): ActionReturnType => {
-  const { query, tabId = getCurrentTabId() } = payload!;
-  const { chatId } = selectTabState(global, tabId).globalSearch;
+  const { query, tabId = getCurrentTabId() } = payload;
+  const { chatId, currentContent } = selectTabState(global, tabId).globalSearch;
+
+  const fetchingStatus = query && currentContent !== GlobalSearchContent.BotApps
+    ? { chats: !chatId, messages: true } : undefined;
 
   return updateGlobalSearch(global, {
     globalResults: {},
     localResults: {},
     resultsByType: undefined,
-    ...(query ? { fetchingStatus: { chats: !chatId, messages: true } } : { fetchingStatus: undefined }),
+    fetchingStatus,
     query,
   }, tabId);
 });

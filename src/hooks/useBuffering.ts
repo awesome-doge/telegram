@@ -1,21 +1,24 @@
 import type React from '../lib/teact/teact';
-import { useCallback, useMemo, useState } from '../lib/teact/teact';
-import { debounce } from '../util/schedulers';
-import { isSafariPatchInProgress } from '../util/patchSafariProgressiveAudio';
+import { useMemo, useState } from '../lib/teact/teact';
+
 import { areDeepEqual } from '../util/areDeepEqual';
+import { isSafariPatchInProgress } from '../util/patchSafariProgressiveAudio';
+import { debounce } from '../util/schedulers';
+import useLastCallback from './useLastCallback';
 
 type BufferingEvent = (e: Event | React.SyntheticEvent<HTMLMediaElement>) => void;
 
 const MIN_READY_STATE = 3;
 // Avoid flickering when re-mounting previously buffered video
 const DEBOUNCE = 200;
+const MIN_ALLOWED_MEDIA_DURATION = 0.1; // Some video emojis have weird duration of 0.04 causing extreme amount of events
 
 /**
  * Time range relative to the duration [0, 1]
  */
 export type BufferedRange = { start: number; end: number };
 
-const useBuffering = (noInitiallyBuffered = false, onTimeUpdate?: AnyToVoidFunction) => {
+const useBuffering = (noInitiallyBuffered = false, onTimeUpdate?: AnyToVoidFunction, onBroken?: AnyToVoidFunction) => {
   const [isBuffered, setIsBuffered] = useState(!noInitiallyBuffered);
   const [isReady, setIsReady] = useState(false);
   const [bufferedProgress, setBufferedProgress] = useState(0);
@@ -25,12 +28,17 @@ const useBuffering = (noInitiallyBuffered = false, onTimeUpdate?: AnyToVoidFunct
     return debounce(setIsBuffered, DEBOUNCE, false, true);
   }, []);
 
-  const handleBuffering = useCallback<BufferingEvent>((e) => {
+  const handleBuffering = useLastCallback<BufferingEvent>((e) => {
+    const media = e.currentTarget as HTMLMediaElement;
+
+    if (media.duration < MIN_ALLOWED_MEDIA_DURATION) {
+      onBroken?.();
+      return;
+    }
+
     if (e.type === 'timeupdate') {
       onTimeUpdate?.(e);
     }
-
-    const media = e.currentTarget as HTMLMediaElement;
 
     if (!isSafariPatchInProgress(media)) {
       if (media.buffered.length) {
@@ -45,9 +53,10 @@ const useBuffering = (noInitiallyBuffered = false, onTimeUpdate?: AnyToVoidFunct
       setIsBufferedDebounced(media.readyState >= MIN_READY_STATE || media.currentTime > 0);
       setIsReady((current) => current || media.readyState > MIN_READY_STATE);
     }
-  }, [onTimeUpdate, setIsBufferedDebounced]);
+  });
 
   const bufferingHandlers = {
+    onPLay: handleBuffering,
     onLoadedData: handleBuffering,
     onPlaying: handleBuffering,
     onLoadStart: handleBuffering, // Needed for Safari to start

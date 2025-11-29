@@ -1,88 +1,98 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
-import { getActions, withGlobal } from '../../../global';
+import React, { memo } from '../../../lib/teact/teact';
+import { getActions } from '../../../global';
 
 import type { ApiSponsoredMessage } from '../../../api/types';
 import type { IAnchorPosition } from '../../../types';
 
-import { selectIsCurrentUserPremium, selectIsPremiumPurchaseBlocked } from '../../../global/selectors';
-import buildClassName from '../../../util/buildClassName';
-
+import useLastCallback from '../../../hooks/useLastCallback';
 import useShowTransition from '../../../hooks/useShowTransition';
-import useFlag from '../../../hooks/useFlag';
 
-import MessageContextMenu from './MessageContextMenu';
+import SponsoredMessageContextMenu from './SponsoredMessageContextMenu';
 
 export type OwnProps = {
   isOpen: boolean;
   message: ApiSponsoredMessage;
   anchor: IAnchorPosition;
-  onAboutAds: () => void;
-  onClose: () => void;
-  onCloseAnimationEnd: () => void;
+  triggerRef: React.RefObject<HTMLElement>;
+  shouldSkipAbout?: boolean;
+  onItemClick?: NoneToVoidFunction;
+  onClose: NoneToVoidFunction;
+  onCloseAnimationEnd: NoneToVoidFunction;
 };
 
-type StateProps = {
-  canBuyPremium?: boolean;
-};
-
-const SponsoredMessageContextMenuContainer: FC<OwnProps & StateProps> = ({
+const SponsoredMessageContextMenuContainer: FC<OwnProps> = ({
+  isOpen,
   message,
   anchor,
-  onAboutAds,
+  triggerRef,
+  shouldSkipAbout,
+  onItemClick,
   onClose,
   onCloseAnimationEnd,
-  canBuyPremium,
 }) => {
-  const { openPremiumModal, showDialog } = getActions();
+  const {
+    openAboutAdsModal,
+    showDialog,
+    reportSponsoredMessage,
+    hideSponsoredMessages,
+  } = getActions();
 
-  const [isMenuOpen, , closeMenu] = useFlag(true);
-  const { transitionClassNames } = useShowTransition(isMenuOpen, onCloseAnimationEnd, undefined, false);
+  const { ref } = useShowTransition({
+    isOpen,
+    onCloseAnimationEnd,
+  });
 
-  const handleAboutAdsOpen = useCallback(() => {
-    onAboutAds();
-    closeMenu();
-  }, [closeMenu, onAboutAds]);
-
-  const handleSponsoredHide = useCallback(() => {
-    closeMenu();
-    openPremiumModal();
+  const handleItemClick = useLastCallback(() => {
+    onItemClick?.();
     onClose();
-  }, [closeMenu, onClose, openPremiumModal]);
+  });
 
-  const handleSponsorInfo = useCallback(() => {
-    closeMenu();
+  const handleAboutAdsOpen = useLastCallback(() => {
+    openAboutAdsModal({ chatId: message.chatId });
+    handleItemClick();
+  });
+
+  const handleSponsoredHide = useLastCallback(() => {
+    hideSponsoredMessages();
+    handleItemClick();
+  });
+
+  const handleSponsorInfo = useLastCallback(() => {
     showDialog({
       data: {
         message: [message.sponsorInfo, message.additionalInfo].join('\n'),
       },
     });
-  }, [message.additionalInfo, message.sponsorInfo]);
+    handleItemClick();
+  });
+
+  const handleReportSponsoredMessage = useLastCallback(() => {
+    reportSponsoredMessage({ peerId: message.chatId, randomId: message.randomId });
+    handleItemClick();
+  });
 
   if (!anchor) {
     return undefined;
   }
 
   return (
-    <div className={buildClassName('ContextMenuContainer', transitionClassNames)}>
-      <MessageContextMenu
-        isOpen={isMenuOpen}
+    <div ref={ref} className="ContextMenuContainer">
+      <SponsoredMessageContextMenu
+        isOpen={isOpen}
         anchor={anchor}
+        triggerRef={triggerRef}
         message={message}
-        onClose={closeMenu}
-        onCloseAnimationEnd={closeMenu}
-        onAboutAds={handleAboutAdsOpen}
-        onSponsoredHide={canBuyPremium ? handleSponsoredHide : undefined}
+        shouldSkipAbout={shouldSkipAbout}
+        onClose={onClose}
+        onCloseAnimationEnd={onClose}
+        onAboutAdsClick={handleAboutAdsOpen}
+        onSponsoredHide={handleSponsoredHide}
         onSponsorInfo={handleSponsorInfo}
+        onSponsoredReport={handleReportSponsoredMessage}
       />
     </div>
   );
 };
 
-export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
-    return {
-      canBuyPremium: !selectIsCurrentUserPremium(global) && !selectIsPremiumPurchaseBlocked(global),
-    };
-  },
-)(SponsoredMessageContextMenuContainer));
+export default memo(SponsoredMessageContextMenuContainer);

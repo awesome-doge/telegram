@@ -1,18 +1,18 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback, useState } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiChatFolder } from '../../../api/types';
 
-import renderText from '../../common/helpers/renderText';
-import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import buildClassName from '../../../util/buildClassName';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
+import renderText from '../../common/helpers/renderText';
 
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
-import Button from '../../ui/Button';
+import PeerPicker from '../../common/pickers/PeerPicker';
 import Badge from '../../ui/Badge';
-import Picker from '../../common/Picker';
+import Button from '../../ui/Button';
 
 import styles from './ChatlistModal.module.scss';
 
@@ -27,9 +27,9 @@ const ChatlistDelete: FC<OwnProps> = ({
 }) => {
   const { closeChatlistModal, leaveChatlist } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
-  const [selectedPeerIds, setSelectedPeerIds] = useState<string[]>(suggestedPeerIds);
+  const [selectedPeerIds, setSelectedPeerIds] = useState<string[]>([]);
 
   const badgeText = selectedPeerIds.length ? selectedPeerIds.length.toString() : undefined;
 
@@ -64,10 +64,13 @@ const ChatlistDelete: FC<OwnProps> = ({
                 {selectedPeerIds.length === suggestedPeerIds.length ? lang('DeselectAll') : lang('SelectAll')}
               </div>
             </div>
-            <Picker
+            <PeerPicker
               itemIds={suggestedPeerIds}
               onSelectedIdsChange={setSelectedPeerIds}
               selectedIds={selectedPeerIds}
+              allowMultiple
+              withStatus
+              itemInputType="checkbox"
             />
           </div>
         </>

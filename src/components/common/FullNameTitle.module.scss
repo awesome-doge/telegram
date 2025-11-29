@@ -1,13 +1,33 @@
 .root {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: 0.25rem;
-
-  > h3 {
-    margin-bottom: 0;
-  }
 
   :global(.custom-emoji) {
     color: var(--color-primary);
   }
+
+  :global(.statusSparkles) {
+    color: var(--accent-color);
+    :global(.selected) & {
+      color: white;
+    }
+  }
+}
+
+.fullName {
+  font-size: 1em;
+  margin-bottom: 0;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+
+  &.canCopy {
+    pointer-events: all;
+  }
+}
+
+.transition {
+  width: 1.5rem;
 }

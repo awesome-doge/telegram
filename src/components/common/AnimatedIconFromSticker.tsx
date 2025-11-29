@@ -1,10 +1,10 @@
 import React, { memo } from '../../lib/teact/teact';
 
-import type { OwnProps as AnimatedIconProps } from './AnimatedIcon';
 import type { ApiSticker } from '../../api/types';
+import type { OwnProps as AnimatedIconProps } from './AnimatedIcon';
 import { ApiMediaFormat } from '../../api/types';
 
-import { getStickerPreviewHash } from '../../global/helpers';
+import { getStickerMediaHash } from '../../global/helpers';
 
 import useMedia from '../../hooks/useMedia';
 
@@ -12,22 +12,21 @@ import AnimatedIconWithPreview from './AnimatedIconWithPreview';
 
 type OwnProps =
   Partial<AnimatedIconProps>
-  & { sticker?: ApiSticker; noLoad?: boolean; forcePreview?: boolean; lastSyncTime?: number };
+  & { sticker?: ApiSticker; noLoad?: boolean; forcePreview?: boolean };
 
 function AnimatedIconFromSticker(props: OwnProps) {
   const {
-    sticker, noLoad, forcePreview, lastSyncTime, ...otherProps
+    sticker, noLoad, forcePreview, ...otherProps
   } = props;
 
   const thumbDataUri = sticker?.thumbnail?.dataUri;
-  const localMediaHash = sticker && `sticker${sticker.id}`;
+  const localMediaHash = sticker && getStickerMediaHash(sticker, 'full');
   const previewBlobUrl = useMedia(
-    sticker ? getStickerPreviewHash(sticker.id) : undefined,
+    sticker ? getStickerMediaHash(sticker, 'preview') : undefined,
     noLoad && !forcePreview,
     ApiMediaFormat.BlobUrl,
-    lastSyncTime,
   );
-  const tgsUrl = useMedia(localMediaHash, noLoad, undefined, lastSyncTime);
+  const tgsUrl = useMedia(localMediaHash, noLoad);
 
   return (
     <AnimatedIconWithPreview

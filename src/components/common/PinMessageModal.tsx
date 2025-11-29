@@ -1,21 +1,22 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useCallback, memo } from '../../lib/teact/teact';
+import React, { memo, useCallback } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import { selectChat, selectIsChatWithSelf, selectUser } from '../../global/selectors';
 import {
-  isUserId,
-  getUserFirstOrLastName,
   getPrivateChatUserId,
+  getUserFirstOrLastName,
   isChatBasicGroup,
-  isChatSuperGroup,
   isChatChannel,
+  isChatSuperGroup,
+  isUserId,
 } from '../../global/helpers';
-import useLang from '../../hooks/useLang';
+import { selectChat, selectIsChatWithSelf, selectUser } from '../../global/selectors';
 import renderText from './helpers/renderText';
 
-import Modal from '../ui/Modal';
+import useOldLang from '../../hooks/useOldLang';
+
 import Button from '../ui/Button';
+import Modal from '../ui/Modal';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -36,6 +37,7 @@ type StateProps = {
 
 const PinMessageModal: FC<OwnProps & StateProps> = ({
   isOpen,
+  chatId,
   messageId,
   isChannel,
   isGroup,
@@ -48,19 +50,19 @@ const PinMessageModal: FC<OwnProps & StateProps> = ({
 
   const handlePinMessageForAll = useCallback(() => {
     pinMessage({
-      messageId, isUnpin: false,
+      chatId, messageId, isUnpin: false,
     });
     onClose();
-  }, [pinMessage, messageId, onClose]);
+  }, [chatId, messageId, onClose]);
 
   const handlePinMessage = useCallback(() => {
     pinMessage({
-      messageId, isUnpin: false, isOneSide: true, isSilent: true,
+      chatId, messageId, isUnpin: false, isOneSide: true, isSilent: true,
     });
     onClose();
-  }, [messageId, onClose, pinMessage]);
+  }, [chatId, messageId, onClose]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   function renderMessage() {
     if (isChannel) {

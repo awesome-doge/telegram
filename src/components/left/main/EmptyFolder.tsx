@@ -3,21 +3,23 @@ import React, { memo, useCallback } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
 import type { ApiChatFolder, ApiSticker } from '../../../api/types';
-import { SettingsScreens } from '../../../types';
 import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
+import { SettingsScreens } from '../../../types';
 
 import { selectAnimatedEmoji, selectChatFolder } from '../../../global/selectors';
-import useLang from '../../../hooks/useLang';
-import useAppLayout from '../../../hooks/useAppLayout';
 
-import Button from '../../ui/Button';
+import useAppLayout from '../../../hooks/useAppLayout';
+import useOldLang from '../../../hooks/useOldLang';
+
 import AnimatedIconFromSticker from '../../common/AnimatedIconFromSticker';
+import Icon from '../../common/icons/Icon';
+import Button from '../../ui/Button';
 
 import styles from './EmptyFolder.module.scss';
 
 type OwnProps = {
   folderId?: number;
-  folderType: 'all' | 'archived' | 'folder';
+  folderType: 'all' | 'archived' | 'saved' | 'folder';
   foldersDispatch: FolderEditDispatch;
   onSettingsScreenSelect: (screen: SettingsScreens) => void;
 };
@@ -32,7 +34,7 @@ const ICON_SIZE = 96;
 const EmptyFolder: FC<OwnProps & StateProps> = ({
   chatFolder, animatedEmoji, foldersDispatch, onSettingsScreenSelect,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
   const { isMobile } = useAppLayout();
 
   const handleEditFolder = useCallback(() => {
@@ -58,7 +60,7 @@ const EmptyFolder: FC<OwnProps & StateProps> = ({
           size="smaller"
           isRtl={lang.isRtl}
         >
-          <i className="icon icon-settings" />
+          <Icon name="settings" />
           <div className={styles.buttonText}>
             {lang('ChatList.EmptyChatListEditFilter')}
           </div>

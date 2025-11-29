@@ -1,6 +1,7 @@
-import { useCallback, useRef } from '../lib/teact/teact';
+import { useRef } from '../lib/teact/teact';
 
 import useForceUpdate from './useForceUpdate';
+import useLastCallback from './useLastCallback';
 import useSyncEffect from './useSyncEffect';
 
 export default function useForumPanelRender(isForumPanelOpen = false) {
@@ -14,16 +15,16 @@ export default function useForumPanelRender(isForumPanelOpen = false) {
     }
   }, [isForumPanelOpen]);
 
-  const handleForumPanelAnimationEnd = useCallback(() => {
+  const handleForumPanelAnimationEnd = useLastCallback(() => {
     shouldRenderForumPanelRef.current = false;
     isAnimationStartedRef.current = false;
     forceUpdate();
-  }, [forceUpdate]);
+  });
 
-  const handleForumPanelAnimationStart = useCallback(() => {
+  const handleForumPanelAnimationStart = useLastCallback(() => {
     isAnimationStartedRef.current = true;
     forceUpdate();
-  }, []);
+  });
 
   return {
     shouldRenderForumPanel: shouldRenderForumPanelRef.current,

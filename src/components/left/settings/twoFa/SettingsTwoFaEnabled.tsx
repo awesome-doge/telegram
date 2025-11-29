@@ -3,13 +3,14 @@ import React, { memo } from '../../../../lib/teact/teact';
 
 import { SettingsScreens } from '../../../../types';
 
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
-
 import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
-import ListItem from '../../../ui/ListItem';
 import renderText from '../../../common/helpers/renderText';
+
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useOldLang from '../../../../hooks/useOldLang';
+
 import AnimatedIconWithPreview from '../../../common/AnimatedIconWithPreview';
+import ListItem from '../../../ui/ListItem';
 
 import lockPreviewUrl from '../../../../assets/lock.png';
 
@@ -22,7 +23,7 @@ type OwnProps = {
 const SettingsTwoFaEnabled: FC<OwnProps> = ({
   isActive, onReset, onScreenSelect,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -44,7 +45,7 @@ const SettingsTwoFaEnabled: FC<OwnProps> = ({
         </p>
       </div>
 
-      <div className="settings-item pt-0">
+      <div className="settings-item pt-2">
         <ListItem
           icon="edit"
           // eslint-disable-next-line react/jsx-no-bind

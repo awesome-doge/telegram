@@ -6,6 +6,7 @@ export enum Bundles {
   Main,
   Extra,
   Calls,
+  Stars,
 }
 
 interface ImportedBundles {
@@ -13,6 +14,7 @@ interface ImportedBundles {
   [Bundles.Main]: typeof import('../bundles/main');
   [Bundles.Extra]: typeof import('../bundles/extra');
   [Bundles.Calls]: typeof import('../bundles/calls');
+  [Bundles.Stars]: typeof import('../bundles/stars');
 }
 
 type BundlePromises = {
@@ -46,6 +48,9 @@ export async function loadBundle<B extends Bundles>(bundleName: B) {
       case Bundles.Calls:
         LOAD_PROMISES[Bundles.Calls] = import(/* webpackChunkName: "BundleCalls" */ '../bundles/calls');
         break;
+      case Bundles.Stars:
+        LOAD_PROMISES[Bundles.Stars] = import(/* webpackChunkName: "BundleStars" */ '../bundles/stars');
+        break;
     }
 
     (LOAD_PROMISES[bundleName] as Promise<ImportedBundles[B]>).then(runCallbacks);
@@ -64,7 +69,9 @@ export async function loadModule<B extends Bundles>(bundleName: B) {
   await loadBundle(bundleName);
 }
 
-export function getModuleFromMemory<B extends Bundles, M extends BundleModules<B>>(bundleName: B, moduleName: M) {
+export function getModuleFromMemory<B extends Bundles, M extends BundleModules<B>>(
+  bundleName: B, moduleName: M,
+): ImportedBundles[B][M] | undefined {
   const bundle = MEMORY_CACHE[bundleName] as ImportedBundles[B];
 
   if (!bundle) {

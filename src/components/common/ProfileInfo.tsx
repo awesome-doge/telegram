@@ -1,49 +1,48 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
-  useEffect, useCallback, memo, useState,
-} from '../../lib/teact/teact';
+import React, { memo, useEffect, useState } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
-  ApiUser, ApiChat, ApiUserStatus, ApiTopic, ApiPhoto,
+  ApiChat, ApiPeerPhotos, ApiSticker, ApiTopic, ApiUser, ApiUserStatus,
 } from '../../api/types';
-import type { GlobalState } from '../../global/types';
 import { MediaViewerOrigin } from '../../types';
 
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
-import { MEMO_EMPTY_ARRAY } from '../../util/memo';
+import {
+  getUserStatus, isAnonymousForwardsChat, isChatChannel, isSystemBot, isUserOnline,
+} from '../../global/helpers';
 import {
   selectChat,
-  selectChatFullInfo,
   selectCurrentMessageList,
+  selectPeerPhotos,
   selectTabState,
   selectThreadMessagesCount,
+  selectTopic,
   selectUser,
-  selectUserFullInfo,
   selectUserStatus,
 } from '../../global/selectors';
-import {
-  getUserStatus, isChatChannel, isUserId, isUserOnline,
-} from '../../global/helpers';
-import { captureEvents, SwipeDirection } from '../../util/captureEvents';
 import buildClassName from '../../util/buildClassName';
+import { captureEvents, SwipeDirection } from '../../util/captureEvents';
+import { MEMO_EMPTY_ARRAY } from '../../util/memo';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import renderText from './helpers/renderText';
 
+import useIntervalForceUpdate from '../../hooks/schedulers/useIntervalForceUpdate';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 import usePhotosPreload from './hooks/usePhotosPreload';
-import useLang from '../../hooks/useLang';
-import usePrevious from '../../hooks/usePrevious';
 
+import Transition from '../ui/Transition';
+import Avatar from './Avatar';
 import FullNameTitle from './FullNameTitle';
 import ProfilePhoto from './ProfilePhoto';
-import Transition from '../ui/Transition';
 import TopicIcon from './TopicIcon';
-import Avatar from './Avatar';
 
 import './ProfileInfo.scss';
 import styles from './ProfileInfo.module.scss';
 
 type OwnProps = {
-  userId: string;
+  peerId: string;
   forceShowSelf?: boolean;
   canPlayVideo: boolean;
 };
@@ -53,20 +52,20 @@ type StateProps =
     user?: ApiUser;
     userStatus?: ApiUserStatus;
     chat?: ApiChat;
-    isSavedMessages?: boolean;
-    mediaId?: number;
+    mediaIndex?: number;
     avatarOwnerId?: string;
     topic?: ApiTopic;
     messagesCount?: number;
-    userPersonalPhoto?: ApiPhoto;
-    userProfilePhoto?: ApiPhoto;
-    userFallbackPhoto?: ApiPhoto;
-    chatProfilePhoto?: ApiPhoto;
-  }
-  & Pick<GlobalState, 'connectionState'>;
+    emojiStatusSticker?: ApiSticker;
+    emojiStatusSlug?: string;
+    profilePhotos?: ApiPeerPhotos;
+  };
 
 const EMOJI_STATUS_SIZE = 24;
 const EMOJI_TOPIC_SIZE = 120;
+const LOAD_MORE_THRESHOLD = 3;
+const MAX_PHOTO_DASH_COUNT = 30;
+const STATUS_UPDATE_INTERVAL = 1000 * 60; // 1 min
 
 const ProfileInfo: FC<OwnProps & StateProps> = ({
   forceShowSelf,
@@ -74,91 +73,106 @@ const ProfileInfo: FC<OwnProps & StateProps> = ({
   user,
   userStatus,
   chat,
-  isSavedMessages,
-  connectionState,
-  mediaId,
+  mediaIndex,
   avatarOwnerId,
   topic,
   messagesCount,
-  userPersonalPhoto,
-  userProfilePhoto,
-  userFallbackPhoto,
-  chatProfilePhoto,
+  emojiStatusSticker,
+  emojiStatusSlug,
+  profilePhotos,
+  peerId,
 }) => {
   const {
-    loadFullUser,
     openMediaViewer,
     openPremiumModal,
+    openStickerSet,
+    openPrivacySettingsNoticeModal,
+    loadMoreProfilePhotos,
+    openUniqueGiftBySlug,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
-  const { id: userId } = user || {};
-  const { id: chatId } = chat || {};
-  const photos = user?.photos || chat?.photos || MEMO_EMPTY_ARRAY;
-  const prevMediaId = usePrevious(mediaId);
-  const prevAvatarOwnerId = usePrevious(avatarOwnerId);
+  useIntervalForceUpdate(user ? STATUS_UPDATE_INTERVAL : undefined);
+
+  const photos = profilePhotos?.photos || MEMO_EMPTY_ARRAY;
+  const prevMediaIndex = usePreviousDeprecated(mediaIndex);
+  const prevAvatarOwnerId = usePreviousDeprecated(avatarOwnerId);
   const [hasSlideAnimation, setHasSlideAnimation] = useState(true);
-  const slideAnimation = hasSlideAnimation
-    ? (lang.isRtl ? 'slideOptimizedRtl' : 'slideOptimized')
-    : 'none';
+  // slideOptimized doesn't work well when animation is dynamically disabled
+  const slideAnimation = hasSlideAnimation ? (lang.isRtl ? 'slideRtl' : 'slide') : 'none';
 
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-  const isFirst = isSavedMessages || photos.length <= 1 || currentPhotoIndex === 0;
-  const isLast = isSavedMessages || photos.length <= 1 || currentPhotoIndex === photos.length - 1;
+  const isFirst = photos.length <= 1 || currentPhotoIndex === 0;
+  const isLast = photos.length <= 1 || currentPhotoIndex === photos.length - 1;
+
+  useEffect(() => {
+    if (photos.length - currentPhotoIndex <= LOAD_MORE_THRESHOLD) {
+      loadMoreProfilePhotos({ peerId });
+    }
+  }, [currentPhotoIndex, peerId, photos.length]);
 
   // Set the current avatar photo to the last selected photo in Media Viewer after it is closed
   useEffect(() => {
-    if (prevAvatarOwnerId && prevMediaId !== undefined && mediaId === undefined) {
+    if (prevAvatarOwnerId && prevMediaIndex !== undefined && mediaIndex === undefined) {
       setHasSlideAnimation(false);
-      setCurrentPhotoIndex(prevMediaId);
+      setCurrentPhotoIndex(prevMediaIndex);
     }
-  }, [mediaId, prevMediaId, prevAvatarOwnerId]);
+  }, [mediaIndex, prevMediaIndex, prevAvatarOwnerId]);
 
   // Deleting the last profile photo may result in an error
   useEffect(() => {
     if (currentPhotoIndex > photos.length) {
+      setHasSlideAnimation(false);
       setCurrentPhotoIndex(Math.max(0, photos.length - 1));
     }
   }, [currentPhotoIndex, photos.length]);
 
-  useEffect(() => {
-    if (connectionState === 'connectionStateReady' && userId && !forceShowSelf) {
-      loadFullUser({ userId });
-    }
-  }, [userId, loadFullUser, connectionState, forceShowSelf]);
+  usePhotosPreload(photos, currentPhotoIndex);
 
-  usePhotosPreload(user || chat, photos, currentPhotoIndex);
-
-  const handleProfilePhotoClick = useCallback(() => {
+  const handleProfilePhotoClick = useLastCallback(() => {
     openMediaViewer({
-      avatarOwnerId: userId || chatId,
-      mediaId: currentPhotoIndex,
+      isAvatarView: true,
+      chatId: peerId,
+      mediaIndex: currentPhotoIndex,
       origin: forceShowSelf ? MediaViewerOrigin.SettingsAvatar : MediaViewerOrigin.ProfileAvatar,
     });
-  }, [openMediaViewer, userId, chatId, currentPhotoIndex, forceShowSelf]);
+  });
 
-  const handleClickPremium = useCallback(() => {
-    if (!user) return;
+  const handleStatusClick = useLastCallback(() => {
+    if (emojiStatusSlug) {
+      openUniqueGiftBySlug({ slug: emojiStatusSlug });
+      return;
+    }
+    if (!peerId) {
+      openStickerSet({
+        stickerSetInfo: emojiStatusSticker!.stickerSetInfo,
+      });
+      return;
+    }
 
-    openPremiumModal({ fromUserId: user.id });
-  }, [openPremiumModal, user]);
+    openPremiumModal({ fromUserId: peerId });
+  });
 
-  const selectPreviousMedia = useCallback(() => {
+  const selectPreviousMedia = useLastCallback(() => {
     if (isFirst) {
       return;
     }
     setHasSlideAnimation(true);
     setCurrentPhotoIndex(currentPhotoIndex - 1);
-  }, [currentPhotoIndex, isFirst]);
+  });
 
-  const selectNextMedia = useCallback(() => {
+  const selectNextMedia = useLastCallback(() => {
     if (isLast) {
       return;
     }
     setHasSlideAnimation(true);
     setCurrentPhotoIndex(currentPhotoIndex + 1);
-  }, [currentPhotoIndex, isLast]);
+  });
+
+  const handleOpenGetReadDateModal = useLastCallback(() => {
+    openPrivacySettingsNoticeModal({ chatId: chat!.id, isReadDate: false });
+  });
 
   function handleSelectFallbackPhoto() {
     if (!isFirst) return;
@@ -212,32 +226,34 @@ const ProfileInfo: FC<OwnProps & StateProps> = ({
   }
 
   function renderPhotoTabs() {
-    if (isSavedMessages || !photos || photos.length <= 1) {
+    const totalPhotosLength = Math.max(photos.length, profilePhotos?.count || 0);
+    if (!photos || totalPhotosLength <= 1) {
       return undefined;
     }
 
+    const enumerator = Array.from({ length: Math.min(totalPhotosLength, MAX_PHOTO_DASH_COUNT) });
+    const activeDashIndex = currentPhotoIndex >= MAX_PHOTO_DASH_COUNT ? MAX_PHOTO_DASH_COUNT - 1 : currentPhotoIndex;
+
     return (
       <div className={styles.photoDashes}>
-        {photos.map((_, i) => (
-          <span className={buildClassName(styles.photoDash, i === currentPhotoIndex && styles.photoDash_current)} />
+        {enumerator.map((_, i) => (
+          <span className={buildClassName(styles.photoDash, i === activeDashIndex && styles.photoDash_current)} />
         ))}
       </div>
     );
   }
 
   function renderPhoto(isActive?: boolean) {
-    const photo = !isSavedMessages && photos.length > 0
+    const photo = photos.length > 0
       ? photos[currentPhotoIndex]
       : undefined;
-    const profilePhoto = photo || userPersonalPhoto || userProfilePhoto || chatProfilePhoto || userFallbackPhoto;
 
     return (
       <ProfilePhoto
         key={currentPhotoIndex}
         user={user}
         chat={chat}
-        photo={profilePhoto}
-        isSavedMessages={isSavedMessages}
+        photo={photo}
         canPlayVideo={Boolean(isActive && canPlayVideo)}
         onClick={handleProfilePhotoClick}
       />
@@ -245,10 +261,27 @@ const ProfileInfo: FC<OwnProps & StateProps> = ({
   }
 
   function renderStatus() {
+    const isAnonymousForwards = isAnonymousForwardsChat(peerId);
+    const isSystemBotChat = isSystemBot(peerId);
+    if (isAnonymousForwards || isSystemBotChat) return undefined;
+
     if (user) {
       return (
-        <div className={buildClassName(styles.status, 'status', isUserOnline(user, userStatus) && 'online')}>
-          <span className="user-status" dir="auto">{getUserStatus(lang, user, userStatus)}</span>
+        <div
+          className={buildClassName(
+            styles.status,
+            'status',
+            isUserOnline(user, userStatus) && 'online',
+          )}
+        >
+          <span className={styles.userStatus} dir="auto">
+            {getUserStatus(lang, user, userStatus)}
+          </span>
+          {userStatus?.isReadDateRestrictedByMe && (
+            <span className={styles.getStatus} onClick={handleOpenGetReadDateModal}>
+              <span>{lang('StatusHiddenShow')}</span>
+            </span>
+          )}
         </div>
       );
     }
@@ -269,23 +302,23 @@ const ProfileInfo: FC<OwnProps & StateProps> = ({
 
   return (
     <div
-      className={buildClassName('ProfileInfo', forceShowSelf && styles.self)}
+      className={buildClassName('ProfileInfo')}
       dir={lang.isRtl ? 'rtl' : undefined}
     >
       <div className={styles.photoWrapper}>
         {renderPhotoTabs()}
-        {!forceShowSelf && userPersonalPhoto && (
+        {!forceShowSelf && profilePhotos?.personalPhoto && (
           <div className={buildClassName(
             styles.fallbackPhoto,
             isFirst && styles.fallbackPhotoVisible,
           )}
           >
             <div className={styles.fallbackPhotoContents}>
-              {lang(userPersonalPhoto.isVideo ? 'UserInfo.CustomVideo' : 'UserInfo.CustomPhoto')}
+              {lang(profilePhotos.personalPhoto.isVideo ? 'UserInfo.CustomVideo' : 'UserInfo.CustomPhoto')}
             </div>
           </div>
         )}
-        {forceShowSelf && userFallbackPhoto && (
+        {forceShowSelf && profilePhotos?.fallbackPhoto && (
           <div className={buildClassName(
             styles.fallbackPhoto,
             (isFirst || isLast) && styles.fallbackPhotoVisible,
@@ -294,12 +327,12 @@ const ProfileInfo: FC<OwnProps & StateProps> = ({
             <div className={styles.fallbackPhotoContents} onClick={handleSelectFallbackPhoto}>
               {!isLast && (
                 <Avatar
-                  photo={userFallbackPhoto}
+                  photo={profilePhotos.fallbackPhoto}
                   className={styles.fallbackPhotoAvatar}
                   size="mini"
                 />
               )}
-              {lang(userFallbackPhoto.isVideo ? 'UserInfo.PublicVideo' : 'UserInfo.PublicPhoto')}
+              {lang(profilePhotos.fallbackPhoto.isVideo ? 'UserInfo.PublicVideo' : 'UserInfo.PublicPhoto')}
             </div>
           </div>
         )}
@@ -333,47 +366,44 @@ const ProfileInfo: FC<OwnProps & StateProps> = ({
             peer={(user || chat)!}
             withEmojiStatus
             emojiStatusSize={EMOJI_STATUS_SIZE}
-            isSavedMessages={isSavedMessages}
-            onEmojiStatusClick={handleClickPremium}
+            onEmojiStatusClick={handleStatusClick}
             noLoopLimit
+            canCopyTitle
           />
         )}
-        {!isSavedMessages && renderStatus()}
+        {renderStatus()}
       </div>
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { userId, forceShowSelf }): StateProps => {
-    const { connectionState } = global;
-    const user = selectUser(global, userId);
-    const isPrivate = isUserId(userId);
-    const userStatus = selectUserStatus(global, userId);
-    const chat = selectChat(global, userId);
-    const isSavedMessages = !forceShowSelf && user && user.isSelf;
-    const { mediaId, avatarOwnerId } = selectTabState(global).mediaViewer;
+  (global, { peerId }): StateProps => {
+    const user = selectUser(global, peerId);
+    const userStatus = selectUserStatus(global, peerId);
+    const chat = selectChat(global, peerId);
+    const profilePhotos = selectPeerPhotos(global, peerId);
+    const { mediaIndex, chatId: avatarOwnerId } = selectTabState(global).mediaViewer;
     const isForum = chat?.isForum;
     const { threadId: currentTopicId } = selectCurrentMessageList(global) || {};
-    const topic = isForum && currentTopicId ? chat?.topics?.[currentTopicId] : undefined;
-    const userFullInfo = isPrivate ? selectUserFullInfo(global, userId) : undefined;
-    const chatFullInfo = !isPrivate ? selectChatFullInfo(global, userId) : undefined;
+    const topic = isForum && currentTopicId ? selectTopic(global, peerId, currentTopicId) : undefined;
+
+    const emojiStatus = (user || chat)?.emojiStatus;
+    const emojiStatusSticker = emojiStatus ? global.customEmojis.byId[emojiStatus.documentId] : undefined;
+    const emojiStatusSlug = emojiStatus?.type === 'collectible' ? emojiStatus.slug : undefined;
 
     return {
-      connectionState,
       user,
       userStatus,
       chat,
-      userPersonalPhoto: userFullInfo?.personalPhoto,
-      userProfilePhoto: userFullInfo?.profilePhoto,
-      userFallbackPhoto: userFullInfo?.fallbackPhoto,
-      chatProfilePhoto: chatFullInfo?.profilePhoto,
-      isSavedMessages,
-      mediaId,
+      mediaIndex,
       avatarOwnerId,
+      emojiStatusSticker,
+      emojiStatusSlug,
+      profilePhotos,
       ...(topic && {
         topic,
-        messagesCount: selectThreadMessagesCount(global, userId, currentTopicId!),
+        messagesCount: selectThreadMessagesCount(global, peerId, currentTopicId!),
       }),
     };
   },

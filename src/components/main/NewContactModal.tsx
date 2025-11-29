@@ -6,20 +6,21 @@ import { getActions, withGlobal } from '../../global';
 
 import type { ApiCountryCode, ApiUser, ApiUserStatus } from '../../api/types';
 
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { getUserStatus } from '../../global/helpers';
 import { selectUser, selectUserStatus } from '../../global/selectors';
-import renderText from '../common/helpers/renderText';
 import { formatPhoneNumberWithCode } from '../../util/phoneNumber';
-import useLang from '../../hooks/useLang';
-import useFlag from '../../hooks/useFlag';
-import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+import renderText from '../common/helpers/renderText';
 
-import Modal from '../ui/Modal';
+import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useFlag from '../../hooks/useFlag';
+import useOldLang from '../../hooks/useOldLang';
+
 import Avatar from '../common/Avatar';
-import InputText from '../ui/InputText';
-import Checkbox from '../ui/Checkbox';
 import Button from '../ui/Button';
+import Checkbox from '../ui/Checkbox';
+import InputText from '../ui/InputText';
+import Modal from '../ui/Modal';
 
 import './NewContactModal.scss';
 
@@ -47,7 +48,7 @@ const NewContactModal: FC<OwnProps & StateProps> = ({
 }) => {
   const { updateContact, importContact, closeNewContactDialog } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const renderingUser = useCurrentOrPrev(user);
   const renderingIsByPhoneNumber = useCurrentOrPrev(isByPhoneNumber);
   // eslint-disable-next-line no-null/no-null
@@ -122,7 +123,7 @@ const NewContactModal: FC<OwnProps & StateProps> = ({
         <div className="NewContactModal__profile" dir={lang.isRtl ? 'rtl' : undefined}>
           <Avatar
             size="jumbo"
-            user={renderingUser}
+            peer={renderingUser}
             text={`${firstName} ${lastName}`}
           />
           <div className="NewContactModal__profile-info">
@@ -156,12 +157,13 @@ const NewContactModal: FC<OwnProps & StateProps> = ({
           )}
         </p>
         <Checkbox
+          className="dialog-checkbox"
           checked={shouldSharePhoneNumber}
           tabIndex={0}
           onCheck={setShouldSharePhoneNumber}
           label={lang('lng_new_contact_share')}
         />
-        <p className="NewContactModal__help-text">
+        <p className="NewContactModal__help-text NewContactModal__help-text__negative">
           {renderText(lang('AddContact.SharedContactExceptionInfo', renderingUser?.firstName))}
         </p>
       </>
@@ -212,17 +214,17 @@ const NewContactModal: FC<OwnProps & StateProps> = ({
         <Button
           isText
           className="confirm-dialog-button"
-          onClick={handleClose}
-        >
-          {lang('Cancel')}
-        </Button>
-        <Button
-          isText
-          className="confirm-dialog-button"
           disabled={!canBeSubmitted}
           onClick={handleSubmit}
         >
           {lang('Done')}
+        </Button>
+        <Button
+          isText
+          className="confirm-dialog-button"
+          onClick={handleClose}
+        >
+          {lang('Cancel')}
         </Button>
       </div>
     </Modal>

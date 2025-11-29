@@ -11,6 +11,8 @@
   }
 
   :global(.Avatar) {
+    --radius: 0;
+
     position: absolute;
     top: 0;
     left: 0;
@@ -54,6 +56,10 @@
 
   :global(.Button) {
     color: #fff;
+  }
+
+  :global(body.is-electron) .root.single-column & {
+    padding-left: 5rem;
   }
 }
 
@@ -101,7 +107,7 @@
   color: white;
   max-width: 20rem;
   text-align: center;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   opacity: 0;
   transition: 0.25s ease-in-out opacity;
 
@@ -166,14 +172,14 @@
   bottom: 1rem;
   right: 1rem;
   border-radius: 0.5rem;
-  transform: translateY(calc(100% + 1rem));
+  transform: translateY(calc(100% + 1rem)) rotateY(180deg);
   transition: 0.25s ease-in-out transform;
 
   &.visible {
-    transform: translateY(-5.5rem);
+    transform: translateY(-5.5rem) rotateY(180deg);
   }
 
   &.fullscreen {
-    transform: translateY(0);
+    transform: translateY(0) rotateY(180deg);
   }
 }

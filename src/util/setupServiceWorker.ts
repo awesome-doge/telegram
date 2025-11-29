@@ -1,9 +1,10 @@
-import { DEBUG, DEBUG_MORE, IS_TEST } from '../config';
 import { getActions } from '../global';
+
+import { DEBUG, DEBUG_MORE, IS_TEST } from '../config';
 import { formatShareText } from './deeplink';
-import { IS_ANDROID, IS_IOS, IS_SERVICE_WORKER_SUPPORTED } from './windowEnvironment';
 import { validateFiles } from './files';
 import { notifyClientReady, playNotifySoundDebounced } from './notifications';
+import { IS_ANDROID, IS_IOS, IS_SERVICE_WORKER_SUPPORTED } from './windowEnvironment';
 
 type WorkerAction = {
   type: string;
@@ -60,7 +61,7 @@ if (IS_SERVICE_WORKER_SUPPORTED) {
         }
       }
 
-      await navigator.serviceWorker.register(new URL('../serviceWorker.ts', import.meta.url));
+      await navigator.serviceWorker.register(new URL('../serviceWorker', import.meta.url));
 
       if (DEBUG) {
         // eslint-disable-next-line no-console
@@ -68,6 +69,9 @@ if (IS_SERVICE_WORKER_SUPPORTED) {
       }
 
       await navigator.serviceWorker.ready;
+
+      // Wait for registration to be available
+      await navigator.serviceWorker.getRegistration();
 
       if (navigator.serviceWorker.controller) {
         if (DEBUG) {

@@ -1,27 +1,30 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef, useState,
+  memo, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
+import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
 import type { SettingsScreens } from '../../../types';
 import { LeftColumnContent } from '../../../types';
-import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
 
-import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import { PRODUCTION_URL } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
-import useShowTransition from '../../../hooks/useShowTransition';
-import useLang from '../../../hooks/useLang';
-import useForumPanelRender from '../../../hooks/useForumPanelRender';
+import { IS_ELECTRON, IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 
-import Transition from '../../ui/Transition';
-import LeftMainHeader from './LeftMainHeader';
-import ChatFolders from './ChatFolders';
-import LeftSearch from '../search/LeftSearch.async';
-import ContactList from './ContactList.async';
-import NewChatButton from '../NewChatButton';
+import useForumPanelRender from '../../../hooks/useForumPanelRender';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
+
 import Button from '../../ui/Button';
+import Transition from '../../ui/Transition';
+import NewChatButton from '../NewChatButton';
+import LeftSearch from '../search/LeftSearch.async';
+import ChatFolders from './ChatFolders';
+import ContactList from './ContactList.async';
 import ForumPanel from './ForumPanel';
+import LeftMainHeader from './LeftMainHeader';
 
 import './LeftMain.scss';
 
@@ -32,7 +35,8 @@ type OwnProps = {
   contactsFilter: string;
   shouldSkipTransition?: boolean;
   foldersDispatch: FolderEditDispatch;
-  isUpdateAvailable?: boolean;
+  isAppUpdateAvailable?: boolean;
+  isElectronUpdateAvailable?: boolean;
   isForumPanelOpen?: boolean;
   isClosingSearch?: boolean;
   onSearchQuery: (query: string) => void;
@@ -55,7 +59,8 @@ const LeftMain: FC<OwnProps> = ({
   contactsFilter,
   shouldSkipTransition,
   foldersDispatch,
-  isUpdateAvailable,
+  isAppUpdateAvailable,
+  isElectronUpdateAvailable,
   isForumPanelOpen,
   onSearchQuery,
   onContentChange,
@@ -65,6 +70,11 @@ const LeftMain: FC<OwnProps> = ({
 }) => {
   const { closeForumPanel } = getActions();
   const [isNewChatButtonShown, setIsNewChatButtonShown] = useState(IS_TOUCH_ENV);
+  const [isElectronAutoUpdateEnabled, setIsElectronAutoUpdateEnabled] = useState(false);
+
+  useEffect(() => {
+    window.electron?.getIsAutoUpdateEnabled().then(setIsElectronAutoUpdateEnabled);
+  }, []);
 
   const {
     shouldRenderForumPanel, handleForumPanelAnimationEnd,
@@ -76,19 +86,19 @@ const LeftMain: FC<OwnProps> = ({
   const {
     shouldRender: shouldRenderUpdateButton,
     transitionClassNames: updateButtonClassNames,
-  } = useShowTransition(isUpdateAvailable);
+  } = useShowTransitionDeprecated(isAppUpdateAvailable || isElectronUpdateAvailable);
 
   const isMouseInside = useRef(false);
 
-  const handleMouseEnter = useCallback(() => {
+  const handleMouseEnter = useLastCallback(() => {
     if (content !== LeftColumnContent.ChatList) {
       return;
     }
     isMouseInside.current = true;
     setIsNewChatButtonShown(true);
-  }, [content]);
+  });
 
-  const handleMouseLeave = useCallback(() => {
+  const handleMouseLeave = useLastCallback(() => {
     isMouseInside.current = false;
 
     if (closeTimeout) {
@@ -101,32 +111,38 @@ const LeftMain: FC<OwnProps> = ({
         setIsNewChatButtonShown(false);
       }
     }, BUTTON_CLOSE_DELAY_MS);
-  }, []);
+  });
 
-  const handleSelectSettings = useCallback(() => {
+  const handleSelectSettings = useLastCallback(() => {
     onContentChange(LeftColumnContent.Settings);
-  }, [onContentChange]);
+  });
 
-  const handleSelectContacts = useCallback(() => {
+  const handleSelectContacts = useLastCallback(() => {
     onContentChange(LeftColumnContent.Contacts);
-  }, [onContentChange]);
+  });
 
-  const handleSelectArchived = useCallback(() => {
+  const handleSelectArchived = useLastCallback(() => {
     onContentChange(LeftColumnContent.Archived);
     closeForumPanel();
-  }, [closeForumPanel, onContentChange]);
+  });
 
-  const handleUpdateClick = useCallback(() => {
-    window.location.reload();
-  }, []);
+  const handleUpdateClick = useLastCallback(() => {
+    if (IS_ELECTRON && !isElectronAutoUpdateEnabled) {
+      window.open(`${PRODUCTION_URL}/get`, '_blank', 'noopener');
+    } else if (isElectronUpdateAvailable) {
+      window.electron?.installUpdate();
+    } else {
+      window.location.reload();
+    }
+  });
 
-  const handleSelectNewChannel = useCallback(() => {
+  const handleSelectNewChannel = useLastCallback(() => {
     onContentChange(LeftColumnContent.NewChannelStep1);
-  }, [onContentChange]);
+  });
 
-  const handleSelectNewGroup = useCallback(() => {
+  const handleSelectNewGroup = useLastCallback(() => {
     onContentChange(LeftColumnContent.NewGroupStep1);
-  }, [onContentChange]);
+  });
 
   useEffect(() => {
     let autoCloseTimeout: number | undefined;
@@ -146,7 +162,7 @@ const LeftMain: FC<OwnProps> = ({
     };
   }, [content]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   return (
     <div
@@ -206,7 +222,7 @@ const LeftMain: FC<OwnProps> = ({
       {shouldRenderUpdateButton && (
         <Button
           fluid
-          pill
+          badge
           className={buildClassName('btn-update', updateButtonClassNames)}
           onClick={handleUpdateClick}
         >

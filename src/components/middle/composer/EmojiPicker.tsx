@@ -1,32 +1,37 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useState, useEffect, memo, useRef, useMemo, useCallback,
+  memo, useEffect, useMemo,
+  useRef, useState,
 } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { GlobalState } from '../../../global/types';
+import type { IconName } from '../../../types/icons';
 import type {
+  EmojiData,
   EmojiModule,
   EmojiRawData,
-  EmojiData,
-} from '../../../util/emoji';
+} from '../../../util/emoji/emoji';
 
 import { MENU_TRANSITION_DURATION, RECENT_SYMBOL_SET_ID } from '../../../config';
-import { REM } from '../../common/helpers/mediaDimensions';
-import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
-import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
-import { uncompressEmoji } from '../../../util/emoji';
-import animateScroll from '../../../util/animateScroll';
-import { pick } from '../../../util/iteratees';
-import buildClassName from '../../../util/buildClassName';
 import animateHorizontalScroll from '../../../util/animateHorizontalScroll';
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
-import useLang from '../../../hooks/useLang';
-import useAppLayout from '../../../hooks/useAppLayout';
-import useScrolledState from '../../../hooks/useScrolledState';
+import animateScroll from '../../../util/animateScroll';
+import buildClassName from '../../../util/buildClassName';
+import { uncompressEmoji } from '../../../util/emoji/emoji';
+import { pick } from '../../../util/iteratees';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import { REM } from '../../common/helpers/mediaDimensions';
 
+import useAppLayout from '../../../hooks/useAppLayout';
+import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
+import useScrolledState from '../../../hooks/useScrolledState';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
+
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import Loading from '../../ui/Loading';
 import EmojiCategory from './EmojiCategory';
@@ -42,16 +47,16 @@ type StateProps = Pick<GlobalState, 'recentEmojis'>;
 
 type EmojiCategoryData = { id: string; name: string; emojis: string[] };
 
-const ICONS_BY_CATEGORY: Record<string, string> = {
-  recent: 'icon-recent',
-  people: 'icon-smile',
-  nature: 'icon-animals',
-  foods: 'icon-eats',
-  activity: 'icon-sport',
-  places: 'icon-car',
-  objects: 'icon-lamp',
-  symbols: 'icon-language',
-  flags: 'icon-flag',
+const ICONS_BY_CATEGORY: Record<string, IconName> = {
+  recent: 'recent',
+  people: 'smile',
+  nature: 'animals',
+  foods: 'eats',
+  activity: 'sport',
+  places: 'car',
+  objects: 'lamp',
+  symbols: 'language',
+  flags: 'flag',
 };
 
 const OPEN_ANIMATION_DELAY = 200;
@@ -131,7 +136,7 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
     animateHorizontalScroll(header, newLeft);
   }, [categories, activeCategoryIndex]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const allCategories = useMemo(() => {
     if (!categories) {
@@ -167,16 +172,22 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
     }, OPEN_ANIMATION_DELAY);
   }, []);
 
-  const selectCategory = useCallback((index: number) => {
+  const selectCategory = useLastCallback((index: number) => {
     setActiveCategoryIndex(index);
     const categoryEl = containerRef.current!.closest<HTMLElement>('.SymbolMenu-main')!
       .querySelector(`#emoji-category-${index}`)! as HTMLElement;
-    animateScroll(containerRef.current!, categoryEl, 'start', FOCUS_MARGIN, SMOOTH_SCROLL_DISTANCE);
-  }, []);
+    animateScroll({
+      container: containerRef.current!,
+      element: categoryEl,
+      position: 'start',
+      margin: FOCUS_MARGIN,
+      maxDistance: SMOOTH_SCROLL_DISTANCE,
+    });
+  });
 
-  const handleEmojiSelect = useCallback((emoji: string, name: string) => {
+  const handleEmojiSelect = useLastCallback((emoji: string, name: string) => {
     onEmojiSelect(emoji, name);
-  }, [onEmojiSelect]);
+  });
 
   function renderCategoryButton(category: EmojiCategoryData, index: number) {
     const icon = ICONS_BY_CATEGORY[category.id];
@@ -191,7 +202,7 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
         onClick={() => selectCategory(index)}
         ariaLabel={category.name}
       >
-        <i className={buildClassName('icon', icon)} />
+        <Icon name={icon} />
       </Button>
     );
   }
@@ -223,7 +234,7 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
       <div
         ref={containerRef}
         onScroll={handleContentScroll}
-        className={buildClassName('EmojiPicker-main no-selection', IS_TOUCH_ENV ? 'no-scrollbar' : 'custom-scroll')}
+        className={buildClassName('EmojiPicker-main', IS_TOUCH_ENV ? 'no-scrollbar' : 'custom-scroll')}
       >
         {allCategories.map((category, i) => (
           <EmojiCategory

@@ -6,18 +6,19 @@ import { withGlobal } from '../../../../global';
 
 import type { ApiSticker } from '../../../../api/types';
 
-import { IS_TOUCH_ENV } from '../../../../util/windowEnvironment';
 import { selectAnimatedEmoji } from '../../../../global/selectors';
+import { IS_TOUCH_ENV } from '../../../../util/windowEnvironment';
 import renderText from '../../../common/helpers/renderText';
-import useFlag from '../../../../hooks/useFlag';
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
-import useAppLayout from '../../../../hooks/useAppLayout';
 
-import Button from '../../../ui/Button';
-import Modal from '../../../ui/Modal';
-import InputText from '../../../ui/InputText';
+import useAppLayout from '../../../../hooks/useAppLayout';
+import useFlag from '../../../../hooks/useFlag';
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useOldLang from '../../../../hooks/useOldLang';
+
 import AnimatedIconFromSticker from '../../../common/AnimatedIconFromSticker';
+import Button from '../../../ui/Button';
+import InputText from '../../../ui/InputText';
+import Modal from '../../../ui/Modal';
 
 type OwnProps = {
   icon: 'hint' | 'email';
@@ -93,7 +94,7 @@ const SettingsTwoFaSkippableForm: FC<OwnProps & StateProps> = ({
     onSubmit();
   }, [onSubmit, unmarkIsConfirmShown]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -104,9 +105,12 @@ const SettingsTwoFaSkippableForm: FC<OwnProps & StateProps> = ({
     <div className="settings-content two-fa custom-scroll">
       <div className="settings-content-header no-border">
         <AnimatedIconFromSticker sticker={animatedEmoji} size={ICON_SIZE} className="settings-content-icon" />
+        <p className="settings-item-description mb-3" dir="auto">
+          {lang('RecoveryEmailSubtitle')}
+        </p>
       </div>
 
-      <div className="settings-item pt-0">
+      <div className="settings-item pt-2">
         <form action="" onSubmit={handleSubmit}>
           <InputText
             ref={inputRef}

@@ -35,7 +35,7 @@
   }
 
   .Composer {
-    #message-compose {
+    .composer-wrapper {
       transform: scaleX(1) translateX(0);
       transition: transform var(--select-transition), border-bottom-right-radius var(--select-transition);
 
@@ -65,8 +65,11 @@
     > .Button {
       opacity: 1;
       transform: scale(1);
-      transition: opacity var(--select-transition), transform var(--select-transition), background-color 0.15s,
-      color 0.15s;
+      transition:
+        opacity var(--select-transition),
+        transform var(--select-transition),
+        background-color 0.15s,
+        color 0.15s;
 
       body.no-message-composer-animations & {
         transition: none !important;
@@ -83,7 +86,7 @@
         height: 0;
       }
 
-      #message-compose {
+      .composer-wrapper {
         transform: scaleX(var(--composer-hidden-scale, 1)) translateX(var(--composer-translate-x, 0));
         border-bottom-right-radius: var(--border-radius-messages);
 
@@ -188,16 +191,15 @@
     }
 
     &:not(.no-composer) {
-      padding-bottom: env(safe-area-inset-bottom);
+      padding-bottom: 0;
       top: 0;
 
-      body.keyboard-visible & {
-        top: env(safe-area-inset-bottom);
-      }
+      @media (max-width: 600px) {
+        padding-bottom: env(safe-area-inset-bottom);
 
-      // Target: Old Firefox (Waterfox Classic)
-      @supports not (padding-bottom: env(safe-area-inset-bottom)) {
-        padding-bottom: 0;
+        body.keyboard-visible & {
+          top: env(safe-area-inset-bottom);
+        }
       }
     }
 
@@ -208,13 +210,14 @@
       left: 0;
       right: 0;
       height: 1px;
-      background: linear-gradient(
+      background:
+        linear-gradient(
           90deg,
           rgba(255, 255, 255, 0) 0%,
           rgba(255, 255, 255, 0.4) 2%,
           rgba(255, 255, 255, 0.4) 98%,
           rgba(255, 255, 255, 0) 100%
-      );
+        );
       opacity: 0;
       transition: opacity 350ms ease;
 
@@ -229,13 +232,14 @@
     }
 
     html.theme-dark &::before {
-      background: linear-gradient(
+      background:
+        linear-gradient(
           90deg,
           rgba(127, 127, 127, 0) 0%,
           rgba(127, 127, 127, 0.4) 2%,
           rgba(127, 127, 127, 0.4) 98%,
           rgba(127, 127, 127, 0) 100%
-      );
+        );
     }
   }
 }
@@ -253,8 +257,7 @@
 
 .Composer,
 .MessageSelectToolbar,
-.unpin-all-button,
-.join-subscribe-button,
+.composer-button,
 .messaging-disabled {
   width: 100%;
   display: flex;
@@ -263,8 +266,7 @@
 }
 
 .MessageSelectToolbar-inner,
-.unpin-all-button,
-.join-subscribe-button,
+.composer-button,
 .messaging-disabled {
   .mask-image-disabled & {
     box-shadow: 0 0.25rem 0.5rem 0.125rem var(--color-default-shadow);
@@ -281,7 +283,7 @@
 
   .unpin-all-button {
     text-transform: capitalize;
-    color: var(--color-black);
+    color: var(--color-primary);
 
     @media (hover: hover) {
       &:hover {
@@ -309,8 +311,7 @@
     }
   }
 
-  .join-subscribe-button,
-  .unpin-all-button {
+  .composer-button {
     height: 3.5rem;
     transform: scaleX(1);
     transition: transform var(--select-transition), background-color 0.15s, color 0.15s;
@@ -325,14 +326,13 @@
     }
   }
 
-  @media (max-width: 600px) {
-    padding-bottom: 0.75rem;
-    margin-left: -0.5rem;
+  .open-chat-button {
+    color: var(--color-primary);
+  }
 
-    // Target: Old Firefox (Waterfox Classic)
-    @supports (padding-bottom: calc(0.75rem + env(safe-area-inset-bottom))) {
-      padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
-    }
+  @media (max-width: 600px) {
+    margin-left: -0.5rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
   }
 
   .mask-image-disabled &::before {
@@ -347,5 +347,5 @@
   bottom: 0;
   width: 0.25rem;
   z-index: var(--z-resize-handle);
-  cursor: var(--custom-cursor, ew-resize);
+  cursor: ew-resize;
 }

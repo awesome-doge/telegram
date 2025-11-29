@@ -1,17 +1,20 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useMemo, useState, memo, useCallback, useEffect,
+  memo, useCallback, useEffect,
+  useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiUser } from '../../../api/types';
 
+import { getUserFullName } from '../../../global/helpers';
+import { filterPeersByQuery } from '../../../global/helpers/peers';
 import { selectTabState } from '../../../global/selectors';
-import { filterUsersByName, getUserFullName } from '../../../global/helpers';
 import { unique } from '../../../util/iteratees';
-import useLang from '../../../hooks/useLang';
 
-import ChatOrUserPicker from '../../common/ChatOrUserPicker';
+import useOldLang from '../../../hooks/useOldLang';
+
+import ChatOrUserPicker from '../../common/pickers/ChatOrUserPicker';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -37,10 +40,10 @@ const BlockUserModal: FC<OwnProps & StateProps> = ({
 }) => {
   const {
     setUserSearchQuery,
-    blockContact,
+    blockUser,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -55,7 +58,7 @@ const BlockUserModal: FC<OwnProps & StateProps> = ({
       return contactId !== currentUserId && !blockedIds.includes(contactId);
     }));
 
-    return filterUsersByName(availableContactIds, usersById, search)
+    return filterPeersByQuery({ ids: availableContactIds, query: search, type: 'user' })
       .sort((firstId, secondId) => {
         const firstName = getUserFullName(usersById[firstId]) || '';
         const secondName = getUserFullName(usersById[secondId]) || '';
@@ -65,13 +68,9 @@ const BlockUserModal: FC<OwnProps & StateProps> = ({
   }, [blockedIds, contactIds, currentUserId, search, localContactIds, usersById]);
 
   const handleRemoveUser = useCallback((userId: string) => {
-    const { id: contactId, accessHash } = usersById[userId] || {};
-    if (!contactId || !accessHash) {
-      return;
-    }
-    blockContact({ contactId, accessHash });
+    blockUser({ userId });
     onClose();
-  }, [blockContact, onClose, usersById]);
+  }, [onClose]);
 
   return (
     <ChatOrUserPicker

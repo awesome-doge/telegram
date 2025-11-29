@@ -6,20 +6,23 @@ import { getActions, getGlobal, withGlobal } from '../../../global';
 
 import type { ApiGroupCall } from '../../../api/types';
 
+import { selectChat, selectTabState } from '../../../global/selectors';
 import { selectChatGroupCall } from '../../../global/selectors/calls';
 import buildClassName from '../../../util/buildClassName';
-import { selectChat, selectTabState } from '../../../global/selectors';
-import useLang from '../../../hooks/useLang';
 
+import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import useOldLang from '../../../hooks/useOldLang';
+import useHeaderPane, { type PaneState } from '../../middle/hooks/useHeaderPane';
+
+import AvatarList from '../../common/AvatarList';
 import Button from '../../ui/Button';
-import Avatar from '../../common/Avatar';
 
 import './GroupCallTopPane.scss';
 
 type OwnProps = {
   chatId: string;
-  hasPinnedOffset: boolean;
   className?: string;
+  onPaneStateChange?: (state: PaneState) => void;
 };
 
 type StateProps = {
@@ -27,19 +30,21 @@ type StateProps = {
   isActive: boolean;
 };
 
+const PREVIEW_AVATARS_COUNT = 3;
+
 const GroupCallTopPane: FC<OwnProps & StateProps> = ({
   chatId,
   isActive,
   className,
   groupCall,
-  hasPinnedOffset,
+  onPaneStateChange,
 }) => {
   const {
     requestMasterAndJoinGroupCall,
     subscribeToGroupCallUpdates,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleJoinGroupCall = useCallback(() => {
     requestMasterAndJoinGroupCall({
@@ -58,19 +63,10 @@ const GroupCallTopPane: FC<OwnProps & StateProps> = ({
     const usersById = getGlobal().users.byId;
     const chatsById = getGlobal().chats.byId;
 
-    return Object.values(participants).filter((_, i) => i < 3).map(({ id, isUser }) => {
-      if (isUser) {
-        if (!usersById[id]) {
-          return undefined;
-        }
-        return { user: usersById[id] };
-      } else {
-        if (!chatsById[id]) {
-          return undefined;
-        }
-        return { chat: chatsById[id] };
-      }
-    }).filter(Boolean);
+    return Object.values(participants)
+      .slice(0, PREVIEW_AVATARS_COUNT)
+      .map(({ id }) => usersById[id] || chatsById[id])
+      .filter(Boolean);
   }, [participants]);
 
   useEffect(() => {
@@ -90,35 +86,34 @@ const GroupCallTopPane: FC<OwnProps & StateProps> = ({
     };
   }, [groupCall?.id, groupCall?.isLoaded, isActive, subscribeToGroupCallUpdates]);
 
-  if (!groupCall) return undefined;
+  const renderingParticipantCount = useCurrentOrPrev(groupCall?.participantsCount, true);
+  const renderingFetchedParticipants = useCurrentOrPrev(fetchedParticipants, true);
+
+  const isRendering = Boolean(groupCall && isActive);
+
+  const { ref, shouldRender } = useHeaderPane({
+    isOpen: isRendering,
+    onStateChange: onPaneStateChange,
+  });
+
+  if (!shouldRender) return undefined;
 
   return (
     <div
+      ref={ref}
       className={buildClassName(
         'GroupCallTopPane',
-        hasPinnedOffset && 'has-pinned-offset',
-        !isActive && 'is-hidden',
         className,
       )}
       onClick={handleJoinGroupCall}
     >
       <div className="info">
         <span className="title">{lang('VoipGroupVoiceChat')}</span>
-        <span className="participants">{lang('Participants', groupCall.participantsCount || 0, 'i')}</span>
+        <span className="participants">{lang('Participants', renderingParticipantCount ?? 0, 'i')}</span>
       </div>
-      <div className="avatars">
-        {fetchedParticipants.map((p) => {
-          if (!p) return undefined;
-
-          return (
-            <Avatar
-              key={p.user ? p.user.id : p.chat.id}
-              chat={p.chat}
-              user={p.user}
-            />
-          );
-        })}
-      </div>
+      {Boolean(renderingFetchedParticipants?.length) && (
+        <AvatarList size="small" peers={renderingFetchedParticipants} className="avatars" />
+      )}
       <Button round className="join">
         {lang('VoipChatJoin')}
       </Button>

@@ -1,45 +1,50 @@
-import React, {
-  memo, useCallback, useRef, useState,
-} from '../../lib/teact/teact';
+import type { FC } from '../../lib/teact/teact';
+import React, { memo, useRef, useState } from '../../lib/teact/teact';
 import { getGlobal } from '../../global';
 
-import type { FC, TeactNode } from '../../lib/teact/teact';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 import { ApiMessageEntityTypes } from '../../api/types';
 
+import { selectIsAlwaysHighPriorityEmoji } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import safePlay from '../../util/safePlay';
-import { selectIsAlwaysHighPriorityEmoji } from '../../global/selectors';
 
-import useCustomEmoji from './hooks/useCustomEmoji';
 import useDynamicColorListener from '../../hooks/stickers/useDynamicColorListener';
+import useLastCallback from '../../hooks/useLastCallback';
+import useCustomEmoji from './hooks/useCustomEmoji';
 
+import Sparkles from './Sparkles';
 import StickerView from './StickerView';
 
 import styles from './CustomEmoji.module.scss';
-import svgPlaceholder from '../../assets/square.svg';
+
 import blankImg from '../../assets/blank.png';
 
 type OwnProps = {
   ref?: React.RefObject<HTMLDivElement>;
   documentId: string;
-  children?: TeactNode;
-  size?: number;
   className?: string;
-  loopLimit?: number;
   style?: string;
+  size?: number;
   isBig?: boolean;
   noPlay?: boolean;
-  withGridFix?: boolean;
+  noVideoOnMobile?: boolean;
+  loopLimit?: number;
+  isSelectable?: boolean;
   withSharedAnimation?: boolean;
   sharedCanvasRef?: React.RefObject<HTMLCanvasElement>;
   sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>;
   withTranslucentThumb?: boolean;
   shouldPreloadPreview?: boolean;
   forceOnHeavyAnimation?: boolean;
+  forceAlways?: boolean;
   observeIntersectionForLoading?: ObserveFn;
   observeIntersectionForPlaying?: ObserveFn;
   onClick?: NoneToVoidFunction;
+  onAnimationEnd?: NoneToVoidFunction;
+  withSparkles?: boolean;
+  sparklesClassName?: string;
+  sparklesStyle?: string;
 };
 
 const STICKER_SIZE = 20;
@@ -47,22 +52,28 @@ const STICKER_SIZE = 20;
 const CustomEmoji: FC<OwnProps> = ({
   ref,
   documentId,
+  className,
+  style,
   size = STICKER_SIZE,
   isBig,
   noPlay,
-  className,
+  noVideoOnMobile,
   loopLimit,
-  style,
-  withGridFix,
+  isSelectable,
   withSharedAnimation,
   sharedCanvasRef,
   sharedCanvasHqRef,
   withTranslucentThumb,
   shouldPreloadPreview,
+  forceAlways,
   forceOnHeavyAnimation,
   observeIntersectionForLoading,
   observeIntersectionForPlaying,
   onClick,
+  onAnimationEnd,
+  withSparkles,
+  sparklesStyle,
+  sparklesClassName,
 }) => {
   // eslint-disable-next-line no-null/no-null
   let containerRef = useRef<HTMLDivElement>(null);
@@ -74,35 +85,34 @@ const CustomEmoji: FC<OwnProps> = ({
   const { customEmoji, canPlay } = useCustomEmoji(documentId);
 
   const loopCountRef = useRef(0);
-  const [shouldLoop, setShouldLoop] = useState(true);
+  const [shouldPlay, setShouldPlay] = useState(true);
 
   const hasCustomColor = customEmoji?.shouldUseTextColor;
   const customColor = useDynamicColorListener(containerRef, !hasCustomColor);
 
-  const handleVideoEnded = useCallback((e) => {
+  const handleVideoEnded = useLastCallback((e) => {
     if (!loopLimit) return;
 
     loopCountRef.current += 1;
 
     if (loopCountRef.current >= loopLimit) {
-      setShouldLoop(false);
+      setShouldPlay(false);
       e.currentTarget.currentTime = 0;
     } else {
       // Loop manually
       safePlay(e.currentTarget);
     }
-  }, [loopLimit]);
+  });
 
-  const handleStickerLoop = useCallback(() => {
+  const handleStickerLoop = useLastCallback(() => {
     if (!loopLimit) return;
 
     loopCountRef.current += 1;
 
-    // Sticker plays 1 more time after disabling loop
-    if (loopCountRef.current >= loopLimit - 1) {
-      setShouldLoop(false);
+    if (loopCountRef.current >= loopLimit) {
+      setShouldPlay(false);
     }
-  }, [loopLimit]);
+  });
 
   const isHq = customEmoji?.stickerSetInfo && selectIsAlwaysHighPriorityEmoji(getGlobal(), customEmoji.stickerSetInfo);
 
@@ -111,33 +121,55 @@ const CustomEmoji: FC<OwnProps> = ({
       ref={containerRef}
       className={buildClassName(
         styles.root,
+        withSparkles && styles.withSparkles,
         className,
         'custom-emoji',
         'emoji',
-        withGridFix && styles.withGridFix,
       )}
       onClick={onClick}
+      onAnimationEnd={onAnimationEnd}
       data-entity-type={ApiMessageEntityTypes.CustomEmoji}
       data-document-id={documentId}
       data-alt={customEmoji?.emoji}
       style={style}
     >
-      <img className={styles.highlightCatch} src={blankImg} alt={customEmoji?.emoji} draggable={false} />
+      {withSparkles && (
+        <Sparkles
+          className={buildClassName(
+            styles.sparkles,
+            sparklesClassName,
+          )}
+          style={sparklesStyle}
+          preset="button"
+        />
+      )}
+      {isSelectable && (
+        <img
+          className={styles.highlightCatch}
+          src={blankImg}
+          alt={customEmoji?.emoji}
+          data-entity-type={ApiMessageEntityTypes.CustomEmoji}
+          data-document-id={documentId}
+          draggable={false}
+        />
+      )}
       {!customEmoji ? (
-        <img className={styles.thumb} src={svgPlaceholder} alt="Emoji" />
+        <div className={buildClassName(styles.placeholder)} draggable={false} />
       ) : (
         <StickerView
           containerRef={containerRef}
           sticker={customEmoji}
           isSmall={!isBig}
           size={size}
-          noPlay={noPlay || !canPlay}
+          noPlay={noPlay || !(shouldPlay && canPlay)}
+          noVideoOnMobile={noVideoOnMobile}
           thumbClassName={styles.thumb}
           fullMediaClassName={styles.media}
-          shouldLoop={shouldLoop}
+          shouldLoop
           loopLimit={loopLimit}
           shouldPreloadPreview={shouldPreloadPreview || noPlay || !canPlay}
           forceOnHeavyAnimation={forceOnHeavyAnimation}
+          forceAlways={forceAlways}
           observeIntersectionForLoading={observeIntersectionForLoading}
           observeIntersectionForPlaying={observeIntersectionForPlaying}
           withSharedAnimation={withSharedAnimation}

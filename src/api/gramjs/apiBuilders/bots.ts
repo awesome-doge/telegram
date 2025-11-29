@@ -1,9 +1,11 @@
 import { Api as GramJs } from '../../../lib/gramjs';
+
 import type {
   ApiAttachBot,
   ApiAttachBotIcon,
   ApiAttachMenuPeerType,
   ApiBotApp,
+  ApiBotAppSettings,
   ApiBotCommand,
   ApiBotInfo,
   ApiBotInlineMediaResult,
@@ -12,15 +14,18 @@ import type {
   ApiBotInlineSwitchWebview,
   ApiBotMenuButton,
   ApiInlineResultType,
+  ApiMessagesBotApp,
 } from '../../types';
 
+import { numberToHexColor } from '../../../util/colors';
 import { pick } from '../../../util/iteratees';
+import { addDocumentToLocalDb } from '../helpers/localDb';
 import { buildApiPhoto, buildApiThumbnailFromStripped } from './common';
-import { buildApiDocument, buildApiWebDocument, buildVideoFromDocument } from './messages';
-import { buildStickerFromDocument } from './symbols';
-import localDb from '../localDb';
-import { buildApiPeerId } from './peers';
 import { omitVirtualClassFields } from './helpers';
+import { buildApiDocument, buildApiWebDocument, buildVideoFromDocument } from './messageContent';
+import { buildSvgPath } from './pathBytesToSvg';
+import { buildApiPeerId } from './peers';
+import { buildStickerFromDocument } from './symbols';
 
 export function buildApiBotInlineResult(result: GramJs.BotInlineResult, queryId: string): ApiBotInlineResult {
   const {
@@ -71,11 +76,14 @@ export function buildBotSwitchWebview(switchWebview?: GramJs.InlineBotWebView) {
 export function buildApiAttachBot(bot: GramJs.AttachMenuBot): ApiAttachBot {
   return {
     id: bot.botId.toString(),
-    hasSettings: bot.hasSettings,
     shouldRequestWriteAccess: bot.requestWriteAccess,
     shortName: bot.shortName,
-    peerTypes: bot.peerTypes.map(buildApiAttachMenuPeerType),
+    isForAttachMenu: bot.showInAttachMenu!,
+    isForSideMenu: bot.showInSideMenu,
+    attachMenuPeerTypes: bot.peerTypes?.map(buildApiAttachMenuPeerType)!,
     icons: bot.icons.map(buildApiAttachMenuIcon).filter(Boolean),
+    isInactive: bot.inactive,
+    isDisclaimerNeeded: bot.sideMenuDisclaimerNeeded,
   };
 }
 
@@ -95,7 +103,7 @@ function buildApiAttachMenuIcon(icon: GramJs.AttachMenuBotIcon): ApiAttachBotIco
 
   if (!document) return undefined;
 
-  localDb.documents[String(icon.icon.id)] = icon.icon;
+  addDocumentToLocalDb(icon.icon);
 
   return {
     name: icon.name,
@@ -105,7 +113,8 @@ function buildApiAttachMenuIcon(icon: GramJs.AttachMenuBotIcon): ApiAttachBotIco
 
 export function buildApiBotInfo(botInfo: GramJs.BotInfo, chatId: string): ApiBotInfo {
   const {
-    description, descriptionPhoto, descriptionDocument, userId, commands, menuButton,
+    description, descriptionPhoto, descriptionDocument, userId, commands, menuButton, privacyPolicyUrl,
+    hasPreviewMedias, appSettings,
   } = botInfo;
 
   const botId = userId && buildApiPeerId(userId, 'user');
@@ -120,7 +129,21 @@ export function buildApiBotInfo(botInfo: GramJs.BotInfo, chatId: string): ApiBot
     gif,
     photo,
     menuButton: buildApiBotMenuButton(menuButton),
+    privacyPolicyUrl,
     commands: commandsArray?.length ? commandsArray : undefined,
+    hasPreviewMedia: hasPreviewMedias,
+    appSettings: appSettings && buildBotAppSettings(appSettings),
+  };
+}
+
+export function buildBotAppSettings(settings: GramJs.BotAppSettings): ApiBotAppSettings {
+  const placeholderPath = settings.placeholderPath && buildSvgPath(settings.placeholderPath);
+  return {
+    backgroundColor: settings.backgroundColor ? numberToHexColor(settings.backgroundColor) : undefined,
+    backgroundDarkColor: settings.backgroundDarkColor ? numberToHexColor(settings.backgroundDarkColor) : undefined,
+    headerColor: settings.headerColor ? numberToHexColor(settings.headerColor) : undefined,
+    headerDarkColor: settings.headerDarkColor ? numberToHexColor(settings.headerDarkColor) : undefined,
+    placeholderPath,
   };
 }
 
@@ -145,9 +168,9 @@ export function buildApiBotMenuButton(menuButton?: GramJs.TypeBotMenuButton): Ap
   };
 }
 
-export function buildApiBotApp(botApp: GramJs.messages.BotApp): ApiBotApp | undefined {
-  const { app, inactive, requestWriteAccess } = botApp;
+export function buildApiBotApp(app: GramJs.TypeBotApp): ApiBotApp | undefined {
   if (app instanceof GramJs.BotAppNotModified) return undefined;
+
   const {
     id, accessHash, title, description, shortName, photo, document,
   } = app;
@@ -163,6 +186,16 @@ export function buildApiBotApp(botApp: GramJs.messages.BotApp): ApiBotApp | unde
     shortName,
     photo: apiPhoto,
     document: apiDocument,
+  };
+}
+
+export function buildApiMessagesBotApp(botApp: GramJs.messages.BotApp): ApiMessagesBotApp | undefined {
+  const { app, inactive, requestWriteAccess } = botApp;
+  const baseApp = buildApiBotApp(app);
+  if (!baseApp) return undefined;
+
+  return {
+    ...baseApp,
     isInactive: inactive,
     shouldRequestWriteAccess: requestWriteAccess,
   };

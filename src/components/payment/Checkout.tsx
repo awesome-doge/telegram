@@ -1,30 +1,38 @@
+import type { FC } from '../../lib/teact/teact';
 import React, { memo, useCallback } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
+import type {
+  ApiInvoice,
+  ApiLabeledPrice,
+  ApiPaymentCredentials,
+  ApiWebDocument,
+} from '../../api/types';
 import type { FormEditDispatch } from '../../hooks/reducers/usePaymentReducer';
-import type { LangCode, Price } from '../../types';
-import type { ApiChat, ApiInvoice, ApiPaymentCredentials } from '../../api/types';
-
+import type { IconName } from '../../types/icons';
 import { PaymentStep } from '../../types';
+
 import { getWebDocumentHash } from '../../global/helpers';
-import { formatCurrency } from '../../util/formatCurrency';
 import buildClassName from '../../util/buildClassName';
+import { formatCurrency } from '../../util/formatCurrency';
 import renderText from '../common/helpers/renderText';
 
-import useLang from '../../hooks/useLang';
 import useMedia from '../../hooks/useMedia';
+import useMediaTransition from '../../hooks/useMediaTransition';
+import useOldLang from '../../hooks/useOldLang';
 
-import Checkbox from '../ui/Checkbox';
-import Skeleton from '../ui/Skeleton';
 import SafeLink from '../common/SafeLink';
+import Checkbox from '../ui/Checkbox';
 import ListItem from '../ui/ListItem';
+import Skeleton from '../ui/placeholder/Skeleton';
 
 import styles from './Checkout.module.scss';
 
 export type OwnProps = {
-  chat?: ApiChat;
-  invoice?: ApiInvoice;
+  title: string;
+  description: string;
+  photo?: ApiWebDocument;
+  invoice: ApiInvoice;
   checkoutInfo?: {
     paymentMethod?: string;
     paymentProvider?: string;
@@ -33,26 +41,26 @@ export type OwnProps = {
     phone?: string;
     shippingMethod?: string;
   };
-  prices?: Price[];
   totalPrice?: number;
   needAddress?: boolean;
   hasShippingOptions?: boolean;
   tipAmount?: number;
-  shippingPrices?: Price[];
-  currency: string;
+  shippingPrices?: ApiLabeledPrice[];
   isTosAccepted?: boolean;
   dispatch?: FormEditDispatch;
   onAcceptTos?: (isAccepted: boolean) => void;
   savedCredentials?: ApiPaymentCredentials[];
+  isPaymentFormUrl?: boolean;
+  botName?: string;
 };
 
 const Checkout: FC<OwnProps> = ({
-  chat,
+  title,
+  description,
+  photo,
   invoice,
-  prices,
   shippingPrices,
   checkoutInfo,
-  currency,
   totalPrice,
   isTosAccepted,
   dispatch,
@@ -61,14 +69,16 @@ const Checkout: FC<OwnProps> = ({
   needAddress,
   hasShippingOptions,
   savedCredentials,
+  isPaymentFormUrl,
+  botName,
 }) => {
   const { setPaymentStep } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const isInteractive = Boolean(dispatch);
 
   const {
-    photo, title, text, isRecurring, recurringTermsUrl, suggestedTipAmounts, maxTipAmount,
+    termsUrl, suggestedTipAmounts, maxTipAmount,
   } = invoice || {};
   const {
     paymentMethod,
@@ -80,6 +90,8 @@ const Checkout: FC<OwnProps> = ({
   } = (checkoutInfo || {});
 
   const photoUrl = useMedia(getWebDocumentHash(photo));
+
+  const ref = useMediaTransition<HTMLImageElement>(photoUrl);
 
   const handleTipsClick = useCallback((tips: number) => {
     dispatch!({ type: 'setTipAmount', payload: maxTipAmount ? Math.min(tips, maxTipAmount) : tips });
@@ -105,7 +117,7 @@ const Checkout: FC<OwnProps> = ({
             {title}
           </div>
           <div>
-            {formatCurrency(tipAmount!, currency, lang.code)}
+            {formatCurrency(tipAmount!, invoice.currency, lang.code)}
           </div>
         </div>
         <div className={styles.tipsList}>
@@ -115,7 +127,7 @@ const Checkout: FC<OwnProps> = ({
               className={buildClassName(styles.tipsItem, tip === tipAmount && styles.tipsItem_active)}
               onClick={dispatch ? () => handleTipsClick(tip === tipAmount ? 0 : tip) : undefined}
             >
-              {formatCurrency(tip, currency, lang.code, true)}
+              {formatCurrency(tip, invoice.currency, lang.code, { shouldOmitFractions: true })}
             </div>
           ))}
         </div>
@@ -124,7 +136,7 @@ const Checkout: FC<OwnProps> = ({
   }
 
   function renderTosLink(url: string, isRtl?: boolean) {
-    const langString = lang('PaymentCheckoutAcceptRecurrent', chat?.title);
+    const langString = lang('PaymentCheckoutAcceptRecurrent', botName);
     const langStringSplit = langString.split('*');
     return (
       <>
@@ -155,7 +167,17 @@ const Checkout: FC<OwnProps> = ({
   return (
     <div className={styles.root}>
       <div className={styles.description}>
-        {photoUrl && <img className={styles.checkoutPicture} src={photoUrl} alt="" />}
+        {photoUrl && (
+          <img
+            ref={ref}
+            className={styles.checkoutPicture}
+            src={photoUrl}
+            draggable={false}
+            width={photo!.dimensions?.width}
+            height={photo!.dimensions?.height}
+            alt=""
+          />
+        )}
         {!photoUrl && photo && (
           <Skeleton
             width={photo.dimensions?.width}
@@ -166,23 +188,27 @@ const Checkout: FC<OwnProps> = ({
         )}
         <div className={styles.text}>
           <h5 className={styles.checkoutTitle}>{title}</h5>
-          {text && <div className={styles.checkoutDescription}>{renderText(text, ['br', 'links', 'emoji'])}</div>}
+          {description && (
+            <div className={styles.checkoutDescription}>
+              {renderText(description, ['br', 'links', 'emoji'])}
+            </div>
+          )}
         </div>
       </div>
       <div className={styles.priceInfo}>
-        {prices && prices.map((item) => (
-          renderPaymentItem(lang.code, item.label, item.amount, currency)
+        {invoice.prices.map((item) => (
+          renderPaymentItem(lang.code, item.label, item.amount, invoice.currency)
         ))}
         {shippingPrices && shippingPrices.map((item) => (
-          renderPaymentItem(lang.code, item.label, item.amount, currency)
+          renderPaymentItem(lang.code, item.label, item.amount, invoice.currency)
         ))}
         {suggestedTipAmounts && suggestedTipAmounts.length > 0 && renderTips()}
         {totalPrice !== undefined && (
-          renderPaymentItem(lang.code, lang('Checkout.TotalAmount'), totalPrice, currency, true)
+          renderPaymentItem(lang.code, lang('Checkout.TotalAmount'), totalPrice, invoice.currency, true)
         )}
       </div>
       <div className={styles.invoiceInfo}>
-        {renderCheckoutItem({
+        {!isPaymentFormUrl && renderCheckoutItem({
           title: paymentMethod || savedCredentials?.[0].title,
           label: lang('PaymentCheckoutMethod'),
           icon: 'card',
@@ -193,7 +219,7 @@ const Checkout: FC<OwnProps> = ({
           label: lang('PaymentCheckoutProvider'),
           customIcon: buildClassName(styles.provider, styles[paymentProvider.toLowerCase()]),
         })}
-        {(needAddress || !isInteractive) && renderCheckoutItem({
+        {(needAddress || (!isInteractive && shippingAddress)) && renderCheckoutItem({
           title: shippingAddress,
           label: lang('PaymentShippingAddress'),
           icon: 'location',
@@ -209,13 +235,13 @@ const Checkout: FC<OwnProps> = ({
           label: lang('PaymentCheckoutPhoneNumber'),
           icon: 'phone',
         })}
-        {(hasShippingOptions || !isInteractive) && renderCheckoutItem({
+        {(hasShippingOptions || (!isInteractive && shippingMethod)) && renderCheckoutItem({
           title: shippingMethod,
           label: lang('PaymentCheckoutShippingMethod'),
           icon: 'truck',
           onClick: isInteractive ? handleShippingMethodClick : undefined,
         })}
-        {isRecurring && renderTos(recurringTermsUrl!)}
+        {termsUrl && renderTos(termsUrl)}
       </div>
     </div>
   );
@@ -224,7 +250,7 @@ const Checkout: FC<OwnProps> = ({
 export default memo(Checkout);
 
 function renderPaymentItem(
-  langCode: LangCode | undefined, title: string, value: number, currency: string, main = false,
+  langCode: string | undefined, title: string, value: number, currency: string, main = false,
 ) {
   return (
     <div className={buildClassName(styles.priceInfoItem, main && styles.priceInfoItemMain)}>
@@ -247,18 +273,22 @@ function renderCheckoutItem({
 }: {
   title : string | undefined;
   label: string | undefined;
-  icon?: string;
+  icon?: IconName;
   onClick?: NoneToVoidFunction;
   customIcon?: string;
 }) {
+  const isMultiline = Boolean(title && label !== title);
+
   return (
     <ListItem
-      multiline={Boolean(title && label !== title)}
+      className={styles.list}
+      narrow
+      multiline={isMultiline}
       icon={icon}
       inactive={!onClick}
       onClick={onClick}
+      leftElement={customIcon && <i className={buildClassName('icon', customIcon)} />}
     >
-      {customIcon && <i className={buildClassName('icon', customIcon)} />}
       <div className={styles.checkoutInfoItemInfoTitle}>
         {title || label}
       </div>

@@ -1,55 +1,139 @@
-import { addActionHandler } from '../../index';
-
-import { IS_PRODUCTION_HOST } from '../../../util/windowEnvironment';
-import { closeInvoice } from '../../reducers';
-import * as langProvider from '../../../util/langProvider';
-import { formatCurrency } from '../../../util/formatCurrency';
-import { selectChatMessage, selectTabState } from '../../selectors';
-import { updateTabState } from '../../reducers/tabs';
 import type { ActionReturnType } from '../../types';
+
+import { formatCurrencyAsString } from '../../../util/formatCurrency';
+import * as langProvider from '../../../util/oldLangProvider';
+import { addActionHandler, setGlobal } from '../../index';
+import { updateStarsBalance } from '../../reducers';
+import { updateTabState } from '../../reducers/tabs';
+import { selectTabState } from '../../selectors';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
     case 'updatePaymentStateCompleted': {
-      Object.values(global.byTabId).forEach(({ id: tabId }) => {
-        const { inputInvoice } = selectTabState(global, tabId).payment;
+      const { paymentState, tabId } = update;
+      const form = paymentState.form!;
+      const { invoice } = form;
 
-        if (inputInvoice && 'chatId' in inputInvoice && 'messageId' in inputInvoice) {
-          const message = selectChatMessage(global, inputInvoice.chatId, inputInvoice.messageId);
+      const { totalAmount, currency } = invoice;
 
-          if (message && message.content.invoice) {
-            const { amount, currency, title } = message.content.invoice;
+      if (paymentState.inputInvoice?.type === 'stars') {
+        actions.closeStarsBalanceModal({ tabId });
+        actions.showNotification({
+          message: langProvider.oldTranslate('StarsAcquiredInfo', paymentState.inputInvoice.stars),
+          title: langProvider.oldTranslate('StarsAcquired'),
+          icon: 'star',
+          tabId,
+        });
+        actions.requestConfetti({ withStars: true, tabId });
+      } else {
+        actions.showNotification({
+          tabId,
+          message: langProvider.oldTranslate('PaymentInfoHint', [
+            formatCurrencyAsString(totalAmount, currency, langProvider.getTranslationFn().code),
+            form.title,
+          ]),
+        });
+      }
 
-            actions.showNotification({
-              tabId,
-              message: langProvider.translate('PaymentInfoHint', [
-                formatCurrency(amount, currency, langProvider.getTranslationFn().code),
-                title,
-              ]),
-            });
-          }
+      setGlobal(global);
+
+      break;
+    }
+
+    case 'updateStarPaymentStateCompleted': {
+      const { paymentState, tabId } = update;
+      const { inputInvoice, subscriptionInfo, form } = paymentState;
+      if (inputInvoice?.type === 'chatInviteSubscription' && subscriptionInfo) {
+        const amount = subscriptionInfo.subscriptionPricing!.amount;
+
+        actions.showNotification({
+          tabId,
+          title: langProvider.oldTranslate('StarsSubscriptionCompleted'),
+          message: langProvider.oldTranslate('StarsSubscriptionCompletedText', [
+            amount,
+            subscriptionInfo.title,
+          ], undefined, amount),
+          icon: 'star',
+        });
+      }
+
+      if (form?.invoice.subscriptionPeriod) {
+        const amount = form.invoice.totalAmount;
+        actions.showNotification({
+          tabId,
+          title: langProvider.oldTranslate('StarsSubscriptionCompleted'),
+          message: langProvider.oldTranslate('StarsSubscriptionCompletedText', [
+            amount,
+            form.title,
+          ], undefined, amount),
+          icon: 'star',
+        });
+      }
+
+      if (inputInvoice?.type === 'giftcode') {
+        if (!inputInvoice.userIds) {
+          return;
         }
+        const giftModalState = selectTabState(global, tabId).giftModal;
 
-        // On the production host, the payment frame receives a message with the payment event,
-        // after which the payment form closes. In other cases, the payment form must be closed manually.
-        // Closing the invoice will cause the closing of the Payment Modal dialog and then closing the payment.
-        if (!IS_PRODUCTION_HOST) {
-          global = closeInvoice(global, tabId);
+        if (giftModalState && inputInvoice.userIds[0] === giftModalState.forPeerId) {
+          actions.showNotification({
+            message: langProvider.oldTranslate('StarsGiftCompleted'),
+            tabId,
+          });
+          actions.requestConfetti({ withStars: true, tabId });
+          actions.closeGiftModal({ tabId });
         }
+      }
 
-        if (update.slug && inputInvoice && 'slug' in inputInvoice && inputInvoice.slug !== update.slug) {
+      if (inputInvoice?.type === 'starsgift') {
+        if (!inputInvoice.userId) {
+          return;
+        }
+        const starsModalState = selectTabState(global, tabId).starsGiftModal;
+
+        if (starsModalState?.isOpen && inputInvoice.userId === starsModalState.forUserId) {
+          global = updateTabState(global, {
+            starsGiftModal: {
+              ...starsModalState,
+              isCompleted: true,
+            },
+          }, tabId);
+        }
+      }
+
+      if (inputInvoice?.type === 'stargift') {
+        if (!inputInvoice.peerId) {
           return;
         }
 
-        global = updateTabState(global, {
-          payment: {
-            ...selectTabState(global, tabId).payment,
-            status: 'paid',
-          },
-        }, tabId);
-      });
+        const starGiftModalState = selectTabState(global, tabId).giftModal;
+
+        if (starGiftModalState && inputInvoice.peerId === starGiftModalState.forPeerId) {
+          actions.showNotification({
+            message: langProvider.oldTranslate('StarsGiftCompleted'),
+            tabId,
+          });
+          actions.requestConfetti({ withStars: true, tabId });
+          actions.closeGiftModal({ tabId });
+        }
+      }
+
+      break;
+    }
+
+    case 'updateStarsBalance': {
+      const stars = global.stars;
+      if (!stars) {
+        return;
+      }
+
+      global = updateStarsBalance(global, update.balance);
+
+      setGlobal(global);
+
+      actions.loadStarStatus();
+      break;
     }
   }
-
-  return undefined;
 });

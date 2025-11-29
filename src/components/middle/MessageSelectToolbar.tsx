@@ -1,29 +1,30 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useEffect } from '../../lib/teact/teact';
+import React, { memo, useEffect } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { MessageListType } from '../../global/types';
+import type { ApiChat } from '../../api/types';
+import type { MessageListType } from '../../types';
+import type { IconName } from '../../types/icons';
 
 import {
   selectCanDeleteSelectedMessages,
   selectCanDownloadSelectedMessages,
   selectCanForwardMessages,
-  selectCanReportSelectedMessages,
-  selectCurrentMessageList, selectTabState,
-  selectHasProtectedMessage,
+  selectCanReportSelectedMessages, selectCurrentChat,
+  selectCurrentMessageList, selectHasProtectedMessage,
   selectSelectedMessagesCount,
+  selectTabState,
 } from '../../global/selectors';
-import captureKeyboardListeners from '../../util/captureKeyboardListeners';
 import buildClassName from '../../util/buildClassName';
+import captureKeyboardListeners from '../../util/captureKeyboardListeners';
 
-import useFlag from '../../hooks/useFlag';
-import usePrevious from '../../hooks/usePrevious';
-import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 import useCopySelectedMessages from './hooks/useCopySelectedMessages';
 
+import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
-import DeleteSelectedMessageModal from './DeleteSelectedMessageModal';
-import ReportModal from '../common/ReportModal';
 
 import './MessageSelectToolbar.scss';
 
@@ -34,6 +35,7 @@ export type OwnProps = {
 };
 
 type StateProps = {
+  chat?: ApiChat;
   isSchedule: boolean;
   selectedMessagesCount?: number;
   canDeleteMessages?: boolean;
@@ -46,6 +48,7 @@ type StateProps = {
 };
 
 const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
+  chat,
   canPost,
   isActive,
   messageListType,
@@ -65,48 +68,65 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
     downloadSelectedMessages,
     copySelectedMessages,
     showNotification,
+    reportMessages,
+    openDeleteMessageModal,
   } = getActions();
-  const lang = useLang();
-
-  const [isDeleteModalOpen, openDeleteModal, closeDeleteModal] = useFlag();
-  const [isReportModalOpen, openReportModal, closeReportModal] = useFlag();
+  const lang = useOldLang();
 
   useCopySelectedMessages(isActive);
 
-  const handleExitMessageSelectMode = useCallback(() => {
+  const handleExitMessageSelectMode = useLastCallback(() => {
     exitMessageSelectMode();
-  }, [exitMessageSelectMode]);
+  });
+
+  const handleDelete = useLastCallback(() => {
+    if (!selectedMessageIds || !chat) return;
+    openDeleteMessageModal({
+      chatId: chat.id,
+      messageIds: selectedMessageIds,
+      isSchedule,
+    });
+  });
 
   useEffect(() => {
-    return isActive && !isDeleteModalOpen && !isReportModalOpen && !isAnyModalOpen
+    return isActive && !isAnyModalOpen
       ? captureKeyboardListeners({
-        onBackspace: canDeleteMessages ? openDeleteModal : undefined,
-        onDelete: canDeleteMessages ? openDeleteModal : undefined,
+        onBackspace: canDeleteMessages ? handleDelete : undefined,
+        onDelete: canDeleteMessages ? handleDelete : undefined,
         onEsc: handleExitMessageSelectMode,
       })
       : undefined;
   }, [
-    isActive, isDeleteModalOpen, isReportModalOpen, openDeleteModal, handleExitMessageSelectMode, isAnyModalOpen,
+    isActive, handleDelete, handleExitMessageSelectMode, isAnyModalOpen,
     canDeleteMessages,
   ]);
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = useLastCallback(() => {
     copySelectedMessages();
     showNotification({
       message: lang('Share.Link.Copied'),
     });
     exitMessageSelectMode();
-  }, [copySelectedMessages, exitMessageSelectMode, lang, showNotification]);
+  });
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useLastCallback(() => {
     downloadSelectedMessages();
     exitMessageSelectMode();
-  }, [downloadSelectedMessages, exitMessageSelectMode]);
+  });
 
-  const prevSelectedMessagesCount = usePrevious(selectedMessagesCount || undefined, true);
+  const prevSelectedMessagesCount = usePreviousDeprecated(selectedMessagesCount || undefined, true);
   const renderingSelectedMessagesCount = isActive ? selectedMessagesCount : prevSelectedMessagesCount;
 
   const formattedMessagesCount = lang('VoiceOver.Chat.MessagesSelected', renderingSelectedMessagesCount, 'i');
+
+  const openMessageReport = useLastCallback(() => {
+    if (!selectedMessageIds || !chat) return;
+    reportMessages({
+      chatId: chat.id,
+      messageIds: selectedMessageIds,
+    });
+    exitMessageSelectMode();
+  });
 
   const className = buildClassName(
     'MessageSelectToolbar',
@@ -115,7 +135,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
   );
 
   const renderButton = (
-    icon: string, label: string, onClick: AnyToVoidFunction, destructive?: boolean,
+    icon: IconName, label: string, onClick: AnyToVoidFunction, destructive?: boolean,
   ) => {
     return (
       <div
@@ -128,8 +148,9 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
         )}
         onClick={onClick}
         title={label}
+        aria-label={label}
       >
-        <i className={buildClassName('icon', `icon-${icon}`)} />
+        <Icon name={icon} />
       </div>
     );
   };
@@ -143,7 +164,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
           onClick={handleExitMessageSelectMode}
           ariaLabel="Exit select mode"
         >
-          <i className="icon icon-close" />
+          <Icon name="close" />
         </Button>
         <span className="MessageSelectToolbar-count" title={formattedMessagesCount}>
           {formattedMessagesCount}
@@ -157,7 +178,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
               )
             )}
             {canReportMessages && (
-              renderButton('flag', lang('Conversation.ReportMessages'), openReportModal)
+              renderButton('flag', lang('Conversation.ReportMessages'), openMessageReport)
             )}
             {canDownloadMessages && !hasProtectedMessage && (
               renderButton('download', lang('lng_media_download'), handleDownload)
@@ -166,21 +187,11 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
               renderButton('copy', lang('lng_context_copy_selected_items'), handleCopy)
             )}
             {canDeleteMessages && (
-              renderButton('delete', lang('EditAdminGroupDeleteMessages'), openDeleteModal, true)
+              renderButton('delete', lang('EditAdminGroupDeleteMessages'), handleDelete, true)
             )}
           </div>
         )}
       </div>
-      <DeleteSelectedMessageModal
-        isOpen={isDeleteModalOpen}
-        isSchedule={isSchedule}
-        onClose={closeDeleteModal}
-      />
-      <ReportModal
-        isOpen={isReportModalOpen}
-        onClose={closeReportModal}
-        messageIds={selectedMessageIds}
-      />
     </div>
   );
 };
@@ -188,6 +199,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global): StateProps => {
     const tabState = selectTabState(global);
+    const chat = selectCurrentChat(global);
     const { type: messageListType, chatId } = selectCurrentMessageList(global) || {};
     const isSchedule = messageListType === 'scheduled';
     const { canDelete } = selectCanDeleteSelectedMessages(global);
@@ -196,11 +208,13 @@ export default memo(withGlobal<OwnProps>(
     const { messageIds: selectedMessageIds } = tabState.selectedMessages || {};
     const hasProtectedMessage = chatId ? selectHasProtectedMessage(global, chatId, selectedMessageIds) : false;
     const canForward = !isSchedule && chatId ? selectCanForwardMessages(global, chatId, selectedMessageIds) : false;
-    const isForwardModalOpen = tabState.forwardMessages.isModalShown;
-    const isAnyModalOpen = Boolean(isForwardModalOpen || tabState.requestedDraft
-      || tabState.requestedAttachBotInChat || tabState.requestedAttachBotInstall);
+    const isShareMessageModalOpen = tabState.isShareMessageModalShown;
+    const isAnyModalOpen = Boolean(isShareMessageModalOpen || tabState.requestedDraft
+      || tabState.requestedAttachBotInChat || tabState.requestedAttachBotInstall || tabState.reportModal
+      || tabState.deleteMessageModal);
 
     return {
+      chat,
       isSchedule,
       selectedMessagesCount: selectSelectedMessagesCount(global),
       canDeleteMessages: canDelete,

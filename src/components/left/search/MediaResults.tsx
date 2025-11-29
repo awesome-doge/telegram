@@ -4,23 +4,25 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
+import type { StateProps } from './helpers/createMapStateToProps';
 import { LoadMoreDirection, MediaViewerOrigin } from '../../../types';
 
-import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { SLIDE_TRANSITION_DURATION } from '../../../config';
-import type { StateProps } from './helpers/createMapStateToProps';
-import { createMapStateToProps } from './helpers/createMapStateToProps';
 import buildClassName from '../../../util/buildClassName';
+import { parseSearchResultKey } from '../../../util/keys/searchResultKey';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { throttle } from '../../../util/schedulers';
-import useLang from '../../../hooks/useLang';
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import { createMapStateToProps } from './helpers/createMapStateToProps';
 
-import InfiniteScroll from '../../ui/InfiniteScroll';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useOldLang from '../../../hooks/useOldLang';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
+
 import Media from '../../common/Media';
-import ChatMessage from './ChatMessage';
 import NothingFound from '../../common/NothingFound';
+import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
+import ChatMessage from './ChatMessage';
 
 export type OwnProps = {
   searchQuery?: string;
@@ -36,7 +38,6 @@ const MediaResults: FC<OwnProps & StateProps> = ({
   isLoading,
   globalMessagesByChatId,
   foundIds,
-  lastSyncTime,
   isChatProtected,
 }) => {
   const {
@@ -47,7 +48,7 @@ const MediaResults: FC<OwnProps & StateProps> = ({
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const { observe: observeIntersectionForMedia } = useIntersectionObserver({
     rootRef: containerRef,
@@ -55,7 +56,7 @@ const MediaResults: FC<OwnProps & StateProps> = ({
   });
 
   const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
-    if (lastSyncTime && direction === LoadMoreDirection.Backwards) {
+    if (direction === LoadMoreDirection.Backwards) {
       runThrottled(() => {
         searchMessagesGlobal({
           type: CURRENT_TYPE,
@@ -63,7 +64,7 @@ const MediaResults: FC<OwnProps & StateProps> = ({
       });
     }
   // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
-  }, [lastSyncTime, searchMessagesGlobal, searchQuery]);
+  }, [searchMessagesGlobal, searchQuery]);
 
   const foundMessages = useMemo(() => {
     if (!foundIds || !globalMessagesByChatId) {
@@ -71,16 +72,16 @@ const MediaResults: FC<OwnProps & StateProps> = ({
     }
 
     return foundIds.map((id) => {
-      const [chatId, messageId] = id.split('_');
+      const [chatId, messageId] = parseSearchResultKey(id);
 
-      return globalMessagesByChatId[chatId]?.byId[Number(messageId)];
+      return globalMessagesByChatId[chatId]?.byId[messageId];
     }).filter(Boolean);
   }, [globalMessagesByChatId, foundIds]);
 
   const handleSelectMedia = useCallback((id: number, chatId: string) => {
     openMediaViewer({
       chatId,
-      mediaId: id,
+      messageId: id,
       origin: MediaViewerOrigin.SearchResult,
     });
   }, [openMediaViewer]);
@@ -122,10 +123,10 @@ const MediaResults: FC<OwnProps & StateProps> = ({
   );
 
   return (
-    <div ref={containerRef} className="LeftSearch">
+    <div ref={containerRef} className="LeftSearch--content LeftSearch--media">
       <InfiniteScroll
         className={classNames}
-        items={foundMessages}
+        items={canRenderContents ? foundMessages : undefined}
         itemSelector={!searchQuery ? '.Media' : '.ListItem'}
         onLoadMore={handleLoadMore}
         noFastList

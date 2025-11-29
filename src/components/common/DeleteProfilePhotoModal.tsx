@@ -1,13 +1,15 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useCallback, memo } from '../../lib/teact/teact';
+import React, { memo, useCallback } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiPhoto } from '../../api/types';
-import useLang from '../../hooks/useLang';
 
-import Modal from '../ui/Modal';
-import Button from '../ui/Button';
 import { isUserId } from '../../global/helpers';
+
+import useOldLang from '../../hooks/useOldLang';
+
+import Button from '../ui/Button';
+import Modal from '../ui/Modal';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -42,7 +44,7 @@ const DeleteProfilePhotoModal: FC<OwnProps> = ({
     onClose();
   }, [onConfirm, profileId, onClose, deleteProfilePhoto, photo, deleteChatPhoto]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   return (
     <Modal

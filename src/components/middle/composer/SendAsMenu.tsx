@@ -1,23 +1,23 @@
-import React, {
-  useCallback, useEffect, useRef, memo,
-} from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiSendAsPeerId } from '../../../api/types';
 
-import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 import setTooltipItemVisible from '../../../util/setTooltipItemVisible';
-import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
-import { isUserId } from '../../../global/helpers';
-import useMouseInside from '../../../hooks/useMouseInside';
-import useLang from '../../../hooks/useLang';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 
-import ListItem from '../../ui/ListItem';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMouseInside from '../../../hooks/useMouseInside';
+import useOldLang from '../../../hooks/useOldLang';
+import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
+
 import Avatar from '../../common/Avatar';
-import Menu from '../../ui/Menu';
 import FullNameTitle from '../../common/FullNameTitle';
+import Icon from '../../common/icons/Icon';
+import ListItem from '../../ui/ListItem';
+import Menu from '../../ui/Menu';
 
 import './SendAsMenu.scss';
 
@@ -44,7 +44,7 @@ const SendAsMenu: FC<OwnProps> = ({
   const usersById = getGlobal().users.byId;
   const chatsById = getGlobal().chats.byId;
 
-  const lang = useLang();
+  const lang = useOldLang();
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -56,10 +56,10 @@ const SendAsMenu: FC<OwnProps> = ({
     }
   }, [isOpen, markMouseInside]);
 
-  const handleUserSelect = useCallback((id: string) => {
+  const handleUserSelect = useLastCallback((id: string) => {
     onClose();
     saveDefaultSendAs({ chatId: chatId!, sendAsId: id });
-  }, [chatId, onClose, saveDefaultSendAs]);
+  });
 
   const selectedSendAsIndex = useKeyboardNavigation({
     isActive: isOpen,
@@ -95,9 +95,9 @@ const SendAsMenu: FC<OwnProps> = ({
     >
       <div className="send-as-title" dir="auto">{lang('SendMessageAsTitle')}</div>
       {usersById && chatsById && sendAsPeerIds?.map(({ id, isPremium }, index) => {
-        const user = isUserId(id) ? usersById[id] : undefined;
-        const chat = !user ? chatsById[id] : undefined;
-        const userOrChat = user || chat;
+        const user = usersById[id];
+        const chat = chatsById[id];
+        const peer = user || chat;
 
         const handleClick = () => {
           if (!isPremium || isCurrentUserPremium) {
@@ -124,16 +124,15 @@ const SendAsMenu: FC<OwnProps> = ({
             onClick={handleClick}
             focus={selectedSendAsIndex === index}
             rightElement={!isCurrentUserPremium && isPremium
-              && <i className="icon icon-lock-badge send-as-icon-locked" />}
+              && <Icon name="lock-badge" className="send-as-icon-locked" />}
           >
             <Avatar
               size="small"
-              chat={chat}
-              user={user}
+              peer={peer}
               className={avatarClassName}
             />
             <div className="info">
-              {userOrChat && <FullNameTitle peer={userOrChat} noFake />}
+              {peer && <FullNameTitle peer={peer} noFake />}
               <span className="subtitle">{user
                 ? lang('VoipGroupPersonalAccount')
                 : lang('Subscribers', chat?.membersCount, 'i')}

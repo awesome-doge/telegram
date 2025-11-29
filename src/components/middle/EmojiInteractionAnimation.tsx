@@ -1,19 +1,21 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useLayoutEffect, useRef,
+  beginHeavyAnimation,
+  memo, useEffect, useLayoutEffect, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ActiveEmojiInteraction } from '../../global/types';
+import type { ActiveEmojiInteraction } from '../../types';
 
-import { IS_ANDROID } from '../../util/windowEnvironment';
-import useFlag from '../../hooks/useFlag';
-import useMedia from '../../hooks/useMedia';
-import buildClassName from '../../util/buildClassName';
 import {
   selectAnimatedEmojiEffect,
 } from '../../global/selectors';
-import { dispatchHeavyAnimationEvent } from '../../hooks/useHeavyAnimationCheck';
+import buildClassName from '../../util/buildClassName';
+import { IS_ANDROID } from '../../util/windowEnvironment';
+
+import useFlag from '../../hooks/useFlag';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
 
 import AnimatedSticker from '../common/AnimatedSticker';
 
@@ -41,7 +43,7 @@ const EmojiInteractionAnimation: FC<OwnProps & StateProps> = ({
   const [isPlaying, startPlaying] = useFlag(false);
   const timeoutRef = useRef<NodeJS.Timeout>();
 
-  const stop = useCallback(() => {
+  const stop = useLastCallback(() => {
     startHiding();
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -49,13 +51,13 @@ const EmojiInteractionAnimation: FC<OwnProps & StateProps> = ({
     setTimeout(() => {
       stopActiveEmojiInteraction({ id: activeEmojiInteraction.id });
     }, HIDE_ANIMATION_DURATION);
-  }, [activeEmojiInteraction.id, startHiding, stopActiveEmojiInteraction]);
+  });
 
-  const handleCancelAnimation = useCallback((e: UIEvent) => {
+  const handleCancelAnimation = useLastCallback((e: UIEvent) => {
     if (!(e.target as HTMLElement)?.closest('.AnimatedEmoji')) {
       stop();
     }
-  }, [stop]);
+  });
 
   useEffect(() => {
     document.addEventListener('touchstart', handleCancelAnimation);
@@ -72,11 +74,11 @@ const EmojiInteractionAnimation: FC<OwnProps & StateProps> = ({
   }, [handleCancelAnimation]);
 
   useLayoutEffect(() => {
-    const dispatchHeavyAnimationStop = dispatchHeavyAnimationEvent();
+    const endHeavyAnimation = beginHeavyAnimation();
 
     timeoutRef.current = setTimeout(() => {
       stop();
-      dispatchHeavyAnimationStop();
+      endHeavyAnimation();
     }, PLAYING_DURATION);
   }, [stop]);
 
@@ -105,7 +107,7 @@ const EmojiInteractionAnimation: FC<OwnProps & StateProps> = ({
         tgsUrl={effectTgsUrl}
         play
         quality={IS_ANDROID ? 0.5 : undefined}
-        forceOnHeavyAnimation
+        forceAlways
         noLoop
         onLoad={startPlaying}
       />

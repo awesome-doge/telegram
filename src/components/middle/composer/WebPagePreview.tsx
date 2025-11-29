@@ -1,36 +1,43 @@
-import React, {
-  memo, useCallback, useEffect, useRef,
-} from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type {
   ApiFormattedText, ApiMessage, ApiMessageEntityTextUrl, ApiWebPage,
 } from '../../../api/types';
-import { ApiMessageEntityTypes } from '../../../api/types';
-import type { ISettings } from '../../../types';
+import type { GlobalState } from '../../../global/types';
+import type { ISettings, ThreadId, WebPageMediaSize } from '../../../types';
 import type { Signal } from '../../../util/signals';
+import { ApiMessageEntityTypes } from '../../../api/types';
 
 import { RE_LINK_TEMPLATE } from '../../../config';
-import { selectTabState, selectNoWebPage, selectTheme } from '../../../global/selectors';
+import { selectNoWebPage, selectTabState, selectTheme } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
-import parseMessageInput from '../../../util/parseMessageInput';
-import useSyncEffect from '../../../hooks/useSyncEffect';
-import useShowTransition from '../../../hooks/useShowTransition';
-import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
-import useDerivedState from '../../../hooks/useDerivedState';
-import useDerivedSignal from '../../../hooks/useDerivedSignal';
-import { useDebouncedResolver } from '../../../hooks/useAsyncResolvers';
+import parseHtmlAsFormattedText from '../../../util/parseHtmlAsFormattedText';
 
-import WebPage from '../message/WebPage';
+import { useDebouncedResolver } from '../../../hooks/useAsyncResolvers';
+import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
+import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import useDerivedSignal from '../../../hooks/useDerivedSignal';
+import useDerivedState from '../../../hooks/useDerivedState';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
+import useSyncEffect from '../../../hooks/useSyncEffect';
+
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
+import Menu from '../../ui/Menu';
+import MenuItem from '../../ui/MenuItem';
+import WebPage from '../message/WebPage';
 
 import './WebPagePreview.scss';
 
 type OwnProps = {
   chatId: string;
-  threadId: number;
+  threadId: ThreadId;
   getHtml: Signal<string>;
+  isEditing: boolean;
   isDisabled?: boolean;
 };
 
@@ -38,6 +45,7 @@ type StateProps = {
   webPagePreview?: ApiWebPage;
   noWebPage?: boolean;
   theme: ISettings['theme'];
+  attachmentSettings: GlobalState['attachmentSettings'];
 };
 
 const DEBOUNCE_MS = 300;
@@ -51,17 +59,28 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
   webPagePreview,
   noWebPage,
   theme,
+  attachmentSettings,
+  isEditing,
 }) => {
   const {
     loadWebPagePreview,
     clearWebPagePreview,
     toggleMessageWebPage,
+    updateAttachmentSettings,
   } = getActions();
+
+  const lang = useOldLang();
 
   const formattedTextWithLinkRef = useRef<ApiFormattedText>();
 
+  // eslint-disable-next-line no-null/no-null
+  const ref = useRef<HTMLDivElement>(null);
+
+  const isInvertedMedia = attachmentSettings.isInvertedMedia;
+  const isSmallerMedia = attachmentSettings.webPageMediaSize === 'small';
+
   const detectLinkDebounced = useDebouncedResolver(() => {
-    const formattedText = parseMessageInput(getHtml());
+    const formattedText = parseHtmlAsFormattedText(getHtml());
     const linkEntity = formattedText.entities?.find((entity): entity is ApiMessageEntityTextUrl => (
       entity.type === ApiMessageEntityTypes.TextUrl
     ));
@@ -93,13 +112,45 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
   const isShown = useDerivedState(() => {
     return Boolean(webPagePreview && getHtml() && !noWebPage && !isDisabled);
   }, [isDisabled, getHtml, noWebPage, webPagePreview]);
-  const { shouldRender, transitionClassNames } = useShowTransition(isShown);
+  const { shouldRender, transitionClassNames } = useShowTransitionDeprecated(isShown);
+
+  const hasMediaSizeOptions = webPagePreview?.hasLargeMedia;
 
   const renderingWebPage = useCurrentOrPrev(webPagePreview, true);
 
-  const handleClearWebpagePreview = useCallback(() => {
+  const handleClearWebpagePreview = useLastCallback(() => {
     toggleMessageWebPage({ chatId, threadId, noWebPage: true });
-  }, [chatId, threadId, toggleMessageWebPage]);
+  });
+
+  const {
+    isContextMenuOpen, contextMenuAnchor, handleContextMenu,
+    handleContextMenuClose, handleContextMenuHide,
+  } = useContextMenuHandlers(ref, isEditing, true);
+
+  const getTriggerElement = useLastCallback(() => ref.current);
+  const getRootElement = useLastCallback(() => ref.current!);
+  const getMenuElement = useLastCallback(
+    () => ref.current!.querySelector('.web-page-preview-context-menu .bubble'),
+  );
+
+  const handlePreviewClick = useLastCallback((e: React.MouseEvent): void => {
+    handleContextMenu(e);
+  });
+
+  useEffect(() => {
+    if (!shouldRender || !renderingWebPage) {
+      handleContextMenuClose();
+      handleContextMenuHide();
+    }
+  }, [handleContextMenuClose, handleContextMenuHide, shouldRender, renderingWebPage]);
+
+  function updateIsInvertedMedia(value?: true) {
+    updateAttachmentSettings({ isInvertedMedia: value });
+  }
+
+  function updateIsLargerMedia(value?: WebPageMediaSize) {
+    updateAttachmentSettings({ webPageMediaSize: value });
+  }
 
   if (!shouldRender || !renderingWebPage) {
     return undefined;
@@ -113,13 +164,71 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
     },
   } as ApiMessage;
 
+  function renderContextMenu() {
+    return (
+      <Menu
+        isOpen={isContextMenuOpen}
+        anchor={contextMenuAnchor}
+        getTriggerElement={getTriggerElement}
+        getRootElement={getRootElement}
+        getMenuElement={getMenuElement}
+        className="web-page-preview-context-menu"
+        onClose={handleContextMenuClose}
+        onCloseAnimationEnd={handleContextMenuHide}
+        autoClose
+      >
+        <>
+          {
+            isInvertedMedia ? (
+              // eslint-disable-next-line react/jsx-no-bind
+              <MenuItem icon="move-caption-up" onClick={() => updateIsInvertedMedia(undefined)}>
+                {lang('PreviewSender.MoveTextUp')}
+              </MenuItem>
+            ) : (
+            // eslint-disable-next-line react/jsx-no-bind
+              <MenuItem icon="move-caption-down" onClick={() => updateIsInvertedMedia(true)}>
+                {lang(('PreviewSender.MoveTextDown'))}
+              </MenuItem>
+            )
+          }
+          {hasMediaSizeOptions && (
+            isSmallerMedia ? (
+            // eslint-disable-next-line react/jsx-no-bind
+              <MenuItem icon="expand" onClick={() => updateIsLargerMedia('large')}>
+                {lang('ChatInput.EditLink.LargerMedia')}
+              </MenuItem>
+            ) : (
+            // eslint-disable-next-line react/jsx-no-bind
+              <MenuItem icon="collapse" onClick={() => updateIsLargerMedia('small')}>
+                {lang(('ChatInput.EditLink.SmallerMedia'))}
+              </MenuItem>
+            )
+          )}
+          <MenuItem
+            icon="delete"
+            // eslint-disable-next-line react/jsx-no-bind
+            onClick={handleClearWebpagePreview}
+          >
+            {lang('ChatInput.EditLink.RemovePreview')}
+          </MenuItem>
+        </>
+      </Menu>
+    );
+  }
+
   return (
-    <div className={buildClassName('WebPagePreview', transitionClassNames)}>
+    <div className={buildClassName('WebPagePreview', transitionClassNames)} ref={ref}>
       <div className="WebPagePreview_inner">
-        <div className="WebPagePreview-left-icon">
-          <i className="icon icon-link" />
+        <div className="WebPagePreview-left-icon" onClick={handlePreviewClick}>
+          <Icon name="link" />
         </div>
-        <WebPage message={messageStub} inPreview theme={theme} />
+        <WebPage
+          message={messageStub}
+          inPreview
+          theme={theme}
+          onContainerClick={handlePreviewClick}
+          isEditing={isEditing}
+        />
         <Button
           className="WebPagePreview-clear"
           round
@@ -128,8 +237,9 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
           ariaLabel="Clear Webpage Preview"
           onClick={handleClearWebpagePreview}
         >
-          <i className="icon icon-close" />
+          <Icon name="close" />
         </Button>
+        {!isEditing && renderContextMenu()}
       </div>
     </div>
   );
@@ -138,10 +248,14 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { chatId, threadId }): StateProps => {
     const noWebPage = selectNoWebPage(global, chatId, threadId);
+    const {
+      attachmentSettings,
+    } = global;
     return {
       theme: selectTheme(global),
       webPagePreview: selectTabState(global).webPagePreview,
       noWebPage,
+      attachmentSettings,
     };
   },
 )(WebPagePreview));

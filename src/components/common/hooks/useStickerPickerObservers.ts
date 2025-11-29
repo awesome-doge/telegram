@@ -1,11 +1,13 @@
 import type { RefObject } from 'react';
+import { useRef, useState } from '../../../lib/teact/teact';
 
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useSyncEffect from '../../../hooks/useSyncEffect';
-import { useCallback, useRef, useState } from '../../../lib/teact/teact';
 import { ANIMATION_END_DELAY } from '../../../config';
 import animateScroll from '../../../util/animateScroll';
 import { REM } from '../helpers/mediaDimensions';
+
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useSyncEffect from '../../../hooks/useSyncEffect';
 
 const STICKER_INTERSECTION_THROTTLE = 200;
 const STICKER_INTERSECTION_MARGIN = 100;
@@ -85,22 +87,22 @@ export function useStickerPickerObservers(
     }
   }, [freezeForSet, freezeForShowingItems, isHidden, unfreezeForSet, unfreezeForShowingItems]);
 
-  const selectStickerSet = useCallback((index: number) => {
+  const selectStickerSet = useLastCallback((index: number) => {
     setActiveSetIndex((currentIndex) => {
       const stickerSetEl = document.getElementById(`${idPrefix}-${index}`)!;
       const isClose = Math.abs(currentIndex - index) === 1;
 
-      animateScroll(
-        containerRef.current!,
-        stickerSetEl,
-        'start',
-        FOCUS_MARGIN,
-        isClose ? SCROLL_MAX_DISTANCE_WHEN_CLOSE : SCROLL_MAX_DISTANCE_WHEN_FAR,
-      );
+      animateScroll({
+        container: containerRef.current!,
+        element: stickerSetEl,
+        position: 'start',
+        margin: FOCUS_MARGIN,
+        maxDistance: isClose ? SCROLL_MAX_DISTANCE_WHEN_CLOSE : SCROLL_MAX_DISTANCE_WHEN_FAR,
+      });
 
       return index;
     });
-  }, [containerRef, idPrefix]);
+  });
 
   return {
     activeSetIndex,

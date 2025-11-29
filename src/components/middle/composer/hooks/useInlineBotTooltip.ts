@@ -1,18 +1,19 @@
-import { useCallback, useEffect } from '../../../../lib/teact/teact';
+import { useEffect } from '../../../../lib/teact/teact';
+import { getActions } from '../../../../global';
 
 import type { InlineBotSettings } from '../../../../types';
 import type { Signal } from '../../../../util/signals';
 
-import { getActions } from '../../../../global';
 import memoized from '../../../../util/memoized';
 
-import useFlag from '../../../../hooks/useFlag';
-import useDerivedState from '../../../../hooks/useDerivedState';
-import useSyncEffect from '../../../../hooks/useSyncEffect';
 import { useThrottledResolver } from '../../../../hooks/useAsyncResolvers';
+import useDerivedState from '../../../../hooks/useDerivedState';
+import useFlag from '../../../../hooks/useFlag';
+import useLastCallback from '../../../../hooks/useLastCallback';
+import useSyncEffect from '../../../../hooks/useSyncEffect';
 
 const THROTTLE = 300;
-const INLINE_BOT_QUERY_REGEXP = /^@([a-z0-9_]{1,32})[\u00A0\u0020]+(.*)/i;
+const INLINE_BOT_QUERY_REGEXP = /^@([a-z0-9_]{1,32})[\u00A0\u0020]+(.*)/is;
 const HAS_NEW_LINE = /^@([a-z0-9_]{1,32})[\u00A0\u0020]+\n{2,}/i;
 const MEMO_NO_RESULT = {
   username: '',
@@ -75,13 +76,13 @@ export default function useInlineBotTooltip(
     }
   }, [isOpen, resetAllInlineBots, username]);
 
-  const loadMore = useCallback(() => {
+  const loadMore = useLastCallback(() => {
     if (!usernameLowered) return;
 
     queryInlineBot({
       chatId, username: usernameLowered, query, offset,
     });
-  }, [chatId, offset, query, queryInlineBot, usernameLowered]);
+  });
 
   return {
     isOpen,

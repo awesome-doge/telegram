@@ -1,19 +1,19 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiSticker, ApiStickerSet } from '../../../api/types';
 import type { ISettings } from '../../../types';
 
-import renderText from '../../common/helpers/renderText';
-import { pick } from '../../../util/iteratees';
-
 import { selectCanPlayAnimatedEmojis } from '../../../global/selectors';
+import { pick } from '../../../util/iteratees';
+import renderText from '../../common/helpers/renderText';
+
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import StickerSetCard from '../../common/StickerSetCard';
 import Checkbox from '../../ui/Checkbox';
@@ -40,7 +40,7 @@ const SettingsCustomEmoji: FC<OwnProps & StateProps> = ({
   onReset,
 }) => {
   const { openStickerSet, setSettingOption } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   // eslint-disable-next-line no-null/no-null
   const stickerSettingsRef = useRef<HTMLDivElement>(null);

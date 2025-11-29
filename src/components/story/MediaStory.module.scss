@@ -1,0 +1,61 @@
+.root {
+  position: relative;
+  overflow: hidden;
+}
+
+.wrapper {
+  // Aspect-ratio trick https://css-tricks.com/aspect-ratio-boxes/
+  height: 0;
+  padding-bottom: 179%;
+  overflow: hidden;
+  cursor: var(--custom-cursor, pointer);
+}
+
+.media {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.expiredIcon {
+  font-size: 1.25rem;
+  line-height: 0.9375rem;
+  vertical-align: -0.1875rem;
+}
+
+.overlayIcon {
+  position: absolute;
+  font-size: 0.75rem;
+  line-height: 1;
+  z-index: 1;
+  color: white;
+
+  filter: drop-shadow(0 0 0.25rem black);
+}
+
+.pinnedIcon {
+  top: 0.25rem;
+  right: 0.25rem;
+}
+
+.viewsCount {
+  bottom: 0.25rem;
+  left: 0.25rem;
+
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.duration {
+  bottom: 0.25rem;
+  right: 0.25rem;
+}
+
+.contextMenu {
+  position: relative;
+  z-index: var(--z-right-column-menu);
+}

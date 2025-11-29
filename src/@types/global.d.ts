@@ -2,6 +2,7 @@ declare const process: NodeJS.Process;
 
 declare module '*.module.scss';
 
+declare const APP_VERSION: string;
 declare const APP_REVISION: string;
 
 declare namespace React {
@@ -37,6 +38,7 @@ type AnyLiteral = Record<string, any>;
 type AnyClass = new (...args: any[]) => any;
 type AnyFunction = (...args: any[]) => any;
 type AnyToVoidFunction = (...args: any[]) => void;
+type BooleanToVoidFunction = (value: boolean) => void;
 type NoneToVoidFunction = () => void;
 
 type EmojiCategory = {
@@ -62,6 +64,7 @@ declare module '*.png';
 declare module '*.svg';
 declare module '*.tgs';
 declare module '*.wasm';
+declare module '*.strings';
 
 declare module '*.txt' {
   const content: string;
@@ -116,6 +119,15 @@ interface Navigator {
   // PWA badging extensions https://w3c.github.io/badging/
   setAppBadge?(count: number): Promise<void>;
 }
+
+type Undefined<T> = {
+  [K in keyof T]: undefined;
+};
+type OptionalCombine<A, B> = (A & B) | (A & Undefined<B>);
+
+type CommonProperties<T, U> = {
+  [K in keyof T & keyof U]: T[K] & U[K];
+};
 
 // Fix to make Boolean() work as !!
 // https://github.com/microsoft/TypeScript/issues/16655

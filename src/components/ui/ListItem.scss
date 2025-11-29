@@ -14,12 +14,33 @@
       box-shadow: inset 0 -0.03125rem 0 0 var(--color-dividers);
     }
 
+    &.selected::after,
+    &:last-of-type::after {
+      display: none;
+    }
+
+    // Conceal above item divider
+    &.selected::before {
+      content: "";
+      position: absolute;
+      top: -0.0625rem;
+      left: 4.5rem;
+      right: 0;
+      height: 0.0625rem;
+      /* stylelint-disable-next-line plugin/whole-pixel */
+      box-shadow: inset 0 -0.03125rem 0 0 var(--color-background);
+    }
+
     &:last-of-type::after {
       display: none;
     }
 
     &.small-icon::after {
       left: 3.875rem;
+    }
+
+    &.smaller-icon::after {
+      left: 3.25rem;
     }
 
     &.no-icon::after {
@@ -33,37 +54,46 @@
   }
 
   .ListItem-button {
-    width: 100%;
-    height: 100%;
+    min-height: 3rem;
     background-color: var(--background-color);
     border: none !important;
     box-shadow: none !important;
     outline: none !important;
     display: flex;
     align-items: center;
-    padding: 1rem;
+    padding: 0 1rem;
     position: relative;
     overflow: hidden;
     white-space: nowrap;
     color: var(--color-text);
     border-radius: var(--border-radius-default);
     --ripple-color: rgba(0, 0, 0, 0.08);
-
     text-decoration: none;
 
-    > .icon {
+    body.is-ios &,
+    body.is-android & {
+      border-radius: 0;
+    }
+
+    @media (max-width: 600px) {
+      border-radius: 0;
+    }
+
+    > .ListItem-main-icon {
       font-size: 1.5rem;
-      margin-right: 2rem;
       color: var(--color-text-secondary);
+      margin-right: 1.75rem;
     }
 
     > .Switcher {
-      margin-left: auto;
+      margin-inline-start: auto;
     }
   }
 
-  .title, .subtitle {
-    line-height: 1.5rem;
+  &.with-color-transition {
+    .ListItem-button {
+      transition: background-color 150ms ease-in-out;
+    }
   }
 
   .user-status,
@@ -74,7 +104,6 @@
     text-align: initial;
     unicode-bidi: plaintext;
     text-overflow: ellipsis;
-    overflow: hidden;
   }
 
   .other-usernames {
@@ -89,9 +118,8 @@
   }
 
   &.multiline {
-    .ListItem-button > .icon {
+    .ListItem-button > .ListItem-main-icon {
       position: relative;
-      top: 0.25rem;
     }
   }
 
@@ -113,7 +141,7 @@
 
       @media (hover: hover) {
         &:hover,
-        &:focus {
+        &:focus-visible {
           --background-color: var(--color-chat-hover);
         }
       }
@@ -139,14 +167,6 @@
     --background-color: var(--color-chat-hover);
   }
 
-  &.narrow {
-    margin-bottom: 0.75rem;
-
-    .ListItem-button {
-      padding: 0.5rem 1rem;
-    }
-  }
-
   &.inactive {
     pointer-events: none;
   }
@@ -159,7 +179,7 @@
     .ListItem-button {
       color: var(--color-error);
 
-      .icon {
+      .ListItem-main-icon {
         color: inherit;
       }
     }
@@ -188,13 +208,23 @@
       padding: 0.5625rem;
     }
 
+    &.contact-list-item {
+      .ListItem-button {
+        padding: 0.5rem;
+      }
+
+      .ChatInfo {
+        padding: 0.0625rem;
+      }
+    }
+
     .Avatar {
       margin-right: 0.5rem;
     }
 
     .info {
       flex: 1;
-      overflow: hidden;
+      min-width: 0;
     }
 
     .info-name-title {
@@ -205,10 +235,10 @@
     .info-row,
     .title,
     .subtitle {
-      overflow: hidden;
       display: flex;
       justify-content: flex-start;
       align-items: center;
+      min-width: 0;
     }
 
     .separator {
@@ -228,9 +258,15 @@
       text-align: initial;
     }
 
+    h3,
+    .last-message,
+    .typing-status {
+      overflow: hidden;
+    }
+
     .title {
       h3 {
-        font-weight: 500;
+        font-weight: var(--font-weight-semibold);
       }
     }
 
@@ -250,7 +286,7 @@
       display: flex;
       align-items: center;
       flex: 1;
-      overflow: hidden;
+      min-width: 0;
 
       .info {
         display: flex;
@@ -328,60 +364,6 @@
     }
   }
 
-  &.search-result-message {
-    .title {
-      flex-grow: 1;
-      padding-right: 0.125rem;
-    }
-
-    .search-result-message-top {
-      display: flex;
-    }
-
-    h3 {
-      max-width: 80%;
-    }
-
-    h3,
-    .subtitle {
-      font-size: 1rem;
-      line-height: 1.5rem;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      text-align: left;
-      display: block;
-    }
-
-    .subtitle {
-      color: var(--color-text-secondary);
-
-      .matching-text-highlight {
-        color: var(--color-text);
-        background: #cae3f7;
-        border-radius: 0.25rem;
-        padding: 0 0.125rem;
-        display: inline-block;
-
-        .theme-dark & {
-          --color-text: #000;
-        }
-      }
-    }
-
-    &[dir="rtl"] {
-      .LastMessageMeta {
-        margin-left: 0;
-        margin-right: auto;
-      }
-
-      .subtitle {
-        margin-right: 0;
-        display: block;
-      }
-    }
-  }
-
   &.picker-list-item {
     margin: 0;
 
@@ -403,6 +385,10 @@
       padding-left: 4rem;
     }
 
+    .withSubLabel {
+      height: 2.5rem;
+    }
+
     &[dir="rtl"] {
       .Checkbox {
         padding-left: 0;
@@ -411,10 +397,22 @@
     }
   }
 
+  &.chat-item {
+    .ListItem-button {
+      padding: 0.5rem;
+    }
+
+    .Checkbox {
+      padding-left: 3rem;
+    }
+  }
+
   .multiline-item {
     flex-grow: 1;
     white-space: initial;
     overflow: hidden;
+
+    padding: 0.4375rem 0 0.5625rem 0;
 
     .word-break {
       overflow-wrap: break-word;
@@ -424,6 +422,10 @@
     .subtitle {
       display: block;
       text-align: initial;
+
+      &[dir="rtl"] {
+        text-align: right;
+      }
     }
 
     .title {
@@ -434,23 +436,13 @@
 
     .subtitle {
       font-size: 0.875rem;
-      line-height: 1.5rem;
+      line-height: 1rem;
       color: var(--color-text-secondary);
-
-      & + .subtitle {
-        margin-top: -0.25rem;
-      }
+      margin-top: 0.25rem;
 
       &.black {
         color: var(--color-text);
       }
-    }
-  }
-
-  &[dir="rtl"] {
-    .ListItem-button > .icon {
-      margin-left: 2rem;
-      margin-right: 0;
     }
   }
 }

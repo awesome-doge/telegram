@@ -1,15 +1,17 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useEffect, useState, memo, useCallback,
+  memo, useCallback, useEffect, useState,
 } from '../../lib/teact/teact';
 
 import { DEBUG } from '../../config';
-import { blobToFile, blobToDataUri } from '../../util/files';
-import useLang from '../../hooks/useLang';
+import { blobToDataUri, blobToFile } from '../../util/files';
 
+import useOldLang from '../../hooks/useOldLang';
+
+import Icon from '../common/icons/Icon';
 import Button from './Button';
-import Modal from './Modal';
 import Loading from './Loading';
+import Modal from './Modal';
 
 import './CropModal.scss';
 
@@ -92,7 +94,7 @@ const CropModal: FC<OwnProps> = ({ file, onChange, onClose }: OwnProps) => {
     initCropper(file);
   }, [file, isCroppieReady]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleCropClick = useCallback(async () => {
     if (!cropper) {
@@ -125,7 +127,7 @@ const CropModal: FC<OwnProps> = ({ file, onChange, onClose }: OwnProps) => {
         onClick={handleCropClick}
         ariaLabel={lang('CropImage')}
       >
-        <i className="icon icon-check" />
+        <Icon name="check" />
       </Button>
     </Modal>
   );

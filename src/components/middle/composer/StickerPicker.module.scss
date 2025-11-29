@@ -1,7 +1,8 @@
-@import "../../../styles/mixins";
+@use "../../../styles/mixins";
 
 .root {
   --color-primary: var(--color-text);
+  --emoji-size: 4.5rem;
 
   height: 100%;
 }
@@ -10,14 +11,23 @@
   --symbol-set-gap-size: 0.25rem;
 
   position: relative;
-  height: calc(100% - 3rem);
+  height: 100%;
+
+  &.hasHeader {
+    height: calc(100% - 3rem);
+  }
+
   overflow-y: auto;
+  overflow-x: hidden;
+
   padding: 0.5rem 0.25rem;
 
-  @include overflow-y-overlay();
+  @include mixins.adapt-padding-to-scrollbar(0.25rem);
 
   &_customEmoji {
     padding: 0.5rem 0.75rem;
+
+    @include mixins.adapt-padding-to-scrollbar(0.75rem);
   }
 
   :global(.bubble) {

@@ -3,11 +3,12 @@ import React, { memo, useCallback } from '../../../../lib/teact/teact';
 
 import { STICKER_SIZE_PASSCODE } from '../../../../config';
 import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
 
-import Button from '../../../ui/Button';
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useOldLang from '../../../../hooks/useOldLang';
+
 import AnimatedIcon from '../../../common/AnimatedIcon';
+import Button from '../../../ui/Button';
 
 type OwnProps = {
   isActive?: boolean;
@@ -17,7 +18,7 @@ type OwnProps = {
 const SettingsPasscodeCongratulations: FC<OwnProps> = ({
   isActive, onReset,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   const fullReset = useCallback(() => {
     onReset(true);
@@ -42,7 +43,7 @@ const SettingsPasscodeCongratulations: FC<OwnProps> = ({
         </p>
       </div>
 
-      <div className="settings-item pt-0">
+      <div className="settings-item pt-2">
         <Button onClick={fullReset}>{lang('Back')}</Button>
       </div>
     </div>

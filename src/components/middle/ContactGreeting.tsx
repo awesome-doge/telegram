@@ -1,36 +1,50 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef,
+  memo, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ApiSticker, ApiUpdateConnectionStateType } from '../../api/types';
+import type {
+  ApiBusinessIntro, ApiSticker, ApiUpdateConnectionStateType, ApiUser,
+} from '../../api/types';
+import type { MessageList } from '../../types';
 
-import { selectChat } from '../../global/selectors';
-import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
-import useLang from '../../hooks/useLang';
-import { getUserIdDividend } from '../../global/helpers';
+import { getUserFullName } from '../../global/helpers';
+import {
+  selectChat,
+  selectChatLastMessage,
+  selectCurrentMessageList,
+  selectUser,
+  selectUserFullInfo,
+} from '../../global/selectors';
 
-import StickerButton from '../common/StickerButton';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
-import './ContactGreeting.scss';
+import StickerView from '../common/StickerView';
+
+import styles from './ContactGreeting.module.scss';
 
 type OwnProps = {
   userId: string;
 };
 
 type StateProps = {
-  sticker?: ApiSticker;
+  defaultStickers?: ApiSticker[];
   lastUnreadMessageId?: number;
   connectionState?: ApiUpdateConnectionStateType;
+  currentMessageList?: MessageList;
+  businessIntro?: ApiBusinessIntro;
+  user?: ApiUser;
 };
 
-const INTERSECTION_DEBOUNCE_MS = 200;
-
 const ContactGreeting: FC<OwnProps & StateProps> = ({
-  sticker,
+  defaultStickers,
   connectionState,
   lastUnreadMessageId,
+  currentMessageList,
+  businessIntro,
+  user,
 }) => {
   const {
     loadGreetingStickers,
@@ -38,22 +52,26 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
     markMessageListRead,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
+
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
-  const {
-    observe: observeIntersection,
-  } = useIntersectionObserver({
-    rootRef: containerRef,
-    debounceMs: INTERSECTION_DEBOUNCE_MS,
-  });
+
+  const sticker = useMemo(() => {
+    if (businessIntro?.sticker) return businessIntro.sticker;
+    if (!defaultStickers?.length) return undefined;
+
+    const randomIndex = Math.floor(Math.random() * defaultStickers.length);
+    return defaultStickers[randomIndex];
+  }, [businessIntro?.sticker, defaultStickers]);
+
   useEffect(() => {
-    if (sticker || connectionState !== 'connectionStateReady') {
+    if (defaultStickers?.length || connectionState !== 'connectionStateReady') {
       return;
     }
 
     loadGreetingStickers();
-  }, [connectionState, loadGreetingStickers, sticker]);
+  }, [connectionState, loadGreetingStickers, defaultStickers]);
 
   useEffect(() => {
     if (connectionState === 'connectionStateReady' && lastUnreadMessageId) {
@@ -61,35 +79,45 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
     }
   }, [connectionState, markMessageListRead, lastUnreadMessageId]);
 
-  const handleStickerSelect = useCallback((selectedSticker: ApiSticker) => {
-    selectedSticker = {
-      ...selectedSticker,
-      isPreloadedGlobally: true,
-    };
-    sendMessage({ sticker: selectedSticker });
-  }, [sendMessage]);
+  const handleStickerSelect = useLastCallback(() => {
+    if (!currentMessageList) {
+      return;
+    }
+
+    sendMessage({
+      sticker: {
+        ...sticker!,
+        isPreloadedGlobally: true,
+      },
+      messageList: currentMessageList,
+    });
+  });
+
+  const title = businessIntro?.title || lang('Conversation.EmptyPlaceholder');
+  const description = businessIntro?.description || lang('Conversation.GreetingText');
 
   return (
-    <div className="ContactGreeting" ref={containerRef}>
-      <div className="wrapper">
-        <p className="title" dir="auto">{lang('Conversation.EmptyPlaceholder')}</p>
-        <p className="description" dir="auto">{lang('Conversation.GreetingText')}</p>
+    <div className={styles.root}>
+      <div className={styles.wrapper}>
+        <p className={styles.title} dir="auto">{title}</p>
+        <p className={styles.description} dir="auto">{description}</p>
 
-        <div className="sticker">
+        <div ref={containerRef} className={styles.sticker} onClick={handleStickerSelect}>
           {sticker && (
-            <StickerButton
+            <StickerView
+              containerRef={containerRef}
               sticker={sticker}
-              onClick={handleStickerSelect}
-              clickArg={sticker}
-              observeIntersection={observeIntersection}
               size={160}
-              className="large"
-              noContextMenu
-              isCurrentUserPremium
+              shouldLoop
             />
           )}
         </div>
       </div>
+      {businessIntro && (
+        <div className={styles.explainer}>
+          {lang('Chat.EmptyStateIntroFooter', getUserFullName(user!))}
+        </div>
+      )}
     </div>
   );
 };
@@ -97,19 +125,25 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { userId }): StateProps => {
     const { stickers } = global.stickers.greeting;
-    const dividend = getUserIdDividend(userId) + getUserIdDividend(global.currentUserId!);
-    const sticker = stickers?.length ? stickers[dividend % stickers.length] : undefined;
     const chat = selectChat(global, userId);
     if (!chat) {
       return {};
     }
 
+    const user = selectUser(global, userId);
+    const fullInfo = selectUserFullInfo(global, userId);
+
+    const lastMessage = selectChatLastMessage(global, chat.id);
+
     return {
-      sticker,
-      lastUnreadMessageId: chat.lastMessage && chat.lastMessage.id !== chat.lastReadInboxMessageId
-        ? chat.lastMessage.id
+      defaultStickers: stickers,
+      lastUnreadMessageId: lastMessage && lastMessage.id !== chat.lastReadInboxMessageId
+        ? lastMessage.id
         : undefined,
       connectionState: global.connectionState,
+      currentMessageList: selectCurrentMessageList(global),
+      businessIntro: fullInfo?.businessIntro,
+      user,
     };
   },
 )(ContactGreeting));

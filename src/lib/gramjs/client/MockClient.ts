@@ -1,26 +1,29 @@
 import BigInt from 'big-integer';
-import type { MockTypes } from './mockUtils/MockTypes';
-import type { DownloadFileParams } from './downloadFile';
 
+import type { DownloadFileWithDcParams } from './downloadFile';
+import type { MockTypes } from './mockUtils/MockTypes';
+import type { SizeType } from './TelegramClient';
+
+import { GENERAL_TOPIC_ID } from '../../../config';
 import { UpdateConnectionState } from '../network';
 import Api from '../tl/api';
-import createMockedUser from './mockUtils/createMockedUser';
-import createMockedDialog from './mockUtils/createMockedDialog';
+import createMockedAvailableReaction from './mockUtils/createMockedAvailableReaction';
 import createMockedChannel from './mockUtils/createMockedChannel';
 import createMockedChat from './mockUtils/createMockedChat';
-import createMockedMessage from './mockUtils/createMockedMessage';
-import getIdFromInputPeer from './mockUtils/getIdFromInputPeer';
-import createMockedAvailableReaction from './mockUtils/createMockedAvailableReaction';
-import MockSender from './MockSender';
-import { downloadFile } from './downloadFile';
-import getDocumentIdFromLocation from './mockUtils/getDocumentIdFromLocation';
+import createMockedDialog from './mockUtils/createMockedDialog';
 import createMockedDialogFilter from './mockUtils/createMockedDialogFilter';
-import createMockedTypePeer from './mockUtils/createMockedTypePeer';
 import createMockedForumTopic from './mockUtils/createMockedForumTopic';
-import { GENERAL_TOPIC_ID } from '../../../config';
 import createMockedJSON from './mockUtils/createMockedJSON';
+import createMockedMessage from './mockUtils/createMockedMessage';
+import createMockedTypePeer from './mockUtils/createMockedTypePeer';
+import createMockedUser from './mockUtils/createMockedUser';
+import getDocumentIdFromLocation from './mockUtils/getDocumentIdFromLocation';
+import getIdFromInputPeer from './mockUtils/getIdFromInputPeer';
+import { downloadFile } from './downloadFile';
 
-const sizeTypes = ['u', 'v', 'w', 'y', 'd', 'x', 'c', 'm', 'b', 'a', 's', 'f'];
+import MockSender from './MockSender';
+
+const sizeTypes: SizeType[] = ['u', 'v', 'w', 'y', 'd', 'x', 'c', 'm', 'b', 'a', 's', 'f'];
 
 class TelegramClient {
     private invokeMiddleware?: <A, R>(mockClient: TelegramClient, request: Api.Request<A, R>)
@@ -178,7 +181,7 @@ class TelegramClient {
                             return topic.id < offsetTopicId;
                         }
                         return true;
-                    }).filter((_, i) => i < limit),
+                    }).slice(0, limit),
                 users: [],
                 chats: [],
                 messages: [],
@@ -280,7 +283,7 @@ class TelegramClient {
         return new MockSender(this);
     }
 
-    downloadFile(inputLocation: any, args: DownloadFileParams) {
+    downloadFile(inputLocation: any, args: DownloadFileWithDcParams) {
         return downloadFile(this as any, inputLocation, args);
     }
 
@@ -403,6 +406,16 @@ class TelegramClient {
         }
         return undefined;
     }
+
+    public setPingCallback() {}
+
+    public setShouldDebugExportedSenders() {}
+
+    public isConnected() {
+        return true;
+    }
+
+    public releaseExportedSender() {}
 
     private getMessagesFrom(chatId: string) {
         return this.mockData.messages[chatId].map((message) => createMockedMessage(chatId, message.id, this.mockData));

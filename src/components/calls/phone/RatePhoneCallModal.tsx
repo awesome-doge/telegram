@@ -1,16 +1,17 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useRef, useState, useCallback,
+  memo, useCallback, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-
-import useLang from '../../../hooks/useLang';
 import buildClassName from '../../../util/buildClassName';
 
-import Modal from '../../ui/Modal';
+import useOldLang from '../../../hooks/useOldLang';
+
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import InputText from '../../ui/InputText';
+import Modal from '../../ui/Modal';
 
 import styles from './RatePhoneCallModal.module.scss';
 
@@ -26,7 +27,7 @@ const RatePhoneCallModal: FC<OwnProps> = ({
   // eslint-disable-next-line no-null/no-null
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [rating, setRating] = useState<number | undefined>();
 
   const handleSend = useCallback(() => {
@@ -54,10 +55,9 @@ const RatePhoneCallModal: FC<OwnProps> = ({
         {new Array(5).fill(undefined).map((_, i) => {
           const isFilled = rating !== undefined && rating >= i;
           return (
-            <i
+            <Icon
+              name={isFilled ? 'favorite-filled' : 'favorite'}
               className={buildClassName(
-                'icon',
-                isFilled ? 'icon-favorite-filled' : 'icon-favorite',
                 isFilled && styles.isFilled,
                 styles.star,
               )}

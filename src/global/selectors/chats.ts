@@ -1,23 +1,28 @@
-import type { ApiChatType, ApiChat, ApiChatFullInfo } from '../../api/types';
-import { MAIN_THREAD_ID } from '../../api/types';
+import type {
+  ApiChat, ApiChatFullInfo, ApiChatType,
+} from '../../api/types';
+import type { ChatListType } from '../../types';
 import type { GlobalState, TabArgs } from '../types';
 
 import {
+  ALL_FOLDER_ID, ARCHIVED_FOLDER_ID, MEMBERS_LOAD_SLICE, SAVED_FOLDER_ID, SERVICE_NOTIFICATIONS_USER_ID,
+} from '../../config';
+import { getCurrentTabId } from '../../util/establishMultitabRole';
+import { IS_TRANSLATION_SUPPORTED } from '../../util/windowEnvironment';
+import {
+  getHasAdminRight,
   getPrivateChatUserId,
   isChatChannel,
-  isUserId,
+  isChatSuperGroup,
   isHistoryClearMessage,
   isUserBot,
+  isUserId,
   isUserOnline,
-  getHasAdminRight,
-  isChatSuperGroup,
 } from '../helpers';
-import { selectBot, selectUser } from './users';
-import {
-  ALL_FOLDER_ID, ARCHIVED_FOLDER_ID, MEMBERS_LOAD_SLICE, SERVICE_NOTIFICATIONS_USER_ID,
-} from '../../config';
 import { selectTabState } from './tabs';
-import { getCurrentTabId } from '../../util/establishMultitabRole';
+import {
+  selectBot, selectIsCurrentUserPremium, selectUser, selectUserFullInfo,
+} from './users';
 
 export function selectChat<T extends GlobalState>(global: T, chatId: string): ApiChat | undefined {
   return global.chats.byId[chatId];
@@ -25,6 +30,17 @@ export function selectChat<T extends GlobalState>(global: T, chatId: string): Ap
 
 export function selectChatFullInfo<T extends GlobalState>(global: T, chatId: string): ApiChatFullInfo | undefined {
   return global.chats.fullInfoById[chatId];
+}
+
+export function selectPeerFullInfo<T extends GlobalState>(global: T, peerId: string) {
+  if (isUserId(peerId)) return selectUserFullInfo(global, peerId);
+  return selectChatFullInfo(global, peerId);
+}
+
+export function selectChatListLoadingParameters<T extends GlobalState>(
+  global: T, listType: ChatListType,
+) {
+  return global.chats.loadingParameters[listType];
 }
 
 export function selectChatUser<T extends GlobalState>(global: T, chat: ApiChat) {
@@ -61,7 +77,7 @@ export function selectChatOnlineCount<T extends GlobalState>(global: T, chat: Ap
 
   return fullInfo.members.reduce((onlineCount, { userId }) => {
     if (
-      userId !== global.currentUserId
+      !selectIsChatWithSelf(global, userId)
       && global.users.byId[userId]
       && isUserOnline(global.users.byId[userId], global.users.statusesById[userId])
     ) {
@@ -72,35 +88,23 @@ export function selectChatOnlineCount<T extends GlobalState>(global: T, chat: Ap
   }, 0);
 }
 
-export function selectChatBot<T extends GlobalState>(global: T, chatId: string) {
-  const chat = selectChat(global, chatId);
-  const userId = chat && getPrivateChatUserId(chat);
-  const user = userId && selectUser(global, userId);
-  if (!user || !isUserBot(user)) {
-    return undefined;
-  }
-
-  return user;
-}
-
 export function selectIsTrustedBot<T extends GlobalState>(global: T, botId: string) {
-  const bot = selectUser(global, botId);
-  return bot && (bot.isVerified || global.trustedBotIds.includes(botId));
+  return global.trustedBotIds.includes(botId);
 }
 
 export function selectChatType<T extends GlobalState>(global: T, chatId: string) : ApiChatType | undefined {
-  const chat = selectChat(global, chatId);
-  if (!chat) return undefined;
-
   const bot = selectBot(global, chatId);
   if (bot) {
     return 'bots';
   }
 
-  const user = selectChatUser(global, chat);
+  const user = selectUser(global, chatId);
   if (user) {
     return 'users';
   }
+
+  const chat = selectChat(global, chatId);
+  if (!chat) return undefined;
 
   if (isChatChannel(chat)) {
     return 'channels';
@@ -110,23 +114,17 @@ export function selectChatType<T extends GlobalState>(global: T, chatId: string)
 }
 
 export function selectIsChatBotNotStarted<T extends GlobalState>(global: T, chatId: string) {
-  const chat = selectChat(global, chatId);
-  const bot = selectChatBot(global, chatId);
-  if (!chat || !bot) {
+  const bot = selectBot(global, chatId);
+  if (!bot) {
     return false;
   }
 
-  if (chat.lastMessage && isHistoryClearMessage(chat.lastMessage)) {
+  const lastMessage = selectChatLastMessage(global, chatId);
+  if (lastMessage && isHistoryClearMessage(lastMessage)) {
     return true;
   }
 
-  const messageInfo = global.messages.byChatId[chatId];
-  if (!messageInfo) {
-    return false;
-  }
-
-  const { listedIds } = messageInfo.threadsById[MAIN_THREAD_ID] || {};
-  return listedIds && !listedIds.length;
+  return Boolean(!lastMessage);
 }
 
 export function selectAreActiveChatsLoaded<T extends GlobalState>(global: T): boolean {
@@ -134,7 +132,7 @@ export function selectAreActiveChatsLoaded<T extends GlobalState>(global: T): bo
 }
 
 export function selectIsChatListed<T extends GlobalState>(
-  global: T, chatId: string, type?: 'active' | 'archived',
+  global: T, chatId: string, type?: ChatListType,
 ): boolean {
   const { listIds } = global.chats;
   if (type) {
@@ -175,7 +173,7 @@ export function selectTotalChatCount<T extends GlobalState>(global: T, listType:
 export function selectIsChatPinned<T extends GlobalState>(
   global: T, chatId: string, folderId = ALL_FOLDER_ID,
 ): boolean {
-  const { active, archived } = global.chats.orderedPinnedIds;
+  const { active, archived, saved } = global.chats.orderedPinnedIds;
 
   if (folderId === ALL_FOLDER_ID) {
     return Boolean(active?.includes(chatId));
@@ -183,6 +181,10 @@ export function selectIsChatPinned<T extends GlobalState>(
 
   if (folderId === ARCHIVED_FOLDER_ID) {
     return Boolean(archived?.includes(chatId));
+  }
+
+  if (folderId === SAVED_FOLDER_ID) {
+    return Boolean(saved?.includes(chatId));
   }
 
   const { byId: chatFoldersById } = global.chatFolders;
@@ -213,7 +215,7 @@ export function selectSendAs<T extends GlobalState>(global: T, chatId: string) {
   return selectUser(global, id) || selectChat(global, id);
 }
 
-export function selectRequestedDraftText<T extends GlobalState>(
+export function selectRequestedDraft<T extends GlobalState>(
   global: T, chatId: string,
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
@@ -273,4 +275,73 @@ export function selectCanShareFolder<T extends GlobalState>(global: T, folderId:
     && folder.includedChatIds.concat(folder.pinnedChatIds || []).some((chatId) => {
       return selectCanInviteToChat(global, chatId);
     });
+}
+
+export function selectShouldDetectChatLanguage<T extends GlobalState>(
+  global: T, chatId: string,
+) {
+  const chat = selectChat(global, chatId);
+  if (!chat) return false;
+  const { canTranslateChats } = global.settings.byKey;
+
+  const isPremium = selectIsCurrentUserPremium(global);
+  const isSavedMessages = selectIsChatWithSelf(global, chatId);
+
+  return IS_TRANSLATION_SUPPORTED && canTranslateChats && isPremium && !isSavedMessages;
+}
+
+export function selectCanTranslateChat<T extends GlobalState>(
+  global: T, chatId: string, ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const chat = selectChat(global, chatId);
+  if (!chat) return false;
+
+  const requestedTranslation = selectRequestedChatTranslationLanguage(global, chatId, tabId);
+  if (requestedTranslation) return true; // Prevent translation dropping on reevaluation
+
+  const isLanguageDetectable = selectShouldDetectChatLanguage(global, chatId);
+  const detectedLanguage = chat.detectedLanguage;
+
+  const { doNotTranslate } = global.settings.byKey;
+
+  return Boolean(isLanguageDetectable && detectedLanguage && !doNotTranslate.includes(detectedLanguage));
+}
+
+export function selectRequestedChatTranslationLanguage<T extends GlobalState>(
+  global: T, chatId: string,
+  ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const { requestedTranslations } = selectTabState(global, tabId);
+
+  return requestedTranslations.byChatId[chatId]?.toLanguage;
+}
+
+export function selectSimilarChannelIds<T extends GlobalState>(
+  global: T,
+  chatId: string,
+) {
+  return global.chats.similarChannelsById[chatId];
+}
+
+export function selectSimilarBotsIds<T extends GlobalState>(
+  global: T,
+  chatId: string,
+) {
+  return global.chats.similarBotsById[chatId];
+}
+
+export function selectChatLastMessageId<T extends GlobalState>(
+  global: T, chatId: string, listType: 'all' | 'saved' = 'all',
+) {
+  return global.chats.lastMessageIds[listType]?.[chatId];
+}
+
+export function selectChatLastMessage<T extends GlobalState>(
+  global: T, chatId: string, listType: 'all' | 'saved' = 'all',
+) {
+  const id = selectChatLastMessageId(global, chatId, listType);
+  if (!id) return undefined;
+
+  const realChatId = listType === 'saved' ? global.currentUserId! : chatId;
+  return global.messages.byChatId[realChatId]?.byId[id];
 }

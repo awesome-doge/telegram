@@ -1,18 +1,27 @@
+import type { TeactNode } from '../../lib/teact/teact';
+
+import type { CallbackAction } from '../../global/types';
+import type { IconName } from '../../types/icons';
+import type { RegularLangFnParameters } from '../../util/localization';
 import type { ApiDocument, ApiPhoto, ApiReaction } from './messages';
+import type { ApiPremiumSection, ApiStarsSubscriptionPricing } from './payments';
 import type { ApiUser } from './users';
-import type { ApiLimitType, CallbackAction } from '../../global/types';
 
 export interface ApiInitialArgs {
   userAgent: string;
   platform?: string;
   sessionData?: ApiSessionData;
   isTest?: boolean;
-  isMovSupported?: boolean;
   isWebmSupported?: boolean;
   maxBufferSize?: number;
   webAuthToken?: string;
   dcId?: number;
   mockScenario?: string;
+  shouldAllowHttpTransport?: boolean;
+  shouldForceHttpTransport?: boolean;
+  shouldDebugExportedSenders?: boolean;
+  langCode: string;
+  isTestServerRequested?: boolean;
 }
 
 export interface ApiOnProgress {
@@ -22,7 +31,6 @@ export interface ApiOnProgress {
   ): void;
 
   isCanceled?: boolean;
-  acceptsBuffer?: boolean;
 }
 
 export interface ApiAttachment {
@@ -51,6 +59,7 @@ export interface ApiAttachment {
   shouldSendAsSpoiler?: true;
 
   uniqueId?: string;
+  ttlSeconds?: number;
 }
 
 export interface ApiWallpaper {
@@ -75,6 +84,7 @@ export interface ApiSession {
   region: string;
   areCallsEnabled: boolean;
   areSecretChatsEnabled: boolean;
+  isUnconfirmed?: true;
 }
 
 export interface ApiWebSession {
@@ -93,6 +103,7 @@ export interface ApiSessionData {
   mainDcId: number;
   keys: Record<number, string | number[]>;
   hashes: Record<number, string | number[]>;
+  isTest?: true;
 }
 
 export type ApiNotifyException = {
@@ -104,11 +115,19 @@ export type ApiNotifyException = {
 
 export type ApiNotification = {
   localId: string;
-  title?: string;
-  message: string;
-  actionText?: string;
-  action?: CallbackAction;
+  containerSelector?: string;
+  title?: string | RegularLangFnParameters;
+  message: TeactNode | RegularLangFnParameters;
+  cacheBreaker?: string;
+  actionText?: string | RegularLangFnParameters;
+  action?: CallbackAction | CallbackAction[];
   className?: string;
+  duration?: number;
+  disableClickDismiss?: boolean;
+  shouldShowTimer?: boolean;
+  icon?: IconName;
+  customEmojiIconId?: string;
+  dismissAction?: CallbackAction;
 };
 
 export type ApiError = {
@@ -121,16 +140,6 @@ export type ApiError = {
 export type ApiFieldError = {
   field: string;
   message: string;
-};
-
-export type ApiInviteInfo = {
-  title: string;
-  about?: string;
-  hash: string;
-  isChannel?: boolean;
-  participantsCount?: number;
-  isRequestNeeded?: true;
-  photo?: ApiPhoto;
 };
 
 export type ApiExportedInvite = {
@@ -146,6 +155,27 @@ export type ApiExportedInvite = {
   requested?: number;
   title?: string;
   adminId: string;
+};
+
+export type ApiChatInviteInfo = {
+  title: string;
+  about?: string;
+  photo?: ApiPhoto;
+  isScam?: boolean;
+  isFake?: boolean;
+  isChannel?: boolean;
+  isVerified?: boolean;
+  isSuperGroup?: boolean;
+  isPublic?: boolean;
+  participantsCount?: number;
+  participantIds?: string[];
+  color: number;
+  isBroadcast?: boolean;
+  isRequestNeeded?: boolean;
+  subscriptionFormId?: string;
+  canRefulfillSubscription?: boolean;
+  subscriptionPricing?: ApiStarsSubscriptionPricing;
+  botVerification?: ApiBotVerification;
 };
 
 export type ApiChatInviteImporter = {
@@ -174,13 +204,18 @@ export interface ApiAppConfig {
   emojiSounds: Record<string, string>;
   seenByMaxChatMembers: number;
   seenByExpiresAt: number;
+  readDateExpiresAt: number;
   autologinDomains: string[];
-  autologinToken: string;
   urlAuthDomains: string[];
   premiumInvoiceSlug: string;
   premiumBotUsername: string;
   isPremiumPurchaseBlocked: boolean;
-  premiumPromoOrder: string[];
+  isGiveawayGiftsPurchaseAvailable: boolean;
+  giveawayAddPeersMax: number;
+  giveawayBoostsPerPremium: number;
+  giveawayCountriesMax: number;
+  boostsPerSentGift: number;
+  premiumPromoOrder: ApiPremiumSection[];
   defaultEmojiStatusesStickerSetId: string;
   maxUniqueReactions: number;
   topicsPinnedLimit: number;
@@ -189,6 +224,23 @@ export interface ApiAppConfig {
   hiddenMembersMinCount: number;
   limits: Record<ApiLimitType, readonly [number, number]>;
   canDisplayAutoarchiveSetting: boolean;
+  areStoriesHidden?: boolean;
+  storyExpirePeriod: number;
+  storyViewersExpirePeriod: number;
+  storyChangelogUserId: string;
+  maxPinnedStoriesCount?: number;
+  groupTranscribeLevelMin?: number;
+  canLimitNewMessagesWithoutPremium?: boolean;
+  bandwidthPremiumNotifyPeriod?: number;
+  bandwidthPremiumUploadSpeedup?: number;
+  bandwidthPremiumDownloadSpeedup?: number;
+  channelRestrictAdsLevelMin?: number;
+  paidReactionMaxAmount?: number;
+  isChannelRevenueWithdrawalEnabled?: boolean;
+  isStarsGiftEnabled?: boolean;
+  starGiftMaxMessageLength?: number;
+  starGiftMaxConvertPeriod?: number;
+  starRefStartPrefixes?: string[];
 }
 
 export interface ApiConfig {
@@ -196,6 +248,30 @@ export interface ApiConfig {
   defaultReaction?: ApiReaction;
   gifSearchUsername?: string;
   maxGroupSize: number;
+  autologinToken?: string;
+  isTestServer?: boolean;
+  maxMessageLength: number;
+  editTimeLimit: number;
+  maxForwardedCount: number;
+}
+
+export type ApiPeerColorSet = string[];
+
+export interface ApiPeerColors {
+  general: {
+    [key: number]: {
+      isHidden?: true;
+      colors?: ApiPeerColorSet;
+      darkColors?: ApiPeerColorSet;
+    };
+  };
+  generalHash?: number;
+}
+
+export interface ApiTimezone {
+  id: string;
+  name: string;
+  utcOffset: number;
 }
 
 export interface GramJsEmojiInteraction {
@@ -227,3 +303,51 @@ type ApiUrlAuthResultDefault = {
 };
 
 export type ApiUrlAuthResult = ApiUrlAuthResultRequest | ApiUrlAuthResultAccepted | ApiUrlAuthResultDefault;
+
+export interface ApiCollectibleInfo {
+  amount: number;
+  currency: string;
+  cryptoAmount: number;
+  cryptoCurrency: string;
+  purchaseDate: number;
+  url: string;
+}
+
+export interface ApiPeerPhotos {
+  fallbackPhoto?: ApiPhoto;
+  personalPhoto?: ApiPhoto;
+  photos: ApiPhoto[];
+  count: number;
+  nextOffset?: number;
+  isLoading?: boolean;
+}
+
+export interface ApiBotVerification {
+  botId: string;
+  iconId: string;
+  description: string;
+}
+
+export type ApiLimitType =
+  | 'uploadMaxFileparts'
+  | 'stickersFaved'
+  | 'savedGifs'
+  | 'dialogFiltersChats'
+  | 'dialogFilters'
+  | 'dialogFolderPinned'
+  | 'captionLength'
+  | 'channels'
+  | 'channelsPublic'
+  | 'aboutLength'
+  | 'chatlistInvites'
+  | 'chatlistJoined'
+  | 'recommendedChannels'
+  | 'savedDialogsPinned';
+
+export type ApiLimitTypeWithModal = Exclude<ApiLimitType, (
+  'captionLength' | 'aboutLength' | 'stickersFaved' | 'savedGifs' | 'recommendedChannels'
+)>;
+
+export type ApiLimitTypeForPromo = Exclude<ApiLimitType,
+'uploadMaxFileparts' | 'chatlistInvites' | 'chatlistJoined' | 'savedDialogsPinned'
+>;

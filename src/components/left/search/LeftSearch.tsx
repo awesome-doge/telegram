@@ -1,25 +1,32 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useState, useMemo, useRef,
+  memo,
+  useMemo,
+  useRef,
+  useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
+import type { RegularLangKey } from '../../../types/language';
 import { GlobalSearchContent } from '../../../types';
 
 import { selectTabState } from '../../../global/selectors';
-import { parseDateString } from '../../../util/dateFormat';
+import { parseDateString } from '../../../util/dates/dateFormat';
+
+import useHistoryBack from '../../../hooks/useHistoryBack';
 import useKeyboardListNavigation from '../../../hooks/useKeyboardListNavigation';
 import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import TabList from '../../ui/TabList';
 import Transition from '../../ui/Transition';
-import ChatResults from './ChatResults';
-import ChatMessageResults from './ChatMessageResults';
-import MediaResults from './MediaResults';
-import LinkResults from './LinkResults';
-import FileResults from './FileResults';
 import AudioResults from './AudioResults';
+import BotAppResults from './BotAppResults';
+import ChatMessageResults from './ChatMessageResults';
+import ChatResults from './ChatResults';
+import FileResults from './FileResults';
+import LinkResults from './LinkResults';
+import MediaResults from './MediaResults';
 
 import './LeftSearch.scss';
 
@@ -35,21 +42,26 @@ type StateProps = {
   chatId?: string;
 };
 
-const TABS = [
-  { type: GlobalSearchContent.ChatList, title: 'SearchAllChatsShort' },
-  { type: GlobalSearchContent.Media, title: 'SharedMediaTab2' },
-  { type: GlobalSearchContent.Links, title: 'SharedLinksTab2' },
-  { type: GlobalSearchContent.Files, title: 'SharedFilesTab2' },
-  { type: GlobalSearchContent.Music, title: 'SharedMusicTab2' },
-  { type: GlobalSearchContent.Voice, title: 'SharedVoiceTab2' },
+type TabInfo = {
+  type: GlobalSearchContent;
+  key: RegularLangKey;
+};
+
+const TABS: TabInfo[] = [
+  { type: GlobalSearchContent.ChatList, key: 'SearchTabChats' },
+  { type: GlobalSearchContent.ChannelList, key: 'SearchTabChannels' },
+  { type: GlobalSearchContent.BotApps, key: 'SearchTabApps' },
+  { type: GlobalSearchContent.Media, key: 'SearchTabMedia' },
+  { type: GlobalSearchContent.Links, key: 'SearchTabLinks' },
+  { type: GlobalSearchContent.Files, key: 'SearchTabFiles' },
+  { type: GlobalSearchContent.Music, key: 'SearchTabMusic' },
+  { type: GlobalSearchContent.Voice, key: 'SearchTabVoice' },
 ];
 
-const CHAT_TABS = [
-  { type: GlobalSearchContent.ChatList, title: 'All Messages' },
-  ...TABS.slice(1),
+const CHAT_TABS: TabInfo[] = [
+  { type: GlobalSearchContent.ChatList, key: 'SearchTabMessages' },
+  ...TABS.slice(3), // Skip ChatList, ChannelList and BotApps, replaced with All Messages
 ];
-
-const TRANSITION_RENDER_COUNT = Object.keys(GlobalSearchContent).length / 2;
 
 const LeftSearch: FC<OwnProps & StateProps> = ({
   searchQuery,
@@ -68,15 +80,23 @@ const LeftSearch: FC<OwnProps & StateProps> = ({
   const [activeTab, setActiveTab] = useState(currentContent);
   const dateSearchQuery = useMemo(() => parseDateString(searchQuery), [searchQuery]);
 
-  const handleSwitchTab = useCallback((index: number) => {
-    const tab = TABS[index];
+  const tabs = useMemo(() => {
+    const arr = chatId ? CHAT_TABS : TABS;
+    return arr.map((tab) => ({
+      ...tab,
+      title: lang(tab.key),
+    }));
+  }, [chatId, lang]);
+
+  const handleSwitchTab = useLastCallback((index: number) => {
+    const tab = tabs[index];
     setGlobalSearchContent({ content: tab.type });
     setActiveTab(index);
-  }, [setGlobalSearchContent]);
+  });
 
-  const handleSearchDateSelect = useCallback((value: Date) => {
+  const handleSearchDateSelect = useLastCallback((value: Date) => {
     setGlobalSearchDate({ date: value.getTime() / 1000 });
-  }, [setGlobalSearchDate]);
+  });
 
   useHistoryBack({
     isActive,
@@ -89,15 +109,16 @@ const LeftSearch: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="LeftSearch" ref={containerRef} onKeyDown={handleKeyDown}>
-      <TabList activeTab={activeTab} tabs={chatId ? CHAT_TABS : TABS} onSwitchTab={handleSwitchTab} />
+      <TabList activeTab={activeTab} tabs={tabs} onSwitchTab={handleSwitchTab} />
       <Transition
         name={lang.isRtl ? 'slideOptimizedRtl' : 'slideOptimized'}
-        renderCount={TRANSITION_RENDER_COUNT}
+        renderCount={tabs.length}
         activeKey={currentContent}
       >
         {(() => {
           switch (currentContent) {
             case GlobalSearchContent.ChatList:
+            case GlobalSearchContent.ChannelList:
               if (chatId) {
                 return (
                   <ChatMessageResults
@@ -110,6 +131,7 @@ const LeftSearch: FC<OwnProps & StateProps> = ({
               }
               return (
                 <ChatResults
+                  isChannelList={currentContent === GlobalSearchContent.ChannelList}
                   searchQuery={searchQuery}
                   searchDate={searchDate}
                   dateSearchQuery={dateSearchQuery}
@@ -135,6 +157,13 @@ const LeftSearch: FC<OwnProps & StateProps> = ({
                 <AudioResults
                   key="voice"
                   isVoice
+                  searchQuery={searchQuery}
+                />
+              );
+            case GlobalSearchContent.BotApps:
+              return (
+                <BotAppResults
+                  key="botApps"
                   searchQuery={searchQuery}
                 />
               );

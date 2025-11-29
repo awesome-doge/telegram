@@ -1,8 +1,9 @@
-import type { ApiMessage } from '../../api/types';
+import type { MediaContent } from '../../api/types';
 import { ApiMessageEntityTypes } from '../../api/types';
-import parseEmojiOnlyString from '../../util/parseEmojiOnlyString';
 
-export function getEmojiOnlyCountForMessage(content: ApiMessage['content'], groupedId?: string): number | undefined {
+import parseEmojiOnlyString from '../../util/emoji/parseEmojiOnlyString';
+
+export function getEmojiOnlyCountForMessage(content: MediaContent, groupedId?: string): number | undefined {
   if (!content.text) return undefined;
   return (
     !groupedId

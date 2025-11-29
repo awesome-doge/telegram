@@ -1,14 +1,12 @@
-import type { ApiChat, ApiUser, ApiUserStatus } from '../../api/types';
+import type { ApiPeer, ApiUser, ApiUserStatus } from '../../api/types';
+import type { OldLangFn } from '../../hooks/useOldLang';
 
-import { SERVICE_NOTIFICATIONS_USER_ID } from '../../config';
-import { formatFullDate, formatTime } from '../../util/dateFormat';
+import { ANONYMOUS_USER_ID, SERVICE_NOTIFICATIONS_USER_ID } from '../../config';
+import { formatFullDate, formatTime } from '../../util/dates/dateFormat';
+import { DAY } from '../../util/dates/units';
 import { orderBy } from '../../util/iteratees';
-import type { LangFn } from '../../hooks/useLang';
-import { getServerTime, getServerTimeOffset } from '../../util/serverTime';
-import { prepareSearchWordsForNeedle } from '../../util/searchWords';
 import { formatPhoneNumber } from '../../util/phoneNumber';
-
-const USER_COLOR_KEYS = [1, 8, 5, 2, 7, 4, 6];
+import { getServerTime, getServerTimeOffset } from '../../util/serverTime';
 
 export function getUserFirstOrLastName(user?: ApiUser) {
   if (!user) {
@@ -17,6 +15,7 @@ export function getUserFirstOrLastName(user?: ApiUser) {
 
   switch (user.type) {
     case 'userTypeBot':
+      return user.firstName;
     case 'userTypeRegular': {
       return user.firstName || user.lastName;
     }
@@ -67,13 +66,20 @@ export function getUserFullName(user?: ApiUser) {
 }
 
 export function getUserStatus(
-  lang: LangFn, user: ApiUser, userStatus: ApiUserStatus | undefined,
+  lang: OldLangFn, user: ApiUser, userStatus: ApiUserStatus | undefined,
 ) {
   if (user.id === SERVICE_NOTIFICATIONS_USER_ID) {
-    return lang('ServiceNotifications').toLowerCase();
+    return lang('ServiceNotifications');
+  }
+
+  if (user.isSupport) {
+    return lang('SupportStatus');
   }
 
   if (user.type && user.type === 'userTypeBot') {
+    if (user.botActiveUsers) {
+      return lang('BotUsers', user.botActiveUsers, 'i');
+    }
     return lang('Bot');
   }
 
@@ -100,7 +106,7 @@ export function getUserStatus(
       if (!wasOnline) return lang('LastSeen.Offline');
 
       const serverTimeOffset = getServerTimeOffset();
-      const now = new Date(new Date().getTime() + serverTimeOffset * 1000);
+      const now = new Date(Date.now() + serverTimeOffset * 1000);
       const wasOnlineDate = new Date(wasOnline * 1000);
 
       if (wasOnlineDate >= now) {
@@ -160,7 +166,7 @@ export function getUserStatus(
   }
 }
 
-export function isUserOnline(user: ApiUser, userStatus?: ApiUserStatus) {
+export function isUserOnline(user: ApiUser, userStatus?: ApiUserStatus, withSelfOnline = false) {
   const { id, type } = user;
 
   if (!userStatus) {
@@ -168,6 +174,10 @@ export function isUserOnline(user: ApiUser, userStatus?: ApiUserStatus) {
   }
 
   if (id === SERVICE_NOTIFICATIONS_USER_ID) {
+    return false;
+  }
+
+  if (user.isSelf && !withSelfOnline) {
     return false;
   }
 
@@ -184,7 +194,7 @@ export function isUserBot(user: ApiUser) {
 }
 
 export function getCanAddContact(user: ApiUser) {
-  return !user.isContact && !isUserBot(user);
+  return !user.isSelf && !user.isContact && !isUserBot(user) && user.id !== ANONYMOUS_USER_ID;
 }
 
 export function sortUserIds(
@@ -217,58 +227,21 @@ export function sortUserIds(
 
     switch (userStatus.type) {
       case 'userStatusRecently':
-        return now - 60 * 60 * 24;
+        return now - DAY;
       case 'userStatusLastWeek':
-        return now - 60 * 60 * 24 * 7;
+        return now - DAY * 7;
       case 'userStatusLastMonth':
-        return now - 60 * 60 * 24 * 7 * 30;
+        return now - DAY * 7 * 30;
       default:
         return 0;
     }
   }, 'desc');
 }
 
-export function filterUsersByName(
-  userIds: string[],
-  usersById: Record<string, ApiUser>,
-  query?: string,
-  currentUserId?: string,
-  savedMessagesLang?: string,
-) {
-  if (!query) {
-    return userIds;
-  }
-
-  const searchWords = prepareSearchWordsForNeedle(query);
-
-  return userIds.filter((id) => {
-    const user = usersById[id];
-    if (!user) {
-      return false;
-    }
-
-    const name = id === currentUserId ? savedMessagesLang : getUserFullName(user);
-
-    return (name && searchWords(name)) || Boolean(user.usernames?.find(({ username }) => searchWords(username)));
-  });
-}
-
-export function getUserIdDividend(userId: string) {
-  // Workaround for old-fashioned IDs stored locally
-  if (typeof userId === 'number') {
-    return Math.abs(userId);
-  }
-
-  return Math.abs(Number(userId));
-}
-
-// https://github.com/telegramdesktop/tdesktop/blob/371510cfe23b0bd226de8c076bc49248fbe40c26/Telegram/SourceFiles/data/data_peer.cpp#L53
-export function getUserColorKey(peer: ApiUser | ApiChat | undefined) {
-  const index = peer ? getUserIdDividend(peer.id) % 7 : 0;
-
-  return USER_COLOR_KEYS[index];
-}
-
-export function getMainUsername(userOrChat: ApiUser | ApiChat) {
+export function getMainUsername(userOrChat: ApiPeer) {
   return userOrChat.usernames?.find((u) => u.isActive)?.username;
+}
+
+export function getPeerStoryHtmlId(userId: string) {
+  return `peer-story${userId}`;
 }

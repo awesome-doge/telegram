@@ -1,15 +1,14 @@
-import { useCallback, useState } from '../../../../lib/teact/teact';
+import { useState } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
-import type { ApiAttachment } from '../../../../api/types';
+import type { ApiAttachment, ApiMessage } from '../../../../api/types';
 
-import buildAttachment from '../helpers/buildAttachment';
+import { canReplaceMessageMedia, getAttachmentMediaType } from '../../../../global/helpers';
 import { MEMO_EMPTY_ARRAY } from '../../../../util/memo';
-import {
-  SUPPORTED_AUDIO_CONTENT_TYPES,
-  SUPPORTED_IMAGE_CONTENT_TYPES,
-  SUPPORTED_VIDEO_CONTENT_TYPES,
-} from '../../../../config';
+import buildAttachment from '../helpers/buildAttachment';
+
+import useLastCallback from '../../../../hooks/useLastCallback';
+import useOldLang from '../../../../hooks/useOldLang';
 
 export default function useAttachmentModal({
   attachments,
@@ -21,6 +20,8 @@ export default function useAttachmentModal({
   canSendVideos,
   canSendPhotos,
   canSendDocuments,
+  insertNextText,
+  editedMessage,
 }: {
   attachments: ApiAttachment[];
   fileSizeLimit: number;
@@ -31,17 +32,21 @@ export default function useAttachmentModal({
   canSendVideos?: boolean;
   canSendPhotos?: boolean;
   canSendDocuments?: boolean;
+  insertNextText: VoidFunction;
+  editedMessage: ApiMessage | undefined;
 }) {
-  const { openLimitReachedModal, showAllowedMessageTypesNotification } = getActions();
+  const lang = useOldLang();
+  const { openLimitReachedModal, showAllowedMessageTypesNotification, showNotification } = getActions();
   const [shouldForceAsFile, setShouldForceAsFile] = useState<boolean>(false);
   const [shouldForceCompression, setShouldForceCompression] = useState<boolean>(false);
   const [shouldSuggestCompression, setShouldSuggestCompression] = useState<boolean | undefined>(undefined);
 
-  const handleClearAttachments = useCallback(() => {
+  const handleClearAttachments = useLastCallback(() => {
     setAttachments(MEMO_EMPTY_ARRAY);
-  }, [setAttachments]);
+    insertNextText();
+  });
 
-  const handleSetAttachments = useCallback(
+  const handleSetAttachments = useLastCallback(
     (newValue: ApiAttachment[] | ((current: ApiAttachment[]) => ApiAttachment[])) => {
       const newAttachments = typeof newValue === 'function' ? newValue(attachments) : newValue;
       if (!newAttachments.length) {
@@ -50,11 +55,11 @@ export default function useAttachmentModal({
       }
 
       if (newAttachments.some((attachment) => {
-        const type = getAttachmentType(attachment);
+        const type = getAttachmentMediaType(attachment);
 
         return (type === 'audio' && !canSendAudios && !canSendDocuments)
           || (type === 'video' && !canSendVideos && !canSendDocuments)
-          || (type === 'image' && !canSendPhotos && !canSendDocuments)
+          || (type === 'photo' && !canSendPhotos && !canSendDocuments)
           || (type === 'file' && !canSendDocuments);
       })) {
         showAllowedMessageTypesNotification({ chatId });
@@ -65,35 +70,61 @@ export default function useAttachmentModal({
       } else {
         setAttachments(newAttachments);
         const shouldForce = newAttachments.some((attachment) => {
-          const type = getAttachmentType(attachment);
+          const type = getAttachmentMediaType(attachment);
 
           return (type === 'audio' && !canSendAudios)
             || (type === 'video' && !canSendVideos)
-            || (type === 'image' && !canSendPhotos);
+            || (type === 'photo' && !canSendPhotos);
         });
 
         setShouldForceAsFile(Boolean(shouldForce && canSendDocuments));
         setShouldForceCompression(!canSendDocuments);
       }
-    }, [
-      attachments, canSendAudios, canSendDocuments, canSendPhotos, canSendVideos, chatId, fileSizeLimit,
-      handleClearAttachments, openLimitReachedModal, setAttachments, showAllowedMessageTypesNotification,
-    ],
+    },
   );
 
-  const handleAppendFiles = useCallback(async (files: File[], isSpoiler?: boolean) => {
-    handleSetAttachments([
-      ...attachments,
-      ...await Promise.all(files.map((file) => (
-        buildAttachment(file.name, file, { shouldSendAsSpoiler: isSpoiler || undefined })
-      ))),
-    ]);
-  }, [attachments, handleSetAttachments]);
+  const handleAppendFiles = useLastCallback(async (files: File[], isSpoiler?: boolean) => {
+    if (editedMessage) {
+      const newAttachment = await buildAttachment(files[0].name, files[0]);
+      const canReplace = editedMessage && canReplaceMessageMedia(editedMessage, newAttachment);
 
-  const handleFileSelect = useCallback(async (files: File[], suggestCompression?: boolean) => {
-    handleSetAttachments(await Promise.all(files.map((file) => buildAttachment(file.name, file))));
+      if (editedMessage?.groupedId) {
+        if (canReplace) {
+          handleSetAttachments([newAttachment]);
+        } else {
+          showNotification({ message: lang('lng_edit_media_album_error') });
+        }
+      } else {
+        handleSetAttachments([newAttachment]);
+      }
+    } else {
+      const newAttachments = await Promise.all(files.map((file) => (
+        buildAttachment(file.name, file, { shouldSendAsSpoiler: isSpoiler || undefined })
+      )));
+      handleSetAttachments([...attachments, ...newAttachments]);
+    }
+  });
+
+  const handleFileSelect = useLastCallback(async (files: File[], suggestCompression?: boolean) => {
+    if (editedMessage) {
+      const newAttachment = await buildAttachment(files[0].name, files[0]);
+      const canReplace = editedMessage && canReplaceMessageMedia(editedMessage, newAttachment);
+
+      if (editedMessage?.groupedId) {
+        if (canReplace) {
+          handleSetAttachments([newAttachment]);
+        } else {
+          showNotification({ message: lang('lng_edit_media_album_error') });
+        }
+      } else {
+        handleSetAttachments([newAttachment]);
+      }
+    } else {
+      const newAttachments = await Promise.all(files.map((file) => buildAttachment(file.name, file)));
+      handleSetAttachments(newAttachments);
+    }
     setShouldSuggestCompression(suggestCompression);
-  }, [handleSetAttachments]);
+  });
 
   return {
     shouldSuggestCompression,
@@ -105,22 +136,4 @@ export default function useAttachmentModal({
     shouldForceCompression,
     shouldForceAsFile,
   };
-}
-
-function getAttachmentType(attachment: ApiAttachment) {
-  if (attachment.shouldSendAsFile) return 'file';
-
-  if (SUPPORTED_IMAGE_CONTENT_TYPES.has(attachment.mimeType)) {
-    return 'image';
-  }
-
-  if (SUPPORTED_VIDEO_CONTENT_TYPES.has(attachment.mimeType)) {
-    return 'video';
-  }
-
-  if (SUPPORTED_AUDIO_CONTENT_TYPES.has(attachment.mimeType)) {
-    return 'audio';
-  }
-
-  return 'file';
 }

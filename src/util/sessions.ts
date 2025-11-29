@@ -1,19 +1,13 @@
-import * as idb from 'idb-keyval';
-
 import type { ApiSessionData } from '../api/types';
 
 import {
-  DEBUG, GLOBAL_STATE_CACHE_KEY, LEGACY_SESSION_KEY, SESSION_USER_KEY,
+  DEBUG, IS_SCREEN_LOCKED_CACHE_KEY,
+  SESSION_USER_KEY,
 } from '../config';
-import * as cacheApi from './cacheApi';
 
 const DC_IDS = [1, 2, 3, 4, 5];
 
-export function hasStoredSession(withLegacy = false) {
-  if (withLegacy && localStorage.getItem(LEGACY_SESSION_KEY)) {
-    return true;
-  }
-
+export function hasStoredSession() {
   if (checkSessionLocked()) {
     return true;
   }
@@ -33,9 +27,15 @@ export function hasStoredSession(withLegacy = false) {
 }
 
 export function storeSession(sessionData: ApiSessionData, currentUserId?: string) {
-  const { mainDcId, keys, hashes } = sessionData;
+  const {
+    mainDcId, keys, hashes, isTest,
+  } = sessionData;
 
-  localStorage.setItem(SESSION_USER_KEY, JSON.stringify({ dcID: mainDcId, id: currentUserId }));
+  localStorage.setItem(SESSION_USER_KEY, JSON.stringify({
+    dcID: mainDcId,
+    id: currentUserId,
+    test: isTest,
+  }));
   localStorage.setItem('dc', String(mainDcId));
   Object.keys(keys).map(Number).forEach((dcId) => {
     localStorage.setItem(`dc${dcId}_auth_key`, JSON.stringify(keys[dcId]));
@@ -70,6 +70,7 @@ export function loadStoredSession(): ApiSessionData | undefined {
     return undefined;
   }
   const mainDcId = Number(userAuth.dcID);
+  const isTest = userAuth.test;
   const keys: Record<number, string> = {};
   const hashes: Record<number, string> = {};
 
@@ -99,44 +100,8 @@ export function loadStoredSession(): ApiSessionData | undefined {
     mainDcId,
     keys,
     hashes,
+    isTest,
   };
-}
-
-export async function importLegacySession() {
-  const sessionId = localStorage.getItem(LEGACY_SESSION_KEY);
-  if (!sessionId) return;
-
-  const sessionJson = await idb.get(`GramJs:${sessionId}`);
-  try {
-    const sessionData = JSON.parse(sessionJson) as ApiSessionData;
-    storeSession(sessionData);
-  } catch (err) {
-    if (DEBUG) {
-      // eslint-disable-next-line no-console
-      console.warn('Failed to load legacy session', err);
-    }
-  }
-}
-
-// Remove previously created IndexedDB and cache API sessions
-export async function clearLegacySessions() {
-  try {
-    localStorage.removeItem(LEGACY_SESSION_KEY);
-
-    const idbKeys = await idb.keys();
-
-    await Promise.all<Promise<any>>([
-      cacheApi.clear('GramJs'),
-      ...idbKeys
-        .filter((k) => typeof k === 'string' && k.startsWith('GramJs:GramJs-session-'))
-        .map((k) => idb.del(k)),
-    ]);
-  } catch (err) {
-    if (DEBUG) {
-      // eslint-disable-next-line no-console
-      console.warn('Failed to clear legacy session', err);
-    }
-  }
 }
 
 export function importTestSession() {
@@ -153,7 +118,5 @@ export function importTestSession() {
 }
 
 function checkSessionLocked() {
-  const stateFromCache = JSON.parse(localStorage.getItem(GLOBAL_STATE_CACHE_KEY) || '{}');
-
-  return Boolean(stateFromCache?.passcode?.isScreenLocked);
+  return localStorage.getItem(IS_SCREEN_LOCKED_CACHE_KEY) === 'true';
 }

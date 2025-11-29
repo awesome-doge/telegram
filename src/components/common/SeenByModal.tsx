@@ -1,16 +1,18 @@
-import React, { useCallback, memo, useMemo } from '../../lib/teact/teact';
+import React, { memo, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import { selectChatMessage, selectTabState } from '../../global/selectors';
-import { formatDateAtTime } from '../../util/dateFormat';
 import buildClassName from '../../util/buildClassName';
-import useLang from '../../hooks/useLang';
-import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import { formatDateAtTime } from '../../util/dates/dateFormat';
 
-import Modal from '../ui/Modal';
+import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+
 import Button from '../ui/Button';
-import PrivateChatInfo from './PrivateChatInfo';
 import ListItem from '../ui/ListItem';
+import Modal from '../ui/Modal';
+import PrivateChatInfo from './PrivateChatInfo';
 
 import styles from './SeenByModal.module.scss';
 
@@ -33,7 +35,7 @@ function SeenByModal({
     closeSeenByModal,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const renderingSeenByDates = useCurrentOrPrev(seenByDates, true);
   const memberIds = useMemo(() => {
@@ -47,17 +49,17 @@ function SeenByModal({
     return result;
   }, [renderingSeenByDates]);
 
-  const handleClick = useCallback((userId: string) => {
+  const handleClick = useLastCallback((userId: string) => {
     closeSeenByModal();
 
     setTimeout(() => {
       openChat({ id: userId });
     }, CLOSE_ANIMATION_DURATION);
-  }, [closeSeenByModal, openChat]);
+  });
 
-  const handleCloseSeenByModal = useCallback(() => {
+  const handleCloseSeenByModal = useLastCallback(() => {
     closeSeenByModal();
-  }, [closeSeenByModal]);
+  });
 
   return (
     <Modal
@@ -78,7 +80,7 @@ function SeenByModal({
               userId={userId}
               noStatusOrTyping
               status={formatDateAtTime(lang, renderingSeenByDates![userId] * 1000)}
-              statusIcon="icon-message-read"
+              statusIcon="message-read"
             />
           </ListItem>
         ))}

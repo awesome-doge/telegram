@@ -1,12 +1,12 @@
-import { requestMeasure, requestMutation } from '../fasterdom/fasterdom';
-
-import {
-  DPR, IS_SAFARI, IS_ANDROID, IS_IOS,
-} from '../../util/windowEnvironment';
 import { animate } from '../../util/animation';
 import cycleRestrict from '../../util/cycleRestrict';
-import generateIdFor from '../../util/generateIdFor';
+import Deferred from '../../util/Deferred';
+import generateUniqueId from '../../util/generateUniqueId';
 import launchMediaWorkers, { MAX_WORKERS } from '../../util/launchMediaWorkers';
+import {
+  IS_ANDROID, IS_IOS, IS_SAFARI,
+} from '../../util/windowEnvironment';
+import { requestMeasure, requestMutation } from '../fasterdom/fasterdom';
 
 interface Params {
   size: number;
@@ -27,10 +27,12 @@ const LOW_PRIORITY_QUALITY = IS_ANDROID ? 0.5 : 0.75;
 const LOW_PRIORITY_QUALITY_SIZE_THRESHOLD = 24;
 const HIGH_PRIORITY_CACHE_MODULO = IS_SAFARI ? 2 : 4;
 const LOW_PRIORITY_CACHE_MODULO = 0;
-const ID_STORE = {};
+const CANVAS_CLASS = 'rlottie-canvas';
 
 const workers = launchMediaWorkers().map(({ connector }) => connector);
 const instancesByRenderId = new Map<string, RLottie>();
+
+const PENDING_CANVAS_RESIZES = new WeakMap<HTMLCanvasElement, Promise<void>>();
 
 let lastWorkerIndex = -1;
 
@@ -92,7 +94,7 @@ class RLottie {
       , canvas,
       renderId,
       params,
-      viewId = generateIdFor(ID_STORE, true), ,
+      viewId = generateUniqueId(), ,
       onLoad,
     ] = args;
     let instance = instancesByRenderId.get(renderId);
@@ -113,7 +115,7 @@ class RLottie {
     private container: HTMLDivElement | HTMLCanvasElement,
     private renderId: string,
     private params: Params,
-    viewId: string = generateIdFor(ID_STORE, true),
+    viewId: string = generateUniqueId(),
     private customColor?: [number, number, number],
     private onLoad?: NoneToVoidFunction | undefined,
     private onEnded?: (isDestroyed?: boolean) => void,
@@ -161,6 +163,8 @@ class RLottie {
   }
 
   pause(viewId?: string) {
+    this.lastRenderAt = undefined;
+
     if (viewId) {
       this.views.get(viewId)!.isPaused = true;
 
@@ -191,12 +195,16 @@ class RLottie {
     }
   }
 
-  playSegment([startFrameIndex, stopFrameIndex]: [number, number], viewId?: string) {
+  playSegment([startFrameIndex, stopFrameIndex]: [number, number], forceRestart = false, viewId?: string) {
     if (viewId) {
       this.views.get(viewId)!.isPaused = false;
     }
-    this.approxFrameIndex = Math.floor(startFrameIndex / this.reduceFactor);
+
+    const frameIndex = Math.round(this.approxFrameIndex);
     this.stopFrameIndex = Math.floor(stopFrameIndex / this.reduceFactor);
+    if (frameIndex !== stopFrameIndex || forceRestart) {
+      this.approxFrameIndex = Math.floor(startFrameIndex / this.reduceFactor);
+    }
     this.direction = startFrameIndex < stopFrameIndex ? 1 : -1;
 
     this.doPlay();
@@ -210,15 +218,21 @@ class RLottie {
     this.params.noLoop = noLoop;
   }
 
-  setSharedCanvasCoords(viewId: string, newCoords: Params['coords']) {
+  async setSharedCanvasCoords(viewId: string, newCoords: Params['coords']) {
     const containerInfo = this.views.get(viewId)!;
     const {
       canvas, ctx,
     } = containerInfo;
 
+    const isCanvasDirty = !canvas.dataset.isJustCleaned || canvas.dataset.isJustCleaned === 'false';
+
+    if (!isCanvasDirty) {
+      await PENDING_CANVAS_RESIZES.get(canvas);
+    }
+
     let [canvasWidth, canvasHeight] = [canvas.width, canvas.height];
 
-    if (!canvas.dataset.isJustCleaned || canvas.dataset.isJustCleaned === 'false') {
+    if (isCanvasDirty) {
       const sizeFactor = this.calcSizeFactor();
       ([canvasWidth, canvasHeight] = ensureCanvasSize(canvas, sizeFactor));
       ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -267,6 +281,8 @@ class RLottie {
       requestMutation(() => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
+
+        canvas.classList.add(CANVAS_CLASS);
 
         canvas.style.width = `${size}px`;
         canvas.style.height = `${size}px`;
@@ -324,7 +340,7 @@ class RLottie {
     } = this.params;
 
     // Reduced quality only looks acceptable on high DPR screens
-    return Math.max(DPR * quality, 1);
+    return Math.max(window.devicePixelRatio * quality, 1);
   }
 
   private destroy() {
@@ -490,7 +506,7 @@ class RLottie {
 
       const now = Date.now();
       const currentSpeed = this.lastRenderAt ? this.msPerFrame / (now - this.lastRenderAt) : 1;
-      const delta = Math.min(1, (this.direction * this.speed) / currentSpeed);
+      const delta = (this.direction * this.speed) / currentSpeed;
       const expectedNextFrameIndex = Math.round(this.approxFrameIndex + delta);
 
       this.lastRenderAt = now;
@@ -590,9 +606,12 @@ function ensureCanvasSize(canvas: HTMLCanvasElement, sizeFactor: number) {
   const expectedHeight = Math.round(canvas.offsetHeight * sizeFactor);
 
   if (canvas.width !== expectedWidth || canvas.height !== expectedHeight) {
+    const deferred = new Deferred<void>();
+    PENDING_CANVAS_RESIZES.set(canvas, deferred.promise);
     requestMutation(() => {
       canvas.width = expectedWidth;
       canvas.height = expectedHeight;
+      deferred.resolve();
     });
   }
 

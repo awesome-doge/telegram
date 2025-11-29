@@ -1,33 +1,36 @@
 import type { ChangeEvent } from 'react';
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useState, useCallback, memo, useEffect, useMemo,
+  memo, useCallback, useEffect, useMemo,
+  useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiUsername } from '../../../api/types';
 import { ApiMediaFormat } from '../../../api/types';
 import { ProfileEditProgress } from '../../../types';
 
 import { PURCHASE_USERNAME, TME_LINK_PREFIX, USERNAME_PURCHASE_ERROR } from '../../../config';
-import { throttle } from '../../../util/schedulers';
-import { selectTabState, selectUser, selectUserFullInfo } from '../../../global/selectors';
 import { getChatAvatarHash } from '../../../global/helpers';
+import { selectTabState, selectUser, selectUserFullInfo } from '../../../global/selectors';
 import { selectCurrentLimit } from '../../../global/selectors/limits';
+import { throttle } from '../../../util/schedulers';
 import renderText from '../../common/helpers/renderText';
-import useMedia from '../../../hooks/useMedia';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
-import usePrevious from '../../../hooks/usePrevious';
 
-import AvatarEditable from '../../ui/AvatarEditable';
-import FloatingActionButton from '../../ui/FloatingActionButton';
-import Spinner from '../../ui/Spinner';
-import InputText from '../../ui/InputText';
-import UsernameInput from '../../common/UsernameInput';
-import TextArea from '../../ui/TextArea';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useMedia from '../../../hooks/useMedia';
+import useOldLang from '../../../hooks/useOldLang';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
+
+import Icon from '../../common/icons/Icon';
 import ManageUsernames from '../../common/ManageUsernames';
 import SafeLink from '../../common/SafeLink';
+import UsernameInput from '../../common/UsernameInput';
+import AvatarEditable from '../../ui/AvatarEditable';
+import FloatingActionButton from '../../ui/FloatingActionButton';
+import InputText from '../../ui/InputText';
+import Spinner from '../../ui/Spinner';
+import TextArea from '../../ui/TextArea';
 
 type OwnProps = {
   isActive: boolean;
@@ -70,7 +73,7 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
     updateProfile,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const firstEditableUsername = useMemo(() => usernames?.find(({ isEditable }) => isEditable), [usernames]);
   const currentUsername = firstEditableUsername?.username || '';
@@ -89,7 +92,7 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
   const isLoading = progress === ProfileEditProgress.InProgress;
   const isUsernameError = editableUsername === false;
 
-  const previousIsUsernameAvailable = usePrevious(isUsernameAvailable);
+  const previousIsUsernameAvailable = usePreviousDeprecated(isUsernameAvailable);
   const renderingIsUsernameAvailable = isUsernameAvailable ?? previousIsUsernameAvailable;
   const shouldRenderUsernamesManage = usernames && usernames.length > 1;
 
@@ -245,13 +248,15 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
         <div className="settings-item">
           <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{lang('Username')}</h4>
 
-          <UsernameInput
-            currentUsername={currentUsername}
-            isLoading={isLoading}
-            isUsernameAvailable={isUsernameAvailable}
-            checkedUsername={checkedUsername}
-            onChange={handleUsernameChange}
-          />
+          <div className="settings-input">
+            <UsernameInput
+              currentUsername={currentUsername}
+              isLoading={isLoading}
+              isUsernameAvailable={isUsernameAvailable}
+              checkedUsername={checkedUsername}
+              onChange={handleUsernameChange}
+            />
+          </div>
 
           {editUsernameError === USERNAME_PURCHASE_ERROR && renderPurchaseLink()}
           <p className="settings-item-description" dir={lang.isRtl ? 'rtl' : undefined}>
@@ -282,7 +287,7 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon icon-check" />
+          <Icon name="check" />
         )}
       </FloatingActionButton>
     </div>

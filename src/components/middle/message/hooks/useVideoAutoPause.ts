@@ -1,45 +1,49 @@
-import { useCallback, useEffect, useRef } from '../../../../lib/teact/teact';
+import { getIsHeavyAnimating, useEffect, useRef } from '../../../../lib/teact/teact';
+
 import { requestMeasure } from '../../../../lib/fasterdom/fasterdom';
 
-import useBackgroundMode, { isBackgroundModeActive } from '../../../../hooks/useBackgroundMode';
-import useHeavyAnimationCheck, { isHeavyAnimating } from '../../../../hooks/useHeavyAnimationCheck';
+import useHeavyAnimation from '../../../../hooks/useHeavyAnimation';
+import useLastCallback from '../../../../hooks/useLastCallback';
 import usePriorityPlaybackCheck, { isPriorityPlaybackActive } from '../../../../hooks/usePriorityPlaybackCheck';
+import useBackgroundMode, { isBackgroundModeActive } from '../../../../hooks/window/useBackgroundMode';
 
-export default function useVideoAutoPause(playerRef: { current: HTMLVideoElement | null }, canPlay: boolean) {
+export default function useVideoAutoPause(
+  playerRef: { current: HTMLVideoElement | null }, canPlay: boolean, isPriority?: boolean,
+) {
   const canPlayRef = useRef();
   canPlayRef.current = canPlay;
 
   const { play, pause } = usePlayPause(playerRef);
 
-  const unfreezePlaying = useCallback(() => {
-    if (canPlayRef.current && !isFrozen()) {
+  const unfreezePlaying = useLastCallback(() => {
+    if (canPlayRef.current && (isPriority || !isFrozen())) {
       play();
     }
-  }, [play]);
+  });
 
-  const unfreezePlayingOnRaf = useCallback(() => {
+  const unfreezePlayingOnRaf = useLastCallback(() => {
     requestMeasure(unfreezePlaying);
-  }, [unfreezePlaying]);
+  });
 
-  useBackgroundMode(pause, unfreezePlayingOnRaf, !canPlay);
-  useHeavyAnimationCheck(pause, unfreezePlaying, !canPlay);
-  usePriorityPlaybackCheck(pause, unfreezePlaying, !canPlay);
+  useBackgroundMode(pause, unfreezePlayingOnRaf, !canPlay || isPriority);
+  useHeavyAnimation(pause, unfreezePlaying, !canPlay || isPriority);
+  usePriorityPlaybackCheck(pause, unfreezePlaying, !canPlay || isPriority);
 
-  const handlePlaying = useCallback(() => {
-    if (!canPlayRef.current || isFrozen()) {
+  const handlePlaying = useLastCallback(() => {
+    if (!canPlayRef.current || (!isPriority && isFrozen())) {
       pause();
     }
-  }, [pause]);
+  });
 
   useEffect(() => {
     if (canPlay) {
-      if (!isFrozen()) {
+      if (isPriority || !isFrozen()) {
         play();
       }
     } else {
       pause();
     }
-  }, [canPlay, play, pause]);
+  }, [canPlay, play, pause, isPriority]);
 
   return { handlePlaying };
 }
@@ -48,7 +52,7 @@ function usePlayPause(mediaRef: React.RefObject<HTMLMediaElement>) {
   const shouldPauseRef = useRef(false);
   const isLoadingPlayRef = useRef(false);
 
-  const play = useCallback(() => {
+  const play = useLastCallback(() => {
     shouldPauseRef.current = false;
     if (mediaRef.current && !isLoadingPlayRef.current && document.body.contains(mediaRef.current)) {
       isLoadingPlayRef.current = true;
@@ -63,19 +67,19 @@ function usePlayPause(mediaRef: React.RefObject<HTMLMediaElement>) {
         console.warn(e);
       });
     }
-  }, [mediaRef]);
+  });
 
-  const pause = useCallback(() => {
+  const pause = useLastCallback(() => {
     if (isLoadingPlayRef.current) {
       shouldPauseRef.current = true;
     } else {
       mediaRef.current?.pause();
     }
-  }, [mediaRef]);
+  });
 
   return { play, pause };
 }
 
 function isFrozen() {
-  return isHeavyAnimating() || isPriorityPlaybackActive() || isBackgroundModeActive();
+  return getIsHeavyAnimating() || isPriorityPlaybackActive() || isBackgroundModeActive();
 }

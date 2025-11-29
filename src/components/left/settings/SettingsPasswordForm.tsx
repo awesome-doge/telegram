@@ -1,11 +1,11 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback, useState } from '../../../lib/teact/teact';
 
-import useLang from '../../../hooks/useLang';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useOldLang from '../../../hooks/useOldLang';
 
-import PasswordMonkey from '../../common/PasswordMonkey';
 import PasswordForm from '../../common/PasswordForm';
+import PasswordMonkey from '../../common/PasswordMonkey';
 
 type OwnProps = {
   error?: string;
@@ -54,7 +54,7 @@ const SettingsPasswordForm: FC<OwnProps> = ({
     setValidationError('');
   }, [clearError]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -67,7 +67,7 @@ const SettingsPasswordForm: FC<OwnProps> = ({
         <PasswordMonkey isBig isPasswordVisible={shouldShowPassword} />
       </div>
 
-      <div className="settings-item pt-0">
+      <div className="settings-item pt-2">
         <PasswordForm
           error={validationError || error}
           hint={hint}

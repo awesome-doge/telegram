@@ -1,20 +1,23 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useState, useRef,
+  memo, useCallback, useEffect, useRef,
+  useState,
 } from '../../../lib/teact/teact';
+
 import type { ApiWallpaper } from '../../../api/types';
 import type { ThemeKey } from '../../../types';
 import { UPLOADING_WALLPAPER_SLUG } from '../../../types';
 
 import { CUSTOM_BG_CACHE_NAME } from '../../../config';
+import buildClassName from '../../../util/buildClassName';
 import * as cacheApi from '../../../util/cacheApi';
 import { fetchBlob } from '../../../util/files';
-import buildClassName from '../../../util/buildClassName';
+
+import useCanvasBlur from '../../../hooks/useCanvasBlur';
 import useMedia from '../../../hooks/useMedia';
 import useMediaWithLoadProgress from '../../../hooks/useMediaWithLoadProgress';
-import useShowTransition from '../../../hooks/useShowTransition';
-import usePrevious from '../../../hooks/usePrevious';
-import useCanvasBlur from '../../../hooks/useCanvasBlur';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 
 import ProgressSpinner from '../../ui/ProgressSpinner';
 
@@ -38,7 +41,7 @@ const WallpaperTile: FC<OwnProps> = ({
   const localBlobUrl = document.previewBlobUrl;
   const previewBlobUrl = useMedia(`${localMediaHash}?size=m`);
   const thumbRef = useCanvasBlur(document.thumbnail?.dataUri, Boolean(previewBlobUrl), true);
-  const { transitionClassNames } = useShowTransition(
+  const { transitionClassNames } = useShowTransitionDeprecated(
     Boolean(previewBlobUrl || localBlobUrl),
     undefined,
     undefined,
@@ -49,8 +52,8 @@ const WallpaperTile: FC<OwnProps> = ({
   const {
     mediaData: fullMedia, loadProgress,
   } = useMediaWithLoadProgress(localMediaHash, !isLoadAllowed);
-  const wasLoadDisabled = usePrevious(isLoadAllowed) === false;
-  const { shouldRender: shouldRenderSpinner, transitionClassNames: spinnerClassNames } = useShowTransition(
+  const wasLoadDisabled = usePreviousDeprecated(isLoadAllowed) === false;
+  const { shouldRender: shouldRenderSpinner, transitionClassNames: spinnerClassNames } = useShowTransitionDeprecated(
     (isLoadAllowed && !fullMedia) || slug === UPLOADING_WALLPAPER_SLUG,
     undefined,
     wasLoadDisabled,
@@ -101,6 +104,7 @@ const WallpaperTile: FC<OwnProps> = ({
           src={previewBlobUrl || localBlobUrl}
           className={buildClassName('full-media', transitionClassNames)}
           alt=""
+          draggable={false}
         />
         {shouldRenderSpinner && (
           <div className={buildClassName('spinner-container', spinnerClassNames)}>

@@ -6,14 +6,16 @@ import type { ApiChat, ApiMessage } from '../../../api/types';
 import { LoadMoreDirection } from '../../../types';
 
 import { selectTabState } from '../../../global/selectors';
+import { parseSearchResultKey, type SearchResultKey } from '../../../util/keys/searchResultKey';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { throttle } from '../../../util/schedulers';
 import { renderMessageSummary } from '../../common/helpers/renderMessageText';
-import useLang from '../../../hooks/useLang';
-import useAppLayout from '../../../hooks/useAppLayout';
 
-import InfiniteScroll from '../../ui/InfiniteScroll';
+import useAppLayout from '../../../hooks/useAppLayout';
+import useOldLang from '../../../hooks/useOldLang';
+
 import NothingFound from '../../common/NothingFound';
+import InfiniteScroll from '../../ui/InfiniteScroll';
 import ChatMessage from './ChatMessage';
 import DateSuggest from './DateSuggest';
 import LeftSearchResultTopic from './LeftSearchResultTopic';
@@ -27,13 +29,12 @@ export type OwnProps = {
 
 type StateProps = {
   currentUserId?: string;
-  foundIds?: string[];
+  foundIds?: SearchResultKey[];
   globalMessagesByChatId?: Record<string, { byId: Record<number, ApiMessage> }>;
   chatsById: Record<string, ApiChat>;
   fetchingStatus?: { chats?: boolean; messages?: boolean };
   foundTopicIds?: number[];
   searchChatId?: string;
-  lastSyncTime?: number;
 };
 
 const runThrottled = throttle((cb) => cb(), 500, true);
@@ -45,19 +46,18 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
   globalMessagesByChatId,
   chatsById,
   fetchingStatus,
-  lastSyncTime,
   foundTopicIds,
   searchChatId,
   onSearchDateSelect,
   onReset,
 }) => {
-  const { searchMessagesGlobal, openChat } = getActions();
+  const { searchMessagesGlobal, openThread } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const { isMobile } = useAppLayout();
 
   const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
-    if (lastSyncTime && direction === LoadMoreDirection.Backwards) {
+    if (direction === LoadMoreDirection.Backwards) {
       runThrottled(() => {
         searchMessagesGlobal({
           type: 'text',
@@ -65,17 +65,18 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
       });
     }
   // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
-  }, [lastSyncTime, searchMessagesGlobal, searchQuery]);
+  }, [searchQuery]);
 
   const handleTopicClick = useCallback(
     (id: number) => {
-      openChat({ id: searchChatId, threadId: id, shouldReplaceHistory: true });
+      if (!searchChatId) return;
+      openThread({ chatId: searchChatId, threadId: id, shouldReplaceHistory: true });
 
       if (!isMobile) {
         onReset();
       }
     },
-    [openChat, searchChatId, isMobile, onReset],
+    [searchChatId, isMobile, onReset],
   );
 
   const foundMessages = useMemo(() => {
@@ -85,9 +86,9 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
 
     return foundIds
       .map((id) => {
-        const [chatId, messageId] = id.split('_');
+        const [chatId, messageId] = parseSearchResultKey(id);
 
-        return globalMessagesByChatId?.[chatId]?.byId[Number(messageId)];
+        return globalMessagesByChatId?.[chatId]?.byId[messageId];
       })
       .filter(Boolean)
       .sort((a, b) => b.date - a.date);
@@ -114,7 +115,7 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
     && !foundTopicIds?.length;
 
   return (
-    <div className="LeftSearch">
+    <div className="LeftSearch--content">
       <InfiniteScroll
         className="search-content custom-scroll chat-list"
         items={foundMessages}
@@ -122,7 +123,7 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
         noFastList
       >
         {dateSearchQuery && (
-          <div className="chat-selection no-selection no-scrollbar">
+          <div className="chat-selection no-scrollbar">
             <DateSuggest
               searchDate={dateSearchQuery}
               onSelect={onSearchDateSelect}
@@ -167,7 +168,7 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global): StateProps => {
     const { byId: chatsById } = global.chats;
-    const { currentUserId, messages: { byChatId: globalMessagesByChatId }, lastSyncTime } = global;
+    const { currentUserId, messages: { byChatId: globalMessagesByChatId } } = global;
     const {
       fetchingStatus, resultsByType, foundTopicIds, chatId: searchChatId,
     } = selectTabState(global).globalSearch;
@@ -181,7 +182,6 @@ export default memo(withGlobal<OwnProps>(
       chatsById,
       fetchingStatus,
       foundTopicIds,
-      lastSyncTime,
       searchChatId,
     };
   },

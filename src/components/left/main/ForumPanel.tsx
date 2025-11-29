@@ -1,44 +1,51 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useRef, useState,
+  beginHeavyAnimation,
+  memo, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
-import { requestNextMutation } from '../../../lib/fasterdom/fasterdom';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiChat } from '../../../api/types';
+import type { TopicsInfo } from '../../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
 import {
-  GENERAL_TOPIC_ID, TOPICS_SLICE, TOPIC_HEIGHT_PX, TOPIC_LIST_SENSITIVE_AREA,
+  GENERAL_TOPIC_ID, TOPIC_HEIGHT_PX, TOPIC_LIST_SENSITIVE_AREA, TOPICS_SLICE,
 } from '../../../config';
-import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import { requestNextMutation } from '../../../lib/fasterdom/fasterdom';
+import { getOrderedTopics } from '../../../global/helpers';
 import {
-  selectCanAnimateInterface, selectChat, selectCurrentMessageList, selectIsForumPanelOpen, selectTabState,
+  selectCanAnimateInterface,
+  selectChat,
+  selectCurrentMessageList,
+  selectIsForumPanelOpen,
+  selectTabState,
+  selectTopicsInfo,
 } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
-import { getOrderedTopics } from '../../../global/helpers';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
-import { waitForTransitionEnd } from '../../../util/cssAnimationEndListeners';
 import { captureEvents, SwipeDirection } from '../../../util/captureEvents';
-import { createLocationHash } from '../../../util/routing';
+import { waitForTransitionEnd } from '../../../util/cssAnimationEndListeners';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 
+import useAppLayout from '../../../hooks/useAppLayout';
+import useHistoryBack from '../../../hooks/useHistoryBack';
 import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
 import { useIntersectionObserver, useOnIntersect } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
 import useOrderDiff from './hooks/useOrderDiff';
-import useLang from '../../../hooks/useLang';
-import usePrevious from '../../../hooks/usePrevious';
-import useHistoryBack from '../../../hooks/useHistoryBack';
-import { dispatchHeavyAnimationEvent } from '../../../hooks/useHeavyAnimationCheck';
-import useAppLayout from '../../../hooks/useAppLayout';
 
+import GroupCallTopPane from '../../calls/group/GroupCallTopPane';
 import GroupChatInfo from '../../common/GroupChatInfo';
+import Icon from '../../common/icons/Icon';
+import HeaderActions from '../../middle/HeaderActions';
 import Button from '../../ui/Button';
-import Topic from './Topic';
 import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
-import HeaderActions from '../../middle/HeaderActions';
-import GroupCallTopPane from '../../calls/group/GroupCallTopPane';
 import EmptyForum from './EmptyForum';
+import Topic from './Topic';
 
 import styles from './ForumPanel.module.scss';
 
@@ -52,8 +59,8 @@ type OwnProps = {
 
 type StateProps = {
   chat?: ApiChat;
+  topicsInfo?: TopicsInfo;
   currentTopicId?: number;
-  lastSyncTime?: number;
   withInterfaceAnimations?: boolean;
 };
 
@@ -64,7 +71,7 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
   currentTopicId,
   isOpen,
   isHidden,
-  lastSyncTime,
+  topicsInfo,
   onTopicSearch,
   onCloseAnimationEnd,
   onOpenAnimationStart,
@@ -82,19 +89,20 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
   // eslint-disable-next-line no-null/no-null
   const scrollTopHandlerRef = useRef<HTMLDivElement>(null);
   const { isMobile } = useAppLayout();
+  const chatId = chat?.id;
 
   useEffect(() => {
-    if (lastSyncTime && chat && !chat.topics) {
-      loadTopics({ chatId: chat.id });
+    if (chatId && !topicsInfo) {
+      loadTopics({ chatId });
     }
-  }, [chat, lastSyncTime, loadTopics]);
+  }, [topicsInfo, chatId]);
 
   const [isScrolled, setIsScrolled] = useState(false);
-  const lang = useLang();
+  const lang = useOldLang();
 
-  const handleClose = useCallback(() => {
+  const handleClose = useLastCallback(() => {
     closeForumPanel();
-  }, [closeForumPanel]);
+  });
 
   useEffect(() => {
     if (!withInterfaceAnimations && !isOpen) {
@@ -102,10 +110,10 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
     }
   }, [withInterfaceAnimations, isOpen, onCloseAnimationEnd]);
 
-  const handleToggleChatInfo = useCallback(() => {
+  const handleToggleChatInfo = useLastCallback(() => {
     if (!chat) return;
     openChatWithInfo({ id: chat.id, shouldReplaceHistory: true });
-  }, [chat, openChatWithInfo]);
+  });
 
   const { observe } = useIntersectionObserver({
     rootRef: containerRef,
@@ -117,21 +125,24 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
   });
 
   const orderedIds = useMemo(() => {
-    return chat?.topics
-      ? getOrderedTopics(Object.values(chat.topics), chat.orderedPinnedTopicIds).map(({ id }) => id)
+    return topicsInfo
+      ? getOrderedTopics(
+        Object.values(topicsInfo.topicsById),
+        topicsInfo.orderedPinnedTopicIds,
+      ).map(({ id }) => id)
       : [];
-  }, [chat]);
+  }, [topicsInfo]);
 
   const { orderDiffById, getAnimationType } = useOrderDiff(orderedIds, chat?.id);
 
   const [viewportIds, getMore] = useInfiniteScroll(() => {
-    if (!chat || !lastSyncTime) return;
+    if (!chat) return;
     loadTopics({ chatId: chat.id });
-  }, orderedIds, !chat?.topicsCount || orderedIds.length >= chat.topicsCount, TOPICS_SLICE);
+  }, orderedIds, !topicsInfo?.totalCount || orderedIds.length >= topicsInfo.totalCount, TOPICS_SLICE);
 
   const shouldRenderRef = useRef(false);
   const isVisible = isOpen && !isHidden;
-  const prevIsVisible = usePrevious(isVisible);
+  const prevIsVisible = usePreviousDeprecated(isVisible);
 
   if (prevIsVisible !== isVisible) {
     shouldRenderRef.current = false;
@@ -140,7 +151,6 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
   useHistoryBack({
     isActive: isVisible,
     onBack: handleClose,
-    hash: chat ? createLocationHash(chat.id, 'thread', MAIN_THREAD_ID) : undefined,
   });
 
   useEffect(() => (isVisible ? captureEscKeyListener(handleClose) : undefined), [handleClose, isVisible]);
@@ -151,8 +161,8 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
       requestNextMutation(() => {
         if (!ref.current) return;
 
-        const dispatchHeavyAnimationStop = dispatchHeavyAnimationEvent();
-        waitForTransitionEnd(ref.current, dispatchHeavyAnimationStop);
+        const endHeavyAnimation = beginHeavyAnimation();
+        waitForTransitionEnd(ref.current, endHeavyAnimation);
 
         onOpenAnimationStart?.();
 
@@ -194,7 +204,7 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
       <Topic
         key={id}
         chatId={chat!.id}
-        topic={chat!.topics![id]}
+        topic={topicsInfo!.topicsById[id]}
         style={`top: ${(viewportOffset + i) * TOPIC_HEIGHT_PX}px;`}
         isSelected={currentTopicId === id}
         observeIntersection={observe}
@@ -204,7 +214,7 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
     ));
   }
 
-  const isLoading = chat?.topics === undefined;
+  const isLoading = topicsInfo === undefined;
 
   return (
     <div
@@ -217,7 +227,7 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
       )}
       onTransitionEnd={!isOpen ? onCloseAnimationEnd : undefined}
     >
-      <div className="left-header">
+      <div id="TopicListHeader" className="left-header">
         <Button
           round
           size="smaller"
@@ -225,7 +235,7 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
           onClick={handleClose}
           ariaLabel={lang('Close')}
         >
-          <i className="icon icon-close" />
+          <Icon name="close" />
         </Button>
 
         {chat && (
@@ -244,14 +254,14 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
               threadId={MAIN_THREAD_ID}
               messageListType="thread"
               canExpandActions={false}
-              withForumActions
+              isForForum
               isMobile={isMobile}
               onTopicSearch={onTopicSearch}
             />
           )}
       </div>
 
-      {chat && <GroupCallTopPane chatId={chat.id} hasPinnedOffset={false} className={styles.groupCall} />}
+      {chat && <GroupCallTopPane chatId={chat.id} />}
 
       <div className={styles.notch} />
 
@@ -274,28 +284,28 @@ const ForumPanel: FC<OwnProps & StateProps> = ({
         )}
       </InfiniteScroll>
       {!isLoading && viewportIds?.length === 1 && viewportIds[0] === GENERAL_TOPIC_ID && (
-        <EmptyForum chatId={chat.id} />
+        <EmptyForum chatId={chatId!} />
       )}
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, ownProps, detachWhenChanged): StateProps => {
-    detachWhenChanged(selectIsForumPanelOpen(global));
-
+  (global): StateProps => {
     const chatId = selectTabState(global).forumPanelChatId;
     const chat = chatId ? selectChat(global, chatId) : undefined;
     const {
       chatId: currentChatId,
       threadId: currentThreadId,
     } = selectCurrentMessageList(global) || {};
+    const topicsInfo = chatId ? selectTopicsInfo(global, chatId) : undefined;
 
     return {
       chat,
-      lastSyncTime: global.lastSyncTime,
-      currentTopicId: chatId === currentChatId ? currentThreadId : undefined,
+      currentTopicId: chatId === currentChatId ? Number(currentThreadId) : undefined,
       withInterfaceAnimations: selectCanAnimateInterface(global),
+      topicsInfo,
     };
   },
+  (global) => selectIsForumPanelOpen(global),
 )(ForumPanel));

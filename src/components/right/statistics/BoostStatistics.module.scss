@@ -1,0 +1,119 @@
+@use '../../../styles/mixins';
+
+.root {
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
+.noResults {
+  color: var(--color-text-secondary);
+  text-align: center;
+  font-size: 0.9375rem;
+  padding: 0.75rem 0 0 0;
+}
+
+.section-header {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.section {
+  padding: 0.625rem;
+
+  @include mixins.side-panel-section;
+}
+
+.user :global(.status) {
+  overflow: hidden;
+}
+
+.stats {
+  margin-bottom: 0;
+  border: none;
+  padding: 0.75rem 0 0 0;
+}
+
+.down {
+  font-size: 1.5rem;
+  margin-right: 0.5rem;
+}
+
+.loadMoreSpinner {
+  margin-inline-end: 1rem;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.info {
+  flex-grow: 1;
+}
+
+.month {
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.quantity {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.floatingBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-links);
+  position: relative;
+  z-index: 1;
+}
+
+.floatingBadgeButtonColor {
+  padding: 0 0.5rem 0 0.375rem;
+  border-radius: 1rem;
+  background-color: var(--color-primary-opacity);
+  margin-left: 0.5rem;
+}
+
+.floatingBadgeWarning {
+  color: var(--color-orange);
+  background: var(--color-light-coral);
+}
+
+.floatingBadgeButton {
+  padding: 0.125rem 0.75rem 0.125rem 0.5625rem;
+}
+
+.floatingBadgeIcon {
+  font-size: 0.875rem;
+  margin-right: 0.125rem;
+}
+
+.floatingBadgeValue {
+  font-size: 0.875rem;
+  font-weight: var(--font-weight-medium);
+}
+
+.content {
+  padding: 0.5rem 0;
+}
+
+.boostSection {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.giveawayButton {
+  margin-bottom: 0.5rem;
+}
+
+.giveawayIcon {
+  width: 2.75rem;
+  height: 2.75rem;
+}

@@ -1,27 +1,31 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useRef, useCallback } from '../../lib/teact/teact';
+import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ApiChat, ApiVideo } from '../../api/types';
+import type { ApiChat, ApiChatFullInfo, ApiVideo } from '../../api/types';
+import type { MessageList } from '../../types';
 
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
-import {
-  selectCurrentGifSearch,
-  selectChat,
-  selectIsChatWithBot,
-  selectCurrentMessageList,
-  selectCanScheduleUntilOnline,
-  selectIsChatWithSelf, selectThreadInfo,
-} from '../../global/selectors';
 import { getAllowedAttachmentOptions, getCanPostInChat } from '../../global/helpers';
+import {
+  selectCanScheduleUntilOnline,
+  selectChat,
+  selectChatFullInfo,
+  selectCurrentGifSearch,
+  selectCurrentMessageList,
+  selectIsChatWithBot,
+  selectIsChatWithSelf, selectThreadInfo,
+  selectTopic,
+} from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
-import useLang from '../../hooks/useLang';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+
 import useHistoryBack from '../../hooks/useHistoryBack';
+import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
+import useOldLang from '../../hooks/useOldLang';
 import useSchedule from '../../hooks/useSchedule';
 
-import InfiniteScroll from '../ui/InfiniteScroll';
 import GifButton from '../common/GifButton';
+import InfiniteScroll from '../ui/InfiniteScroll';
 import Loading from '../ui/Loading';
 
 import './GifSearch.scss';
@@ -35,10 +39,12 @@ type StateProps = {
   query?: string;
   results?: ApiVideo[];
   chat?: ApiChat;
+  chatFullInfo?: ApiChatFullInfo;
   isChatWithBot?: boolean;
   canScheduleUntilOnline?: boolean;
   isSavedMessages?: boolean;
   canPostInChat?: boolean;
+  currentMessageList?: MessageList;
 };
 
 const PRELOAD_BACKWARDS = 96; // GIF Search bot results are multiplied by 24
@@ -49,10 +55,12 @@ const GifSearch: FC<OwnProps & StateProps> = ({
   query,
   results,
   chat,
+  chatFullInfo,
   isChatWithBot,
   canScheduleUntilOnline,
   isSavedMessages,
   canPostInChat,
+  currentMessageList,
   onClose,
 }) => {
   const {
@@ -70,29 +78,38 @@ const GifSearch: FC<OwnProps & StateProps> = ({
     observe: observeIntersection,
   } = useIntersectionObserver({ rootRef: containerRef, debounceMs: INTERSECTION_DEBOUNCE });
 
-  const canSendGifs = canPostInChat && getAllowedAttachmentOptions(chat, isChatWithBot).canSendGifs;
+  const canSendGifs = canPostInChat && getAllowedAttachmentOptions(chat, chatFullInfo, isChatWithBot).canSendGifs;
 
   const handleGifClick = useCallback((gif: ApiVideo, isSilent?: boolean, shouldSchedule?: boolean) => {
     if (canSendGifs) {
+      if (!currentMessageList) {
+        return;
+      }
+
       if (shouldSchedule) {
         requestCalendar((scheduledAt) => {
-          sendMessage({ gif, scheduledAt, isSilent });
+          sendMessage({
+            messageList: currentMessageList,
+            gif,
+            scheduledAt,
+            isSilent,
+          });
         });
       } else {
-        sendMessage({ gif, isSilent });
+        sendMessage({ messageList: currentMessageList, gif, isSilent });
       }
     }
 
     if (IS_TOUCH_ENV) {
       setGifSearchQuery({ query: undefined });
     }
-  }, [canSendGifs, requestCalendar, sendMessage, setGifSearchQuery]);
+  }, [canSendGifs, currentMessageList, requestCalendar]);
 
   const handleSearchMoreGifs = useCallback(() => {
     searchMoreGifs();
   }, [searchMoreGifs]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -153,11 +170,14 @@ export default memo(withGlobal(
     const { query, results } = currentSearch || {};
     const { chatId, threadId } = selectCurrentMessageList(global) || {};
     const chat = chatId ? selectChat(global, chatId) : undefined;
+    const chatFullInfo = chatId ? selectChatFullInfo(global, chatId) : undefined;
     const isChatWithBot = chat ? selectIsChatWithBot(global, chat) : undefined;
     const isSavedMessages = Boolean(chatId) && selectIsChatWithSelf(global, chatId);
     const threadInfo = chatId && threadId ? selectThreadInfo(global, chatId, threadId) : undefined;
-    const isComments = Boolean(threadInfo?.originChannelId);
-    const canPostInChat = Boolean(chat) && Boolean(threadId) && getCanPostInChat(chat, threadId, isComments);
+    const isMessageThread = Boolean(!threadInfo?.isCommentsInfo && threadInfo?.fromChannelId);
+    const topic = chatId && threadId ? selectTopic(global, chatId, threadId) : undefined;
+    const canPostInChat = Boolean(chat) && Boolean(threadId)
+      && getCanPostInChat(chat, topic, isMessageThread, chatFullInfo);
 
     return {
       query,
@@ -167,6 +187,7 @@ export default memo(withGlobal(
       isSavedMessages,
       canPostInChat,
       canScheduleUntilOnline: Boolean(chatId) && selectCanScheduleUntilOnline(global, chatId),
+      currentMessageList: selectCurrentMessageList(global),
     };
   },
 )(GifSearch));

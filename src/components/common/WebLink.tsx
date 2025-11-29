@@ -1,23 +1,25 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import React, { memo } from '../../lib/teact/teact';
 
 import type { ApiMessage, ApiWebPage } from '../../api/types';
-import type { TextPart } from '../../types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
+import type { TextPart } from '../../types';
 
 import {
   getFirstLinkInMessage, getMessageText,
   getMessageWebPage,
 } from '../../global/helpers';
 import buildClassName from '../../util/buildClassName';
+import { formatPastTimeShort } from '../../util/dates/dateFormat';
 import trimText from '../../util/trimText';
-import renderText from './helpers/renderText';
-import { formatPastTimeShort } from '../../util/dateFormat';
-import useLang from '../../hooks/useLang';
 import { renderMessageSummary } from './helpers/renderMessageText';
+import renderText from './helpers/renderText';
 
-import Media from './Media';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+
 import Link from '../ui/Link';
+import Media from './Media';
 import SafeLink from './SafeLink';
 
 import './WebLink.scss';
@@ -29,7 +31,7 @@ type OwnProps = {
   senderTitle?: string;
   isProtected?: boolean;
   observeIntersection?: ObserveFn;
-  onMessageClick: (messageId: number, chatId: string) => void;
+  onMessageClick: (message: ApiMessage) => void;
 };
 
 type ApiWebPageWithFormatted =
@@ -39,7 +41,7 @@ type ApiWebPageWithFormatted =
 const WebLink: FC<OwnProps> = ({
   message, senderTitle, isProtected, observeIntersection, onMessageClick,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   let linkData: ApiWebPageWithFormatted | undefined = getMessageWebPage(message);
 
@@ -58,9 +60,9 @@ const WebLink: FC<OwnProps> = ({
     }
   }
 
-  const handleMessageClick = useCallback(() => {
-    onMessageClick(message.id, message.chatId);
-  }, [onMessageClick, message.id, message.chatId]);
+  const handleMessageClick = useLastCallback(() => {
+    onMessageClick(message);
+  });
 
   if (!linkData) {
     return undefined;

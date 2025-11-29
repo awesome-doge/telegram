@@ -1,15 +1,28 @@
 import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
 
-import type { ApiChat, ApiReaction } from '../../types';
+import type {
+  ApiChat, ApiReaction, ApiSticker,
+} from '../../types';
 
-import { REACTION_LIST_LIMIT, RECENT_REACTIONS_LIMIT, TOP_REACTIONS_LIMIT } from '../../../config';
-import { buildInputPeer, buildInputReaction } from '../gramjsBuilders';
-import { buildApiUser } from '../apiBuilders/users';
-import { buildApiAvailableReaction, buildApiReaction, buildMessagePeerReaction } from '../apiBuilders/messages';
-import { invokeRequest } from './client';
+import {
+  API_GENERAL_ID_LIMIT,
+  REACTION_LIST_LIMIT,
+  RECENT_REACTIONS_LIMIT,
+  TOP_REACTIONS_LIMIT,
+} from '../../../config';
+import { split } from '../../../util/iteratees';
+import {
+  buildApiAvailableEffect,
+  buildApiAvailableReaction,
+  buildApiReaction,
+  buildApiSavedReactionTag,
+  buildMessagePeerReaction,
+} from '../apiBuilders/reactions';
+import { buildStickerFromDocument } from '../apiBuilders/symbols';
+import { buildInputPeer, buildInputReaction, generateRandomTimestampedBigInt } from '../gramjsBuilders';
 import localDb from '../localDb';
-import { addEntitiesWithPhotosToLocalDb } from '../helpers';
+import { invokeRequest } from './client';
 
 export function sendWatchingEmojiInteraction({
   chat,
@@ -22,7 +35,9 @@ export function sendWatchingEmojiInteraction({
     action: new GramJs.SendMessageEmojiInteractionSeen({
       emoticon,
     }),
-  }));
+  }), {
+    abortControllerChatId: chat.id,
+  });
 }
 
 export function sendEmojiInteraction({
@@ -48,10 +63,12 @@ export function sendEmojiInteraction({
         }),
       }),
     }),
-  }));
+  }), {
+    abortControllerChatId: chat.id,
+  });
 }
 
-export async function getAvailableReactions() {
+export async function fetchAvailableReactions() {
   const result = await invokeRequest(new GramJs.messages.GetAvailableReactions({}));
 
   if (!result || result instanceof GramJs.messages.AvailableReactionsNotModified) {
@@ -79,6 +96,41 @@ export async function getAvailableReactions() {
   return result.reactions.map(buildApiAvailableReaction);
 }
 
+export async function fetchAvailableEffects() {
+  const result = await invokeRequest(new GramJs.messages.GetAvailableEffects({}));
+
+  if (!result || result instanceof GramJs.messages.AvailableEffectsNotModified) {
+    return undefined;
+  }
+
+  const documentsMap = new Map(result.documents.map((doc) => [String(doc.id), doc]));
+
+  result.documents.forEach((document) => {
+    if (document instanceof GramJs.Document) {
+      localDb.documents[String(document.id)] = document;
+    }
+  });
+
+  const effects = result.effects.map(buildApiAvailableEffect);
+
+  const stickers : ApiSticker[] = [];
+  const emojis : ApiSticker[] = [];
+
+  for (const effect of effects) {
+    if (effect.effectAnimationId) {
+      const document = documentsMap.get(effect.effectStickerId);
+      const emoji = document && buildStickerFromDocument(document, false, effect.isPremium);
+      if (emoji) emojis.push(emoji);
+    } else {
+      const document = localDb.documents[effect.effectStickerId];
+      const sticker = buildStickerFromDocument(document);
+      if (sticker) { stickers.push(sticker); }
+    }
+  }
+
+  return { effects, emojis, stickers };
+}
+
 export function sendReaction({
   chat, messageId, reactions, shouldAddToRecent,
 }: {
@@ -92,7 +144,33 @@ export function sendReaction({
     peer: buildInputPeer(chat.id, chat.accessHash),
     msgId: messageId,
     ...(shouldAddToRecent && { addToRecent: true }),
-  }), true, true);
+  }), {
+    shouldReturnTrue: true,
+    shouldThrow: true,
+  });
+}
+
+export function sendPaidReaction({
+  chat,
+  messageId,
+  count,
+  isPrivate,
+}: {
+  chat: ApiChat;
+  messageId: number;
+  count: number;
+  isPrivate?: boolean;
+}) {
+  return invokeRequest(new GramJs.messages.SendPaidReaction({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    msgId: messageId,
+    randomId: generateRandomTimestampedBigInt(),
+    count,
+    private: isPrivate || undefined,
+  }), {
+    shouldReturnTrue: true,
+    shouldThrow: true,
+  });
 }
 
 export function fetchMessageReactions({
@@ -100,10 +178,16 @@ export function fetchMessageReactions({
 }: {
   ids: number[]; chat: ApiChat;
 }) {
-  return invokeRequest(new GramJs.messages.GetMessagesReactions({
-    id: ids,
-    peer: buildInputPeer(chat.id, chat.accessHash),
-  }), true);
+  const chunks = split(ids, API_GENERAL_ID_LIMIT);
+  chunks.forEach((chunkIds) => {
+    invokeRequest(new GramJs.messages.GetMessagesReactions({
+      id: chunkIds,
+      peer: buildInputPeer(chat.id, chat.accessHash),
+    }), {
+      shouldReturnTrue: true,
+      abortControllerChatId: chat.id,
+    });
+  });
 }
 
 export async function fetchMessageReactionsList({
@@ -123,12 +207,9 @@ export async function fetchMessageReactionsList({
     return undefined;
   }
 
-  addEntitiesWithPhotosToLocalDb(result.users);
-
   const { nextOffset, reactions, count } = result;
 
   return {
-    users: result.users.map(buildApiUser).filter(Boolean),
     nextOffset,
     reactions: reactions.map(buildMessagePeerReaction).filter(Boolean),
     count,
@@ -157,7 +238,7 @@ export async function fetchTopReactions({ hash = '0' }: { hash?: string }) {
 
   return {
     hash: String(result.hash),
-    reactions: result.reactions.map(buildApiReaction).filter(Boolean),
+    reactions: result.reactions.map((r) => buildApiReaction(r)).filter(Boolean),
   };
 }
 
@@ -173,10 +254,53 @@ export async function fetchRecentReactions({ hash = '0' }: { hash?: string }) {
 
   return {
     hash: String(result.hash),
-    reactions: result.reactions.map(buildApiReaction).filter(Boolean),
+    reactions: result.reactions.map((r) => buildApiReaction(r)).filter(Boolean),
   };
 }
 
 export function clearRecentReactions() {
   return invokeRequest(new GramJs.messages.ClearRecentReactions());
+}
+
+export async function fetchDefaultTagReactions({ hash = '0' }: { hash?: string }) {
+  const result = await invokeRequest(new GramJs.messages.GetDefaultTagReactions({
+    hash: BigInt(hash),
+  }));
+
+  if (!result || result instanceof GramJs.messages.ReactionsNotModified) {
+    return undefined;
+  }
+
+  return {
+    hash: String(result.hash),
+    reactions: result.reactions.map((r) => buildApiReaction(r)).filter(Boolean),
+  };
+}
+
+export async function fetchSavedReactionTags({ hash = '0' }: { hash?: string }) {
+  const result = await invokeRequest(new GramJs.messages.GetSavedReactionTags({ hash: BigInt(hash) }));
+
+  if (!result || result instanceof GramJs.messages.SavedReactionTagsNotModified) {
+    return undefined;
+  }
+
+  return {
+    hash: String(result.hash),
+    tags: result.tags.map(buildApiSavedReactionTag).filter(Boolean),
+  };
+}
+
+export function updateSavedReactionTag({
+  reaction,
+  title,
+}: {
+  reaction: ApiReaction;
+  title?: string;
+}) {
+  return invokeRequest(new GramJs.messages.UpdateSavedReactionTag({
+    reaction: buildInputReaction(reaction),
+    title,
+  }), {
+    shouldReturnTrue: true,
+  });
 }

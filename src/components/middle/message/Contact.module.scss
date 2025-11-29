@@ -1,0 +1,67 @@
+.root {
+  position: relative;
+  margin-top: 0.25rem;
+  margin-bottom: var(--message-meta-height);
+}
+
+.info-container {
+  display: flex;
+  padding: 0.5rem 1.5rem 0.5rem 0.125rem;
+  cursor: var(--custom-cursor, pointer);
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  align-self: center;
+  margin-left: 0.5rem;
+}
+
+.name {
+  font-size: 1rem;
+  font-weight: var(--font-weight-medium);
+  max-width: 12.5rem;
+}
+
+.phone {
+  color: var(--color-text);
+}
+
+.name,
+.phone {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.divider {
+  height: 0.0625rem;
+  background: var(--accent-color);
+  filter: opacity(0.35);
+}
+
+.buttons {
+  display: flex;
+
+  .button {
+    width: auto;
+    flex: 1;
+    height: 2rem;
+    font-weight: var(--font-weight-medium);
+    background-color: transparent;
+    color: var(--accent-color);
+    --ripple-color: var(--accent-background-active-color);
+    opacity: 1;
+    transition: 0.25s ease-in-out opacity;
+
+    &:not(.disabled):not(:disabled):hover {
+      color: var(--accent-color);
+      background-color: transparent;
+      opacity: 0.75;
+    }
+  }
+}
+
+.emoji-icon-background {
+  margin-bottom: 2.25rem;
+}

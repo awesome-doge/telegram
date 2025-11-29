@@ -1,29 +1,34 @@
+import type { FC } from '../../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useRef, useState,
+  memo, useEffect, useMemo, useRef, useState,
 } from '../../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../../global';
 
-import type { FC } from '../../../../lib/teact/teact';
+import type { ApiChatFolder } from '../../../../api/types';
 
 import { STICKER_SIZE_FOLDER_SETTINGS } from '../../../../config';
-import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
-import renderText from '../../../common/helpers/renderText';
-import { partition } from '../../../../util/iteratees';
+import { isChatChannel, isUserBot } from '../../../../global/helpers';
 import {
   selectCanInviteToChat, selectChat,
   selectChatFolder,
   selectTabState, selectUser,
 } from '../../../../global/selectors';
-import { isChatChannel, isUserBot } from '../../../../global/helpers';
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
+import { partition } from '../../../../util/iteratees';
+import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
+import { renderTextWithEntities } from '../../../common/helpers/renderTextWithEntities';
+
 import useEffectWithPrevDeps from '../../../../hooks/useEffectWithPrevDeps';
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useLang from '../../../../hooks/useLang';
+import useLastCallback from '../../../../hooks/useLastCallback';
+import useOldLang from '../../../../hooks/useOldLang';
 
 import AnimatedIcon from '../../../common/AnimatedIcon';
-import InviteLink from '../../../common/InviteLink';
-import Picker from '../../../common/Picker';
-import Spinner from '../../../ui/Spinner';
+import Icon from '../../../common/icons/Icon';
+import LinkField from '../../../common/LinkField';
+import PeerPicker from '../../../common/pickers/PeerPicker';
 import FloatingActionButton from '../../../ui/FloatingActionButton';
+import Spinner from '../../../ui/Spinner';
 
 type OwnProps = {
   isActive?: boolean;
@@ -32,9 +37,7 @@ type OwnProps = {
 
 type StateProps = {
   folderId?: number;
-  title?: string;
-  includedChatIds?: string[];
-  pinnedChatIds?: string[];
+  folder?: ApiChatFolder;
   peerIds?: string[];
   url?: string;
   isLoading?: boolean;
@@ -44,9 +47,7 @@ const SettingsShareChatlist: FC<OwnProps & StateProps> = ({
   isActive,
   onReset,
   folderId,
-  title,
-  includedChatIds,
-  pinnedChatIds,
+  folder,
   peerIds,
   url,
   isLoading,
@@ -54,7 +55,9 @@ const SettingsShareChatlist: FC<OwnProps & StateProps> = ({
   const {
     createChatlistInvite, deleteChatlistInvite, editChatlistInvite, showNotification,
   } = getActions();
+
   const lang = useLang();
+  const oldLang = useOldLang();
 
   const [isTouched, setIsTouched] = useState(false);
 
@@ -75,16 +78,16 @@ const SettingsShareChatlist: FC<OwnProps & StateProps> = ({
     }
   }, [folderId, isActive, url]);
 
-  const handleRevoke = useCallback(() => {
+  const handleRevoke = useLastCallback(() => {
     if (!url || !folderId) return;
 
     deleteChatlistInvite({ folderId, url });
     onReset();
-  }, [folderId, onReset, url]);
+  });
 
   const itemIds = useMemo(() => {
-    return (includedChatIds || []).concat(pinnedChatIds || []);
-  }, [includedChatIds, pinnedChatIds]);
+    return (folder?.includedChatIds || []).concat(folder?.pinnedChatIds || []);
+  }, [folder?.includedChatIds, folder?.pinnedChatIds]);
 
   const [unlockedIds, lockedIds] = useMemo(() => {
     const global = getGlobal();
@@ -107,38 +110,38 @@ const SettingsShareChatlist: FC<OwnProps & StateProps> = ({
     }
   }, [url, unlockedIds, peerIds]);
 
-  const handleClickDisabled = useCallback((id: string) => {
+  const handleClickDisabled = useLastCallback((id: string) => {
     const global = getGlobal();
     const user = selectUser(global, id);
     const chat = selectChat(global, id);
     if (user && isUserBot(user)) {
       showNotification({
-        message: lang('FolderLinkScreen.AlertTextUnavailableBot'),
+        message: oldLang('FolderLinkScreen.AlertTextUnavailableBot'),
       });
     } else if (user) {
       showNotification({
-        message: lang('FolderLinkScreen.AlertTextUnavailableUser'),
+        message: oldLang('FolderLinkScreen.AlertTextUnavailableUser'),
       });
     } else if (chat && isChatChannel(chat)) {
       showNotification({
-        message: lang('FolderLinkScreen.AlertTextUnavailablePublicChannel'),
+        message: oldLang('FolderLinkScreen.AlertTextUnavailablePublicChannel'),
       });
     } else {
       showNotification({
-        message: lang('FolderLinkScreen.AlertTextUnavailablePublicGroup'),
+        message: oldLang('FolderLinkScreen.AlertTextUnavailablePublicGroup'),
       });
     }
-  }, [lang]);
+  });
 
-  const handleSelectedIdsChange = useCallback((ids: string[]) => {
+  const handleSelectedIdsChange = useLastCallback((ids: string[]) => {
     setSelectedIds(ids);
     setIsTouched(true);
-  }, []);
+  });
 
-  const handleSubmit = useCallback(() => {
-    if (!folderId || !url) return;
+  const handleSubmit = useLastCallback(() => {
+    if (!folderId || !url || !isTouched) return;
     editChatlistInvite({ folderId, peerIds: selectedIds, url });
-  }, [folderId, selectedIds, url]);
+  });
 
   const chatsCount = selectedIds.length;
   const isDisabled = !chatsCount || isLoading;
@@ -152,26 +155,41 @@ const SettingsShareChatlist: FC<OwnProps & StateProps> = ({
           className="settings-content-icon"
         />
 
-        <p className="settings-item-description mb-3" dir="auto">
-          {renderText(lang('FolderLinkScreen.TitleDescriptionSelected', [title, chatsCount]),
-            ['simple_markdown'])}
-        </p>
+        {folder && (
+          <p className="settings-item-description mb-3" dir="auto">
+            {lang('FolderLinkTitleDescription', {
+              folder: renderTextWithEntities({
+                text: folder.title.text,
+                entities: folder.title.entities,
+                noCustomEmojiPlayback: folder.noTitleAnimations,
+              }),
+              chats: lang('FolderLinkTitleDescriptionChats', { count: chatsCount }, { pluralValue: chatsCount }),
+            }, {
+              withMarkdown: true,
+              withNodes: true,
+            })}
+          </p>
+        )}
       </div>
 
-      <InviteLink
-        inviteLink={isLoading ? lang('Loading') : url!}
+      <LinkField
+        className="settings-item"
+        link={!url ? oldLang('Loading') : url}
+        withShare
         onRevoke={handleRevoke}
-        isDisabled={isDisabled}
+        isDisabled={!chatsCount || isTouched}
       />
 
-      <div className="settings-item settings-item-chatlist">
-        <Picker
+      <div className="settings-item settings-item-picker">
+        <PeerPicker
           itemIds={itemIds}
-          lockedIds={lockedIds}
+          lockedUnselectedIds={lockedIds}
           onSelectedIdsChange={handleSelectedIdsChange}
           selectedIds={selectedIds}
           onDisabledClick={handleClickDisabled}
-          isRoundCheckbox
+          allowMultiple
+          withStatus
+          itemInputType="checkbox"
         />
       </div>
 
@@ -184,7 +202,7 @@ const SettingsShareChatlist: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon icon-check" />
+          <Icon name="check" />
         )}
       </FloatingActionButton>
     </div>
@@ -199,9 +217,7 @@ export default memo(withGlobal<OwnProps>(
 
     return {
       folderId,
-      title: folder?.title,
-      includedChatIds: folder?.includedChatIds,
-      pinnedChatIds: folder?.pinnedChatIds,
+      folder,
       url,
       isLoading,
       peerIds: invite?.peerIds,

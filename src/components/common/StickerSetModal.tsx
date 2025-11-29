@@ -1,38 +1,44 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiSticker, ApiStickerSet } from '../../api/types';
+import type { MessageList } from '../../types';
 
 import { EMOJI_SIZE_MODAL, STICKER_SIZE_MODAL, TME_LINK_PREFIX } from '../../config';
+import { getAllowedAttachmentOptions, getCanPostInChat } from '../../global/helpers';
 import {
   selectCanScheduleUntilOnline,
   selectChat,
+  selectChatFullInfo,
   selectCurrentMessageList,
-  selectIsChatWithSelf, selectIsCurrentUserPremium,
+  selectIsChatWithSelf,
+  selectIsCurrentUserPremium,
   selectShouldSchedule,
-  selectStickerSet, selectThreadInfo,
+  selectStickerSet,
+  selectThreadInfo,
+  selectTopic,
 } from '../../global/selectors';
-import renderText from './helpers/renderText';
-import { copyTextToClipboard } from '../../util/clipboard';
-import { getAllowedAttachmentOptions, getCanPostInChat } from '../../global/helpers';
 import buildClassName from '../../util/buildClassName';
+import { copyTextToClipboard } from '../../util/clipboard';
+import renderText from './helpers/renderText';
 
-import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
-import useLang from '../../hooks/useLang';
 import useAppLayout from '../../hooks/useAppLayout';
+import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 import useSchedule from '../../hooks/useSchedule';
-import usePrevious from '../../hooks/usePrevious';
 import useScrolledState from '../../hooks/useScrolledState';
 
-import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import Loading from '../ui/Loading';
-import StickerButton from './StickerButton';
 import DropdownMenu from '../ui/DropdownMenu';
+import Loading from '../ui/Loading';
 import MenuItem from '../ui/MenuItem';
+import Modal from '../ui/Modal';
+import Icon from './icons/Icon';
+import StickerButton from './StickerButton';
 
 import './StickerSetModal.scss';
 
@@ -44,6 +50,7 @@ export type OwnProps = {
 };
 
 type StateProps = {
+  currentMessageList?: MessageList;
   canSendStickers?: boolean;
   stickerSet?: ApiStickerSet;
   canScheduleUntilOnline?: boolean;
@@ -66,6 +73,7 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
   isSavedMessages,
   isCurrentUserPremium,
   shouldUpdateStickerSetOrder,
+  currentMessageList,
   onClose,
 }) => {
   const {
@@ -80,11 +88,11 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
   // eslint-disable-next-line no-null/no-null
   const sharedCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const { isMobile } = useAppLayout();
 
-  const prevStickerSet = usePrevious(stickerSet);
+  const prevStickerSet = usePreviousDeprecated(stickerSet);
   const renderingStickerSet = stickerSet || prevStickerSet;
 
   const isAdded = Boolean(!renderingStickerSet?.isArchived && renderingStickerSet?.installedDate);
@@ -109,6 +117,9 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
   }, [isOpen, fromSticker, loadStickers, stickerSetShortName, renderingStickerSet]);
 
   const handleSelect = useCallback((sticker: ApiSticker, isSilent?: boolean, isScheduleRequested?: boolean) => {
+    if (!currentMessageList) {
+      return;
+    }
     sticker = {
       ...sticker,
       isPreloadedGlobally: true,
@@ -117,19 +128,20 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
     if (shouldSchedule || isScheduleRequested) {
       requestCalendar((scheduledAt) => {
         sendMessage({
-          sticker, isSilent, scheduledAt,
+          messageList: currentMessageList, sticker, isSilent, scheduledAt,
         });
         onClose();
       });
     } else {
       sendMessage({
+        messageList: currentMessageList,
         sticker,
         isSilent,
         shouldUpdateStickerSetOrder: shouldUpdateStickerSetOrder && isAdded,
       });
       onClose();
     }
-  }, [onClose, requestCalendar, sendMessage, shouldSchedule, isAdded, shouldUpdateStickerSetOrder]);
+  }, [currentMessageList, shouldSchedule, requestCalendar, onClose, shouldUpdateStickerSetOrder, isAdded]);
 
   const handleButtonClick = useCallback(() => {
     if (renderingStickerSet) {
@@ -172,7 +184,7 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
         onClick={onTrigger}
         ariaLabel="More actions"
       >
-        <i className="icon icon-more" />
+        <Icon name="more" />
       </Button>
     );
   }, [isMobile]);
@@ -183,7 +195,7 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
     return (
       <div className={fullClassName} dir={lang.isRtl ? 'rtl' : undefined}>
         <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={onClose}>
-          <i className="icon icon-close" />
+          <Icon name="close" />
         </Button>
         <div className="modal-title">
           {renderingStickerSet ? renderText(renderingStickerSet.title, ['emoji', 'links']) : lang('AccDescrStickerSet')}
@@ -249,11 +261,14 @@ export default memo(withGlobal<OwnProps>(
     const currentMessageList = selectCurrentMessageList(global);
     const { chatId, threadId } = currentMessageList || {};
     const chat = chatId && selectChat(global, chatId);
-    const sendOptions = chat ? getAllowedAttachmentOptions(chat) : undefined;
+    const chatFullInfo = chatId ? selectChatFullInfo(global, chatId) : undefined;
+    const sendOptions = chat ? getAllowedAttachmentOptions(chat, chatFullInfo) : undefined;
     const threadInfo = chatId && threadId ? selectThreadInfo(global, chatId, threadId) : undefined;
-    const isComments = Boolean(threadInfo?.originChannelId);
+    const isMessageThread = Boolean(!threadInfo?.isCommentsInfo && threadInfo?.fromChannelId);
+    const topic = chatId && threadId ? selectTopic(global, chatId, threadId) : undefined;
     const canSendStickers = Boolean(
-      chat && threadId && getCanPostInChat(chat, threadId, isComments) && sendOptions?.canSendStickers,
+      chat && threadId && getCanPostInChat(chat, topic, isMessageThread, chatFullInfo)
+        && sendOptions?.canSendStickers,
     );
     const isSavedMessages = Boolean(chatId) && selectIsChatWithSelf(global, chatId);
 
@@ -270,6 +285,7 @@ export default memo(withGlobal<OwnProps>(
       stickerSet,
       isCurrentUserPremium: selectIsCurrentUserPremium(global),
       shouldUpdateStickerSetOrder: global.settings.byKey.shouldUpdateStickerSetOrder,
+      currentMessageList,
     };
   },
 )(StickerSetModal));

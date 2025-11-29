@@ -1,18 +1,19 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiUser, ApiWebSession } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
 
-import useLang from '../../../hooks/useLang';
 import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import useOldLang from '../../../hooks/useOldLang';
 
-import Modal from '../../ui/Modal';
-import Button from '../../ui/Button';
 import Avatar from '../../common/Avatar';
 import FullNameTitle from '../../common/FullNameTitle';
+import Icon from '../../common/icons/Icon';
+import Button from '../../ui/Button';
+import Modal from '../../ui/Modal';
 
 import styles from './SettingsActiveWebsite.module.scss';
 
@@ -34,7 +35,7 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
   onClose,
 }) => {
   const { terminateWebAuthorization } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   const renderingSession = useCurrentOrPrev(session, true);
   const renderingBot = useCurrentOrPrev(bot, true);
@@ -52,7 +53,7 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
     return (
       <div className="modal-header-condensed" dir={lang.isRtl ? 'rtl' : undefined}>
         <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={onClose}>
-          <i className="icon icon-close" />
+          <Icon name="close" />
         </Button>
         <div className="modal-title">{lang('WebSessionsTitle')}</div>
         <Button
@@ -75,7 +76,7 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
     >
       <Avatar
         className={styles.avatar}
-        user={renderingBot}
+        peer={renderingBot}
         size="large"
       />
       {renderingBot && <FullNameTitle className={styles.title} peer={renderingBot} />}

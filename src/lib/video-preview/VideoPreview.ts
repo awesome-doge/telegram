@@ -1,13 +1,13 @@
-import { requestMutation } from '../fasterdom/fasterdom';
-
-import { callApi } from '../../api/gramjs';
 import { ApiMediaFormat } from '../../api/types';
-import { IS_ANDROID, IS_IOS, ARE_WEBCODECS_SUPPORTED } from '../../util/windowEnvironment';
+
 import launchMediaWorkers, { MAX_WORKERS } from '../../util/launchMediaWorkers';
+import { IS_ANDROID, IS_IOS } from '../../util/windowEnvironment';
+import { callApi } from '../../api/gramjs';
+import { requestMutation } from '../fasterdom/fasterdom';
 
 const IS_MOBILE = IS_ANDROID || IS_IOS;
 const PREVIEW_SIZE_RATIO = (IS_ANDROID || IS_IOS) ? 0.3 : 0.25;
-const MAX_FRAMES = ARE_WEBCODECS_SUPPORTED && !IS_MOBILE ? 80 : 40;
+const MAX_FRAMES = IS_MOBILE ? 40 : 80;
 const PREVIEW_MAX_SIDE = 200;
 
 const connections = launchMediaWorkers();
@@ -122,7 +122,10 @@ export function createVideoPreviews(url: string, canvas: HTMLCanvasElement) {
     videoPreview.destroy();
   }
   videoPreview = new VideoPreview(url, canvas);
-  return () => videoPreview?.destroy();
+  return () => {
+    videoPreview?.destroy();
+    videoPreview = undefined;
+  };
 }
 
 export function renderVideoPreview(time: number) {

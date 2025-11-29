@@ -1,24 +1,28 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useCallback, memo,
+  memo, useCallback, useEffect, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ISettings, TimeFormat } from '../../../types';
+import type { IRadioOption } from '../../ui/RadioGroup';
 import { SettingsScreens } from '../../../types';
 
-import {
-  getSystemTheme, IS_IOS, IS_MAC_OS, IS_TOUCH_ENV,
-} from '../../../util/windowEnvironment';
 import { pick } from '../../../util/iteratees';
-import { setTimeFormat } from '../../../util/langProvider';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
+import { setTimeFormat } from '../../../util/oldLangProvider';
+import { getSystemTheme } from '../../../util/systemTheme';
+import {
+  IS_ANDROID, IS_ELECTRON, IS_IOS, IS_MAC_OS, IS_WINDOWS,
+} from '../../../util/windowEnvironment';
 
+import useAppLayout from '../../../hooks/useAppLayout';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+
+import Checkbox from '../../ui/Checkbox';
 import ListItem from '../../ui/ListItem';
-import RangeSlider from '../../ui/RangeSlider';
-import type { IRadioOption } from '../../ui/RadioGroup';
 import RadioGroup from '../../ui/RadioGroup';
+import RangeSlider from '../../ui/RangeSlider';
 
 type OwnProps = {
   isActive?: boolean;
@@ -37,14 +41,6 @@ type StateProps =
     shouldUseSystemTheme: boolean;
   };
 
-const TIME_FORMAT_OPTIONS: IRadioOption[] = [{
-  label: '12-hour',
-  value: '12h',
-}, {
-  label: '24-hour',
-  value: '24h',
-}];
-
 const SettingsGeneral: FC<OwnProps & StateProps> = ({
   isActive,
   onScreenSelect,
@@ -61,23 +57,34 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
 
   const lang = useLang();
 
-  const APPEARANCE_THEME_OPTIONS: IRadioOption[] = [{
-    label: lang('EmptyChat.Appearance.Light'),
+  const { isMobile } = useAppLayout();
+  const isMobileDevice = isMobile && (IS_IOS || IS_ANDROID);
+
+  const timeFormatOptions: IRadioOption[] = [{
+    label: lang('SettingsTimeFormat12'),
+    value: '12h',
+  }, {
+    label: lang('SettingsTimeFormat24'),
+    value: '24h',
+  }];
+
+  const appearanceThemeOptions: IRadioOption[] = [{
+    label: lang('EmptyChatAppearanceLight'),
     value: 'light',
   }, {
-    label: lang('EmptyChat.Appearance.Dark'),
+    label: lang('EmptyChatAppearanceDark'),
     value: 'dark',
   }, {
-    label: lang('EmptyChat.Appearance.System'),
+    label: lang('EmptyChatAppearanceSystem'),
     value: 'auto',
   }];
 
-  const KEYBOARD_SEND_OPTIONS = !IS_TOUCH_ENV ? [
-    { value: 'enter', label: lang('lng_settings_send_enter'), subLabel: 'New line by Shift + Enter' },
+  const keyboardSendOptions = !isMobileDevice ? [
+    { value: 'enter', label: lang('SettingsSendEnter'), subLabel: lang('SettingsSendEnterDescription') },
     {
       value: 'ctrl-enter',
-      label: lang(IS_MAC_OS ? 'lng_settings_send_cmdenter' : 'lng_settings_send_ctrlenter'),
-      subLabel: 'New line by Enter',
+      label: lang(IS_MAC_OS || IS_IOS ? 'SettingsSendCmdenter' : 'SettingsSendCtrlenter'),
+      subLabel: lang('SettingsSendPlusEnterDescription'),
     },
   ] : undefined;
 
@@ -110,6 +117,15 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
     setSettingOption({ messageSendKeyCombo: newCombo as ISettings['messageSendKeyCombo'] });
   }, [setSettingOption]);
 
+  const [isTrayIconEnabled, setIsTrayIconEnabled] = useState(false);
+  useEffect(() => {
+    window.electron?.getIsTrayIconEnabled().then(setIsTrayIconEnabled);
+  }, []);
+
+  const handleIsTrayIconEnabledChange = useCallback((isChecked: boolean) => {
+    window.electron?.setIsTrayIconEnabled(isChecked);
+  }, []);
+
   useHistoryBack({
     isActive,
     onBack: onReset,
@@ -118,7 +134,7 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
   return (
     <div className="settings-content custom-scroll">
       <div className="settings-item pt-3">
-        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{lang('SETTINGS')}</h4>
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{lang('Settings')}</h4>
 
         <RangeSlider
           label={lang('TextSize')}
@@ -130,11 +146,20 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
 
         <ListItem
           icon="photo"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.GeneralChatBackground)}
         >
           {lang('ChatBackground')}
         </ListItem>
+
+        {IS_ELECTRON && IS_WINDOWS && (
+          <Checkbox
+            label={lang('SettingsTray')}
+            checked={Boolean(isTrayIconEnabled)}
+            onCheck={handleIsTrayIconEnabledChange}
+          />
+        )}
       </div>
 
       <div className="settings-item">
@@ -143,7 +168,7 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
         </h4>
         <RadioGroup
           name="theme"
-          options={APPEARANCE_THEME_OPTIONS}
+          options={appearanceThemeOptions}
           selected={shouldUseSystemTheme ? 'auto' : theme}
           onChange={handleAppearanceThemeChange}
         />
@@ -151,23 +176,23 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
 
       <div className="settings-item">
         <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
-          Time Format
+          {lang('SettingsTimeFormat')}
         </h4>
         <RadioGroup
           name="timeformat"
-          options={TIME_FORMAT_OPTIONS}
+          options={timeFormatOptions}
           selected={timeFormat}
           onChange={handleTimeFormatChange}
         />
       </div>
 
-      {KEYBOARD_SEND_OPTIONS && (
+      {keyboardSendOptions && (
         <div className="settings-item">
-          <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{lang('VoiceOver.Keyboard')}</h4>
+          <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{lang('SettingsKeyboard')}</h4>
 
           <RadioGroup
             name="keyboard-send-settings"
-            options={KEYBOARD_SEND_OPTIONS}
+            options={keyboardSendOptions}
             onChange={handleMessageSendComboChange}
             selected={messageSendKeyCombo}
           />

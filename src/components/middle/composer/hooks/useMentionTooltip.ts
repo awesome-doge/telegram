@@ -1,23 +1,23 @@
 import type { RefObject } from 'react';
-import {
-  useCallback, useEffect, useState,
-} from '../../../../lib/teact/teact';
+import { useEffect, useState } from '../../../../lib/teact/teact';
 import { getGlobal } from '../../../../global';
-import { requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
 
 import type { ApiChatMember, ApiUser } from '../../../../api/types';
 import type { Signal } from '../../../../util/signals';
-
 import { ApiMessageEntityTypes } from '../../../../api/types';
-import { filterUsersByName, getMainUsername, getUserFirstOrLastName } from '../../../../global/helpers';
-import { prepareForRegExp } from '../helpers/prepareForRegExp';
+
+import { requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
+import { getMainUsername, getUserFirstOrLastName } from '../../../../global/helpers';
+import { filterPeersByQuery } from '../../../../global/helpers/peers';
 import focusEditableElement from '../../../../util/focusEditableElement';
 import { pickTruthy, unique } from '../../../../util/iteratees';
 import { getCaretPosition, getHtmlBeforeSelection, setCaretPosition } from '../../../../util/selection';
+import { prepareForRegExp } from '../helpers/prepareForRegExp';
 
-import useFlag from '../../../../hooks/useFlag';
-import useDerivedSignal from '../../../../hooks/useDerivedSignal';
 import { useThrottledResolver } from '../../../../hooks/useAsyncResolvers';
+import useDerivedSignal from '../../../../hooks/useDerivedSignal';
+import useFlag from '../../../../hooks/useFlag';
+import useLastCallback from '../../../../hooks/useLastCallback';
 
 const THROTTLE = 300;
 
@@ -83,15 +83,19 @@ export default function useMentionTooltip(
     }, []);
 
     const filter = usernameTag.substring(1);
-    const filteredIds = filterUsersByName(unique([
-      ...((getWithInlineBots() && topInlineBotIds) || []),
-      ...(memberIds || []),
-    ]), usersById, filter);
+    const filteredIds = filterPeersByQuery({
+      ids: unique([
+        ...((getWithInlineBots() && topInlineBotIds) || []),
+        ...(memberIds || []),
+      ]),
+      query: filter,
+      type: 'user',
+    });
 
     setFilteredUsers(Object.values(pickTruthy(usersById, filteredIds)));
   }, [currentUserId, groupChatMembers, topInlineBotIds, getUsernameTag, getWithInlineBots]);
 
-  const insertMention = useCallback((user: ApiUser, forceFocus = false) => {
+  const insertMention = useLastCallback((user: ApiUser, forceFocus = false) => {
     if (!user.usernames && !getUserFirstOrLastName(user)) {
       return;
     }
@@ -131,7 +135,7 @@ export default function useMentionTooltip(
     }
 
     setFilteredUsers(undefined);
-  }, [inputRef, setHtml]);
+  });
 
   useEffect(unmarkManuallyClosed, [unmarkManuallyClosed, getHtml]);
 

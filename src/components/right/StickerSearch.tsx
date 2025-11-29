@@ -4,11 +4,12 @@ import React, {
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import { throttle } from '../../util/schedulers';
 import { selectCurrentStickerSearch, selectTabState } from '../../global/selectors';
-import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
-import useLang from '../../hooks/useLang';
+import { throttle } from '../../util/schedulers';
+
 import useHistoryBack from '../../hooks/useHistoryBack';
+import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
+import useOldLang from '../../hooks/useOldLang';
 
 import Loading from '../ui/Loading';
 import StickerSetResult from './StickerSetResult';
@@ -44,7 +45,7 @@ const StickerSearch: FC<OwnProps & StateProps> = ({
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const {
     observe: observeIntersection,

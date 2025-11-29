@@ -1,9 +1,9 @@
 import type { RefObject } from 'react';
-import {
-  useState, useEffect, useLayoutEffect, useCallback,
-} from '../lib/teact/teact';
+import { useEffect, useLayoutEffect, useState } from '../lib/teact/teact';
+
 import { requestMutation } from '../lib/fasterdom/fasterdom';
 import useFlag from './useFlag';
+import useLastCallback from './useLastCallback';
 
 export function useResize(
   elementRef: RefObject<HTMLElement>,
@@ -16,7 +16,7 @@ export function useResize(
   const [initialMouseX, setInitialMouseX] = useState<number>(0);
   const [initialElementWidth, setInitialElementWidth] = useState<number>(0);
 
-  const setElementStyle = useCallback((width?: number) => {
+  const setElementStyle = useLastCallback((width?: number) => {
     requestMutation(() => {
       if (!elementRef.current) {
         return;
@@ -28,7 +28,7 @@ export function useResize(
         elementRef.current.style.setProperty(cssPropertyName, widthPx);
       }
     });
-  }, [cssPropertyName, elementRef]);
+  });
 
   useLayoutEffect(() => {
     if (!elementRef.current || !initialWidth) {

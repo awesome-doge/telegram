@@ -1,35 +1,38 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import React, { memo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type {
-  ApiChat, ApiUser, ApiMessage, ApiMessageOutgoingStatus,
+  ApiChat, ApiMessage, ApiMessageOutgoingStatus,
+  ApiUser,
 } from '../../../api/types';
-import type { LangFn } from '../../../hooks/useLang';
+import type { OldLangFn } from '../../../hooks/useOldLang';
 
 import {
-  getPrivateChatUserId,
+  getMessageIsSpoiler,
   getMessageMediaHash,
   getMessageMediaThumbDataUri,
-  getMessageVideo,
   getMessageRoundVideo,
   getMessageSticker,
-  getMessageIsSpoiler,
+  getMessageVideo,
+  getPrivateChatUserId,
 } from '../../../global/helpers';
 import { selectChat, selectUser } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
-import { formatPastTimeShort } from '../../../util/dateFormat';
+import { formatPastTimeShort } from '../../../util/dates/dateFormat';
 import { renderMessageSummary } from '../../common/helpers/renderMessageText';
 
-import useMedia from '../../../hooks/useMedia';
-import useLang from '../../../hooks/useLang';
-import useSelectWithEnter from '../../../hooks/useSelectWithEnter';
 import useAppLayout from '../../../hooks/useAppLayout';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMedia from '../../../hooks/useMedia';
+import useOldLang from '../../../hooks/useOldLang';
+import useSelectWithEnter from '../../../hooks/useSelectWithEnter';
 
 import Avatar from '../../common/Avatar';
-import ListItem from '../../ui/ListItem';
-import Link from '../../ui/Link';
 import FullNameTitle from '../../common/FullNameTitle';
+import Icon from '../../common/icons/Icon';
+import Link from '../../ui/Link';
+import ListItem from '../../ui/ListItem';
 
 import './ChatMessage.scss';
 
@@ -43,7 +46,6 @@ type StateProps = {
   chat?: ApiChat;
   privateChatUser?: ApiUser;
   lastMessageOutgoingStatus?: ApiMessageOutgoingStatus;
-  lastSyncTime?: number;
 };
 
 const ChatMessage: FC<OwnProps & StateProps> = ({
@@ -52,7 +54,6 @@ const ChatMessage: FC<OwnProps & StateProps> = ({
   chatId,
   chat,
   privateChatUser,
-  lastSyncTime,
 }) => {
   const { focusMessage } = getActions();
 
@@ -61,17 +62,19 @@ const ChatMessage: FC<OwnProps & StateProps> = ({
   const mediaBlobUrl = useMedia(getMessageMediaHash(message, 'micro'));
   const isRoundVideo = Boolean(getMessageRoundVideo(message));
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     focusMessage({ chatId, messageId: message.id, shouldReplaceHistory: true });
-  }, [chatId, focusMessage, message.id]);
+  });
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const buttonRef = useSelectWithEnter(handleClick);
 
   if (!chat) {
     return undefined;
   }
+
+  const peer = privateChatUser || chat;
 
   return (
     <ListItem
@@ -81,15 +84,13 @@ const ChatMessage: FC<OwnProps & StateProps> = ({
       buttonRef={buttonRef}
     >
       <Avatar
-        chat={chat}
-        user={privateChatUser}
+        peer={peer}
         isSavedMessages={privateChatUser?.isSelf}
-        lastSyncTime={lastSyncTime}
       />
       <div className="info">
         <div className="info-row">
           <FullNameTitle
-            peer={privateChatUser || chat}
+            peer={peer}
             withEmojiStatus
             isSavedMessages={chatId === privateChatUser?.id && privateChatUser?.isSelf}
           />
@@ -111,7 +112,7 @@ const ChatMessage: FC<OwnProps & StateProps> = ({
 };
 
 function renderSummary(
-  lang: LangFn, message: ApiMessage, blobUrl?: string, searchQuery?: string, isRoundVideo?: boolean,
+  lang: OldLangFn, message: ApiMessage, blobUrl?: string, searchQuery?: string, isRoundVideo?: boolean,
 ) {
   if (!blobUrl) {
     return renderMessageSummary(lang, message, undefined, searchQuery);
@@ -127,8 +128,9 @@ function renderSummary(
         className={
           buildClassName('media-preview--image', isRoundVideo && 'round', isSpoiler && 'media-preview-spoiler')
         }
+        draggable={false}
       />
-      {getMessageVideo(message) && <i className="icon icon-play" />}
+      {getMessageVideo(message) && <Icon name="play" />}
       {renderMessageSummary(lang, message, true, searchQuery)}
     </span>
   );
@@ -146,7 +148,6 @@ export default memo(withGlobal<OwnProps>(
 
     return {
       chat,
-      lastSyncTime: global.lastSyncTime,
       ...(privateChatUserId && { privateChatUser }),
     };
   },

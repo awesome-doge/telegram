@@ -1,60 +1,66 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useState,
+  memo, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiBotCommand, ApiChat } from '../../api/types';
-import type { IAnchorPosition } from '../../types';
+import type { IAnchorPosition, ThreadId } from '../../types';
+import type { IconName } from '../../types/icons';
 import { MAIN_THREAD_ID } from '../../api/types';
 
-import { REPLIES_USER_ID } from '../../config';
-import { disableScrolling, enableScrolling } from '../../util/scrollLock';
-import {
-  selectChat,
-  selectChatBot,
-  selectChatFullInfo,
-  selectCurrentMessageList,
-  selectIsPremiumPurchaseBlocked,
-  selectNotifyExceptions,
-  selectNotifySettings,
-  selectTabState,
-  selectUser,
-  selectUserFullInfo,
-} from '../../global/selectors';
 import {
   getCanAddContact,
   getCanDeleteChat,
   getCanManageTopic,
   getHasAdminRight,
+  getIsSavedDialog,
   isChatChannel,
   isChatGroup,
+  isSystemBot,
   isUserId,
   isUserRightBanned,
   selectIsChatMuted,
 } from '../../global/helpers';
-import useShowTransition from '../../hooks/useShowTransition';
-import usePrevDuringAnimation from '../../hooks/usePrevDuringAnimation';
-import useLang from '../../hooks/useLang';
-import useAppLayout from '../../hooks/useAppLayout';
+import {
+  selectBot,
+  selectCanGift,
+  selectCanManage,
+  selectCanTranslateChat,
+  selectChat,
+  selectChatFullInfo,
+  selectCurrentMessageList,
+  selectIsChatWithSelf,
+  selectIsRightColumnShown,
+  selectNotifyExceptions,
+  selectNotifySettings,
+  selectTabState,
+  selectTopic,
+  selectUser,
+  selectUserFullInfo,
+} from '../../global/selectors';
+import { disableScrolling } from '../../util/scrollLock';
 
-import Portal from '../ui/Portal';
+import useAppLayout from '../../hooks/useAppLayout';
+import useFlag from '../../hooks/useFlag';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+import usePrevDuringAnimation from '../../hooks/usePrevDuringAnimation';
+import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
+
+import DeleteChatModal from '../common/DeleteChatModal';
+import MuteChatModal from '../left/MuteChatModal.async';
 import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
 import MenuSeparator from '../ui/MenuSeparator';
-import DeleteChatModal from '../common/DeleteChatModal';
-import ReportModal from '../common/ReportModal';
+import Portal from '../ui/Portal';
 
 import './HeaderMenuContainer.scss';
 
-const BOT_BUTTONS: Record<string, { icon: string; label: string }> = {
+const BOT_BUTTONS: Record<string, { icon: IconName; label: string }> = {
   settings: {
     icon: 'bots',
     label: 'BotSettings',
-  },
-  privacy: {
-    icon: 'info',
-    label: 'Privacy',
   },
   help: {
     icon: 'help',
@@ -64,23 +70,26 @@ const BOT_BUTTONS: Record<string, { icon: string; label: string }> = {
 
 export type OwnProps = {
   chatId: string;
-  threadId: number;
+  threadId: ThreadId;
   isOpen: boolean;
   withExtraActions: boolean;
   anchor: IAnchorPosition;
   isChannel?: boolean;
   canStartBot?: boolean;
-  canRestartBot?: boolean;
   canSubscribe?: boolean;
   canSearch?: boolean;
   canCall?: boolean;
   canMute?: boolean;
   canViewStatistics?: boolean;
+  canViewBoosts?: boolean;
+  canViewMonetization?: boolean;
+  canShowBoostModal?: boolean;
   withForumActions?: boolean;
   canLeave?: boolean;
   canEnterVoiceChat?: boolean;
   canCreateVoiceChat?: boolean;
   pendingJoinRequests?: number;
+  canTranslate?: boolean;
   onSubscribeChannel: () => void;
   onSearchClick: () => void;
   onAsMessagesClick: () => void;
@@ -92,18 +101,27 @@ export type OwnProps = {
 type StateProps = {
   chat?: ApiChat;
   botCommands?: ApiBotCommand[];
+  botPrivacyPolicyUrl?: string;
   isPrivate?: boolean;
   isMuted?: boolean;
   isTopic?: boolean;
   isForum?: boolean;
+  isForumAsMessages?: true;
   canAddContact?: boolean;
-  canReportChat?: boolean;
   canDeleteChat?: boolean;
-  canGiftPremium?: boolean;
+  canReportChat?: boolean;
+  canGift?: boolean;
   canCreateTopic?: boolean;
   canEditTopic?: boolean;
   hasLinkedChat?: boolean;
   isChatInfoShown?: boolean;
+  isRightColumnShown?: boolean;
+  canManage?: boolean;
+  canTranslate?: boolean;
+  isBlocked?: boolean;
+  isBot?: boolean;
+  isChatWithSelf?: boolean;
+  savedDialog?: ApiChat;
 };
 
 const CLOSE_MENU_ANIMATION_DURATION = 200;
@@ -116,17 +134,21 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
   anchor,
   isChannel,
   botCommands,
+  botPrivacyPolicyUrl,
   withForumActions,
   isTopic,
   isForum,
+  isForumAsMessages,
   isChatInfoShown,
   canStartBot,
-  canRestartBot,
   canSubscribe,
+  canReportChat,
   canSearch,
   canCall,
   canMute,
   canViewStatistics,
+  canViewMonetization,
+  canViewBoosts,
   pendingJoinRequests,
   canLeave,
   canEnterVoiceChat,
@@ -134,13 +156,20 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
   chat,
   isPrivate,
   isMuted,
-  canReportChat,
   canDeleteChat,
-  canGiftPremium,
+  canGift,
   hasLinkedChat,
   canAddContact,
   canCreateTopic,
   canEditTopic,
+  canManage,
+  isRightColumnShown,
+  canTranslate,
+  isBlocked,
+  isBot,
+  isChatWithSelf,
+  savedDialog,
+  canShowBoostModal,
   onJoinRequestsClick,
   onSubscribeChannel,
   onSearchClick,
@@ -159,83 +188,112 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
     openAddContactDialog,
     requestMasterAndRequestCall,
     toggleStatistics,
-    openGiftPremiumModal,
-    openChatWithInfo,
+    openMonetizationStatistics,
+    openBoostStatistics,
+    openGiftModal,
+    openThreadWithInfo,
     openCreateTopicPanel,
     openEditTopicPanel,
     openChat,
+    openUrl,
+    toggleManagement,
+    togglePeerTranslations,
+    blockUser,
+    unblockUser,
+    setViewForumAsMessages,
+    openBoostModal,
+    reportMessages,
   } = getActions();
 
   const { isMobile } = useAppLayout();
   const [isMenuOpen, setIsMenuOpen] = useState(true);
+  const [shouldCloseFast, setShouldCloseFast] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isMuteModalOpen, setIsMuteModalOpen] = useState(false);
+  const [shouldRenderMuteModal, markRenderMuteModal, unmarkRenderMuteModal] = useFlag();
   const { x, y } = anchor;
 
-  useShowTransition(isOpen, onCloseAnimationEnd, undefined, false);
+  useShowTransitionDeprecated(isOpen, onCloseAnimationEnd, undefined, false);
   const isViewGroupInfoShown = usePrevDuringAnimation(
     (!isChatInfoShown && isForum) ? true : undefined, CLOSE_MENU_ANIMATION_DURATION,
   );
 
-  const handleReport = useCallback(() => {
-    setIsMenuOpen(false);
-    setIsReportModalOpen(true);
-  }, []);
-
-  const closeReportModal = useCallback(() => {
-    setIsReportModalOpen(false);
+  const closeMuteModal = useLastCallback(() => {
+    setIsMuteModalOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const handleDelete = useCallback(() => {
+  const handleReport = useLastCallback(() => {
+    setIsMenuOpen(false);
+    reportMessages({ chatId, messageIds: [] });
+    onClose();
+  });
+
+  const handleDelete = useLastCallback(() => {
     setIsMenuOpen(false);
     setIsDeleteModalOpen(true);
-  }, []);
+  });
 
-  const closeMenu = useCallback(() => {
+  const closeMenu = useLastCallback(() => {
     setIsMenuOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const handleViewGroupInfo = useCallback(() => {
-    openChatWithInfo({ id: chatId, threadId });
+  const handleViewGroupInfo = useLastCallback(() => {
+    openThreadWithInfo({ chatId, threadId });
+    setShouldCloseFast(!isRightColumnShown);
     closeMenu();
-  }, [chatId, closeMenu, openChatWithInfo, threadId]);
+  });
 
-  const closeDeleteModal = useCallback(() => {
+  const closeDeleteModal = useLastCallback(() => {
     setIsDeleteModalOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const handleStartBot = useCallback(() => {
+  const handleStartBot = useLastCallback(() => {
     sendBotCommand({ command: '/start' });
-  }, [sendBotCommand]);
+  });
 
-  const handleRestartBot = useCallback(() => {
+  const handleRestartBot = useLastCallback(() => {
     restartBot({ chatId });
-  }, [chatId, restartBot]);
+  });
 
-  const handleToggleMuteClick = useCallback(() => {
-    updateChatMutedState({ chatId, isMuted: !isMuted });
+  const handleUnmuteClick = useLastCallback(() => {
+    updateChatMutedState({ chatId, isMuted: false });
     closeMenu();
-  }, [chatId, closeMenu, isMuted, updateChatMutedState]);
+  });
 
-  const handleCreateTopicClick = useCallback(() => {
+  const handleMuteClick = useLastCallback(() => {
+    markRenderMuteModal();
+    setIsMuteModalOpen(true);
+    setIsMenuOpen(false);
+  });
+
+  const handleCreateTopicClick = useLastCallback(() => {
     openCreateTopicPanel({ chatId });
+    setShouldCloseFast(!isRightColumnShown);
     closeMenu();
-  }, [openCreateTopicPanel, chatId, closeMenu]);
+  });
 
-  const handleEditTopicClick = useCallback(() => {
-    openEditTopicPanel({ chatId, topicId: threadId });
+  const handleEditClick = useLastCallback(() => {
+    toggleManagement({ force: true });
+    setShouldCloseFast(!isRightColumnShown);
     closeMenu();
-  }, [openEditTopicPanel, chatId, threadId, closeMenu]);
+  });
 
-  const handleViewAsTopicsClick = useCallback(() => {
+  const handleEditTopicClick = useLastCallback(() => {
+    openEditTopicPanel({ chatId, topicId: Number(threadId) });
+    setShouldCloseFast(!isRightColumnShown);
+    closeMenu();
+  });
+
+  const handleViewAsTopicsClick = useLastCallback(() => {
     openChat({ id: undefined });
+    setViewForumAsMessages({ chatId, isEnabled: false });
     closeMenu();
-  }, [closeMenu, openChat]);
+  });
 
-  const handleEnterVoiceChatClick = useCallback(() => {
+  const handleEnterVoiceChatClick = useLastCallback(() => {
     if (canCreateVoiceChat) {
       // TODO Show popup to schedule
       createGroupCall({
@@ -247,70 +305,99 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
       });
     }
     closeMenu();
-  }, [closeMenu, canCreateVoiceChat, chatId, requestMasterAndJoinGroupCall, createGroupCall]);
+  });
 
-  const handleLinkedChatClick = useCallback(() => {
+  const handleLinkedChatClick = useLastCallback(() => {
     openLinkedChat({ id: chatId });
     closeMenu();
-  }, [chatId, closeMenu, openLinkedChat]);
+  });
 
-  const handleGiftPremiumClick = useCallback(() => {
-    openGiftPremiumModal({ forUserId: chatId });
+  const handleGiftClick = useLastCallback(() => {
+    openGiftModal({ forUserId: chatId });
     closeMenu();
-  }, [openGiftPremiumModal, chatId, closeMenu]);
+  });
 
-  const handleAddContactClick = useCallback(() => {
+  const handleAddContactClick = useLastCallback(() => {
     openAddContactDialog({ userId: chatId });
     closeMenu();
-  }, [openAddContactDialog, chatId, closeMenu]);
+  });
 
-  const handleSubscribe = useCallback(() => {
+  const handleSubscribe = useLastCallback(() => {
     onSubscribeChannel();
     closeMenu();
-  }, [closeMenu, onSubscribeChannel]);
+  });
 
-  const handleVideoCall = useCallback(() => {
+  const handleVideoCall = useLastCallback(() => {
     requestMasterAndRequestCall({ userId: chatId, isVideo: true });
     closeMenu();
-  }, [chatId, closeMenu, requestMasterAndRequestCall]);
+  });
 
-  const handleCall = useCallback(() => {
+  const handleCall = useLastCallback(() => {
     requestMasterAndRequestCall({ userId: chatId });
     closeMenu();
-  }, [chatId, closeMenu, requestMasterAndRequestCall]);
+  });
 
-  const handleSearch = useCallback(() => {
+  const handleSearch = useLastCallback(() => {
     onSearchClick();
     closeMenu();
-  }, [closeMenu, onSearchClick]);
+  });
 
-  const handleStatisticsClick = useCallback(() => {
+  const handleStatisticsClick = useLastCallback(() => {
     toggleStatistics();
+    setShouldCloseFast(!isRightColumnShown);
     closeMenu();
-  }, [closeMenu, toggleStatistics]);
+  });
 
-  const handleSelectMessages = useCallback(() => {
+  const handleMonetizationClick = useLastCallback(() => {
+    openMonetizationStatistics({ chatId });
+    setShouldCloseFast(!isRightColumnShown);
+    closeMenu();
+  });
+
+  const handleBoostClick = useLastCallback(() => {
+    if (canViewBoosts) {
+      openBoostStatistics({ chatId });
+      setShouldCloseFast(!isRightColumnShown);
+    } else {
+      openBoostModal({ chatId });
+    }
+    closeMenu();
+  });
+
+  const handleEnableTranslations = useLastCallback(() => {
+    togglePeerTranslations({ chatId, isEnabled: true });
+    closeMenu();
+  });
+
+  const handleSelectMessages = useLastCallback(() => {
     enterMessageSelectMode();
     closeMenu();
-  }, [closeMenu, enterMessageSelectMode]);
+  });
 
-  const handleOpenAsMessages = useCallback(() => {
+  const handleOpenAsMessages = useLastCallback(() => {
     onAsMessagesClick();
     closeMenu();
-  }, [closeMenu, onAsMessagesClick]);
+  });
 
-  useEffect(() => {
-    disableScrolling();
+  const handleBlock = useLastCallback(() => {
+    blockUser({ userId: chatId });
+    closeMenu();
+  });
 
-    return enableScrolling;
-  }, []);
+  const handleUnblock = useLastCallback(() => {
+    unblockUser({ userId: chatId });
+    closeMenu();
+  });
 
-  const lang = useLang();
+  useEffect(disableScrolling, []);
+
+  const lang = useOldLang();
 
   const botButtons = useMemo(() => {
-    return botCommands?.map(({ command }) => {
+    const commandButtons = botCommands?.map(({ command }) => {
       const cmd = BOT_BUTTONS[command];
       if (!cmd) return undefined;
+
       const handleClick = () => {
         sendBotCommand({ command: `/${command}` });
         closeMenu();
@@ -327,7 +414,50 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
         </MenuItem>
       );
     });
-  }, [botCommands, closeMenu, lang, sendBotCommand]);
+
+    const hasPrivacyCommand = botCommands?.some(({ command }) => command === 'privacy');
+
+    const privacyButton = isBot && (
+      <MenuItem
+        icon="privacy-policy"
+        // eslint-disable-next-line react/jsx-no-bind
+        onClick={() => {
+          if (hasPrivacyCommand && !botPrivacyPolicyUrl) {
+            sendBotCommand({ command: '/privacy' });
+          } else {
+            openUrl({ url: botPrivacyPolicyUrl || lang('BotDefaultPrivacyPolicy') });
+          }
+          closeMenu();
+        }}
+      >
+        {lang('BotPrivacyPolicy')}
+      </MenuItem>
+    );
+
+    return [...commandButtons || [], privacyButton].filter(Boolean);
+  }, [botCommands, lang, botPrivacyPolicyUrl, isBot]);
+
+  const deleteTitle = useMemo(() => {
+    if (!chat) return undefined;
+
+    if (savedDialog) {
+      return lang('Delete');
+    }
+
+    if (isPrivate) {
+      return lang('DeleteChatUser');
+    }
+
+    if (canDeleteChat) {
+      return lang('GroupInfo.DeleteAndExit');
+    }
+
+    if (isChannel) {
+      return lang('LeaveChannel');
+    }
+
+    return lang('Group.LeaveGroup');
+  }, [canDeleteChat, chat, isChannel, isPrivate, savedDialog, lang]);
 
   return (
     <Portal>
@@ -337,6 +467,7 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
           positionX="right"
           style={`left: ${x}px;top: ${y}px;`}
           onClose={closeMenu}
+          shouldCloseFast={shouldCloseFast}
         >
           {isMobile && canSearch && (
             <MenuItem
@@ -365,6 +496,14 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               {isTopic ? lang('lng_context_view_topic') : lang('lng_context_view_group')}
             </MenuItem>
           )}
+          {canManage && !canEditTopic && (
+            <MenuItem
+              icon="edit"
+              onClick={handleEditClick}
+            >
+              {lang('Edit')}
+            </MenuItem>
+          )}
           {canEditTopic && (
             <MenuItem
               icon="edit"
@@ -390,7 +529,7 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               <div className="right-badge">{pendingJoinRequests}</div>
             </MenuItem>
           )}
-          {withForumActions && !isTopic && (
+          {withForumActions && !isTopic && !isForumAsMessages && (
             <MenuItem
               icon="message"
               onClick={handleOpenAsMessages}
@@ -406,20 +545,20 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               {lang('BotStart')}
             </MenuItem>
           )}
-          {withExtraActions && canRestartBot && (
-            <MenuItem
-              icon="bots"
-              onClick={handleRestartBot}
-            >
-              {lang('BotRestart')}
-            </MenuItem>
-          )}
           {withExtraActions && canSubscribe && (
             <MenuItem
               icon={isChannel ? 'channel' : 'group'}
               onClick={handleSubscribe}
             >
               {lang(isChannel ? 'ProfileJoinChannel' : 'ProfileJoinGroup')}
+            </MenuItem>
+          )}
+          {canShowBoostModal && !canViewBoosts && (
+            <MenuItem
+              icon="boost-outline"
+              onClick={handleBoostClick}
+            >
+              {lang(isChannel ? 'BoostingBoostChannelMenu' : 'BoostingBoostGroupMenu')}
             </MenuItem>
           )}
           {canAddContact && (
@@ -446,13 +585,22 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               {lang('VideoCall')}
             </MenuItem>
           )}
-          {canMute && (
+          {canMute && (isMuted ? (
             <MenuItem
-              icon={isMuted ? 'unmute' : 'mute'}
-              onClick={handleToggleMuteClick}
+              icon="unmute"
+              onClick={handleUnmuteClick}
             >
-              {lang(isMuted ? 'ChatsUnmute' : 'ChatsMute')}
+              {lang('ChatsUnmute')}
             </MenuItem>
+          )
+            : (
+              <MenuItem
+                icon="mute"
+                onClick={handleMuteClick}
+              >
+                {lang('ChatsMute')}...
+              </MenuItem>
+            )
           )}
           {(canEnterVoiceChat || canCreateVoiceChat) && (
             <MenuItem
@@ -478,12 +626,36 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               {lang('ReportSelectMessages')}
             </MenuItem>
           )}
+          {canViewBoosts && (
+            <MenuItem
+              icon="boost-outline"
+              onClick={handleBoostClick}
+            >
+              {lang('Boosts')}
+            </MenuItem>
+          )}
           {canViewStatistics && (
             <MenuItem
               icon="stats"
               onClick={handleStatisticsClick}
             >
               {lang('Statistics')}
+            </MenuItem>
+          )}
+          {isChannel && canViewMonetization && (
+            <MenuItem
+              icon="cash-circle"
+              onClick={handleMonetizationClick}
+            >
+              {lang('lng_channel_earn_title')}
+            </MenuItem>
+          )}
+          {canTranslate && (
+            <MenuItem
+              icon="language"
+              onClick={handleEnableTranslations}
+            >
+              {lang('lng_context_translate')}
             </MenuItem>
           )}
           {canReportChat && (
@@ -495,12 +667,28 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
             </MenuItem>
           )}
           {botButtons}
-          {canGiftPremium && (
+          {canGift && (
             <MenuItem
               icon="gift"
-              onClick={handleGiftPremiumClick}
+              onClick={handleGiftClick}
             >
-              {lang('GiftPremium')}
+              {lang('ProfileSendAGift')}
+            </MenuItem>
+          )}
+          {isBot && (
+            <MenuItem
+              icon={isBlocked ? 'bots' : 'hand-stop'}
+              onClick={isBlocked ? handleRestartBot : handleBlock}
+            >
+              {isBlocked ? lang('BotRestart') : lang('Bot.Stop')}
+            </MenuItem>
+          )}
+          {isPrivate && !isChatWithSelf && !isBot && (
+            <MenuItem
+              icon={isBlocked ? 'user' : 'hand-stop'}
+              onClick={isBlocked ? handleUnblock : handleBlock}
+            >
+              {isBlocked ? lang('Unblock') : lang('BlockUser')}
             </MenuItem>
           )}
           {canLeave && (
@@ -511,9 +699,7 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
                 icon="delete"
                 onClick={handleDelete}
               >
-                {lang(isPrivate
-                  ? 'DeleteChatUser'
-                  : (canDeleteChat ? 'GroupInfo.DeleteAndExit' : (isChannel ? 'LeaveChannel' : 'Group.LeaveGroup')))}
+                {deleteTitle}
               </MenuItem>
             </>
           )}
@@ -522,14 +708,15 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
           <DeleteChatModal
             isOpen={isDeleteModalOpen}
             onClose={closeDeleteModal}
-            chat={chat}
+            chat={savedDialog || chat}
+            isSavedDialog={Boolean(savedDialog)}
           />
         )}
-        {canReportChat && chat?.id && (
-          <ReportModal
-            isOpen={isReportModalOpen}
-            onClose={closeReportModal}
-            subject="peer"
+        {canMute && shouldRenderMuteModal && chat?.id && (
+          <MuteChatModal
+            isOpen={isMuteModalOpen}
+            onClose={closeMuteModal}
+            onCloseAnimationEnd={unmarkRenderMuteModal}
             chatId={chat.id}
           />
         )}
@@ -548,23 +735,27 @@ export default memo(withGlobal<OwnProps>(
     const user = isPrivate ? selectUser(global, chatId) : undefined;
     const canAddContact = user && getCanAddContact(user);
     const isMainThread = threadId === MAIN_THREAD_ID;
-    const canReportChat = isMainThread && (isChatChannel(chat) || isChatGroup(chat) || (user && !user.isSelf));
+    const isChatWithSelf = selectIsChatWithSelf(global, chatId);
     const { chatId: currentChatId, threadId: currentThreadId } = selectCurrentMessageList(global) || {};
+    const canReportChat = isMainThread && !user && (isChatChannel(chat) || isChatGroup(chat));
 
-    const chatBot = chatId !== REPLIES_USER_ID ? selectChatBot(global, chatId) : undefined;
+    const chatBot = !isSystemBot(chatId) ? selectBot(global, chatId) : undefined;
     const userFullInfo = isPrivate ? selectUserFullInfo(global, chatId) : undefined;
     const chatFullInfo = !isPrivate ? selectChatFullInfo(global, chatId) : undefined;
-    const canGiftPremium = Boolean(
-      global.lastSyncTime
-      && userFullInfo?.premiumGifts?.length
-      && !selectIsPremiumPurchaseBlocked(global),
-    );
+    const fullInfo = userFullInfo || chatFullInfo;
+    const canGift = selectCanGift(global, chatId);
 
-    const topic = chat?.topics?.[threadId];
+    const topic = selectTopic(global, chatId, threadId);
     const canCreateTopic = chat.isForum && (
       chat.isCreator || !isUserRightBanned(chat, 'manageTopics') || getHasAdminRight(chat, 'manageTopics')
     );
     const canEditTopic = topic && getCanManageTopic(chat, topic);
+    const canManage = selectCanManage(global, chatId);
+    // Context menu item should only be displayed if user hid translation panel
+    const canTranslate = selectCanTranslateChat(global, chatId) && fullInfo?.isTranslationDisabled;
+
+    const isSavedDialog = getIsSavedDialog(chatId, threadId, global.currentUserId);
+    const savedDialog = isSavedDialog ? selectChat(global, String(threadId)) : undefined;
 
     return {
       chat,
@@ -572,16 +763,25 @@ export default memo(withGlobal<OwnProps>(
       isPrivate,
       isTopic: chat?.isForum && !isMainThread,
       isForum: chat?.isForum,
+      isForumAsMessages: chat?.isForumAsMessages,
       canAddContact,
-      canReportChat,
       canDeleteChat: getCanDeleteChat(chat),
-      canGiftPremium,
+      canReportChat,
+      canGift,
       hasLinkedChat: Boolean(chatFullInfo?.linkedChatId),
       botCommands: chatBot ? userFullInfo?.botInfo?.commands : undefined,
+      botPrivacyPolicyUrl: chatBot ? userFullInfo?.botInfo?.privacyPolicyUrl : undefined,
       isChatInfoShown: selectTabState(global).isChatInfoShown
         && currentChatId === chatId && currentThreadId === threadId,
       canCreateTopic,
       canEditTopic,
+      canManage,
+      isRightColumnShown: selectIsRightColumnShown(global),
+      canTranslate,
+      isBlocked: userFullInfo?.isBlocked,
+      isBot: Boolean(chatBot),
+      isChatWithSelf,
+      savedDialog,
     };
   },
 )(HeaderMenuContainer));

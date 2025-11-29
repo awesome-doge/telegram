@@ -1,145 +1,137 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
+  beginHeavyAnimation, memo, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { addExtraClass, removeExtraClass } from '../../lib/teact/teact-dom';
-import { requestForcedReflow, forceMeasure, requestMeasure } from '../../lib/fasterdom/fasterdom';
-
-import type { FC } from '../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
-import type {
-  ApiBotInfo, ApiMessage, ApiRestrictionReason, ApiTopic,
-} from '../../api/types';
 
+import type {
+  ApiChatFullInfo, ApiMessage, ApiRestrictionReason, ApiTopic,
+} from '../../api/types';
+import type { OnIntersectPinnedMessage } from './hooks/usePinnedMessage';
 import { MAIN_THREAD_ID } from '../../api/types';
-import type { MessageListType } from '../../global/types';
-import type { Signal } from '../../util/signals';
-import type { PinnedIntersectionChangedCallback } from './hooks/usePinnedMessage';
-import { LoadMoreDirection } from '../../types';
+import { LoadMoreDirection, type MessageListType, type ThreadId } from '../../types';
 
 import {
   ANIMATION_END_DELAY,
+  ANONYMOUS_USER_ID,
   MESSAGE_LIST_SLICE,
   SERVICE_NOTIFICATIONS_USER_ID,
 } from '../../config';
+import { forceMeasure, requestForcedReflow, requestMeasure } from '../../lib/fasterdom/fasterdom';
 import {
-  selectChatMessages,
-  selectIsViewportNewest,
-  selectFirstUnreadId,
-  selectFocusedMessageId,
+  getIsSavedDialog,
+  getMessageHtmlId,
+  isAnonymousForwardsChat,
+  isChatChannel,
+  isChatGroup,
+  isSystemBot,
+  isUserId,
+} from '../../global/helpers';
+import {
+  selectBot,
   selectChat,
-  selectIsInSelectMode,
-  selectIsChatWithSelf,
-  selectChatBot,
-  selectIsChatBotNotStarted,
-  selectScrollOffset,
-  selectThreadTopMessageId,
-  selectFirstMessageId,
+  selectChatFullInfo,
+  selectChatLastMessage,
+  selectChatMessages,
   selectChatScheduledMessages,
   selectCurrentMessageIds,
+  selectFirstUnreadId,
+  selectFocusedMessageId,
+  selectIsChatWithSelf,
   selectIsCurrentUserPremium,
+  selectIsInSelectMode,
+  selectIsViewportNewest,
   selectLastScrollOffset,
-  selectThreadInfo,
-  selectTabState,
-  selectUserFullInfo,
-  selectChatFullInfo,
   selectPerformanceSettingsValue,
+  selectScrollOffset,
+  selectTabState,
+  selectThreadInfo,
+  selectTopic,
+  selectUserFullInfo,
 } from '../../global/selectors';
-import {
-  isChatChannel,
-  isUserId,
-  isChatWithRepliesBot,
-  isChatGroup,
-  getBotCoverMediaHash,
-  getDocumentMediaHash,
-  getVideoDimensions,
-  getPhotoFullDimensions,
-  isLocalMessageId,
-} from '../../global/helpers';
-import { orderBy } from '../../util/iteratees';
-import { DPR } from '../../util/windowEnvironment';
-import { debounce, onTickEnd } from '../../util/schedulers';
+import animateScroll, { isAnimatingScroll, restartCurrentScrollAnimation } from '../../util/animateScroll';
 import buildClassName from '../../util/buildClassName';
+import { orderBy } from '../../util/iteratees';
+import { isLocalMessageId } from '../../util/keys/messageKey';
+import resetScroll from '../../util/resetScroll';
+import { debounce, onTickEnd } from '../../util/schedulers';
+import getOffsetToContainer from '../../util/visibility/getOffsetToContainer';
 import { groupMessages } from './helpers/groupMessages';
 import { preventMessageInputBlur } from './helpers/preventMessageInputBlur';
-import resetScroll from '../../util/resetScroll';
-import animateScroll, { isAnimatingScroll, restartCurrentScrollAnimation } from '../../util/animateScroll';
-import renderText from '../common/helpers/renderText';
 
+import useInterval from '../../hooks/schedulers/useInterval';
+import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
+import useLastCallback from '../../hooks/useLastCallback';
+import useLayoutEffectWithPrevDeps from '../../hooks/useLayoutEffectWithPrevDeps';
+import useNativeCopySelectedMessages from '../../hooks/useNativeCopySelectedMessages';
 import { useStateRef } from '../../hooks/useStateRef';
 import useSyncEffect from '../../hooks/useSyncEffect';
-import useStickyDates from './hooks/useStickyDates';
-import { dispatchHeavyAnimationEvent } from '../../hooks/useHeavyAnimationCheck';
-import useLang from '../../hooks/useLang';
-import useInterval from '../../hooks/useInterval';
-import useNativeCopySelectedMessages from '../../hooks/useNativeCopySelectedMessages';
-import useMedia from '../../hooks/useMedia';
-import useLayoutEffectWithPrevDeps from '../../hooks/useLayoutEffectWithPrevDeps';
-import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
+import { isBackgroundModeActive } from '../../hooks/window/useBackgroundMode';
 import useContainerHeight from './hooks/useContainerHeight';
+import useStickyDates from './hooks/useStickyDates';
 
 import Loading from '../ui/Loading';
-import MessageListContent from './MessageListContent';
 import ContactGreeting from './ContactGreeting';
+import MessageListBotInfo from './MessageListBotInfo';
+import MessageListContent from './MessageListContent';
 import NoMessages from './NoMessages';
-import Skeleton from '../ui/Skeleton';
-import OptimizedVideo from '../ui/OptimizedVideo';
+import PremiumRequiredMessage from './PremiumRequiredMessage';
 
 import './MessageList.scss';
 
 type OwnProps = {
   chatId: string;
-  threadId: number;
+  threadId: ThreadId;
   type: MessageListType;
+  isComments?: boolean;
   canPost: boolean;
   isReady: boolean;
-  onFabToggle: (shouldShow: boolean) => void;
-  onNotchToggle: (shouldShow: boolean) => void;
-  hasTools?: boolean;
+  onScrollDownToggle: BooleanToVoidFunction;
+  onNotchToggle: BooleanToVoidFunction;
   withBottomShift?: boolean;
   withDefaultBg: boolean;
-  onPinnedIntersectionChange: PinnedIntersectionChangedCallback;
-  getForceNextPinnedInHeader: Signal<boolean | undefined>;
+  onIntersectPinnedMessage: OnIntersectPinnedMessage;
+  isContactRequirePremium?: boolean;
 };
 
 type StateProps = {
-  isCurrentUserPremium?: boolean;
   isChatLoaded?: boolean;
   isChannelChat?: boolean;
   isGroupChat?: boolean;
   isChatWithSelf?: boolean;
-  isRepliesChat?: boolean;
+  isSystemBotChat?: boolean;
+  isAnonymousForwards?: boolean;
   isCreator?: boolean;
+  isChannelWithAvatars?: boolean;
   isBot?: boolean;
+  isSynced?: boolean;
   messageIds?: number[];
   messagesById?: Record<number, ApiMessage>;
   firstUnreadId?: number;
-  isComments?: boolean;
   isViewportNewest?: boolean;
   isRestricted?: boolean;
   restrictionReason?: ApiRestrictionReason;
   focusingId?: number;
   isSelectModeActive?: boolean;
   lastMessage?: ApiMessage;
-  isLoadingBotInfo?: boolean;
-  botInfo?: ApiBotInfo;
-  threadTopMessageId?: number;
-  threadFirstMessageId?: number;
   hasLinkedChat?: boolean;
-  lastSyncTime?: number;
   topic?: ApiTopic;
   noMessageSendingAnimation?: boolean;
   isServiceNotificationsChat?: boolean;
+  isEmptyThread?: boolean;
+  isForum?: boolean;
+  currentUserId: string;
+  areAdsEnabled?: boolean;
+  channelJoinInfo?: ApiChatFullInfo['joinInfo'];
 };
 
-const MESSAGE_REACTIONS_POLLING_INTERVAL = 15 * 1000;
-const MESSAGE_COMMENTS_POLLING_INTERVAL = 15 * 1000;
+const MESSAGE_REACTIONS_POLLING_INTERVAL = 20 * 1000;
+const MESSAGE_COMMENTS_POLLING_INTERVAL = 20 * 1000;
+const MESSAGE_FACT_CHECK_UPDATE_INTERVAL = 5 * 1000;
+const MESSAGE_STORY_POLLING_INTERVAL = 5 * 60 * 1000;
 const BOTTOM_THRESHOLD = 50;
 const UNREAD_DIVIDER_TOP = 10;
-const UNREAD_DIVIDER_TOP_WITH_TOOLS = 60;
 const SCROLL_DEBOUNCE = 200;
 const MESSAGE_ANIMATION_DURATION = 500;
 const BOTTOM_FOCUS_MARGIN = 20;
@@ -152,17 +144,17 @@ const MessageList: FC<OwnProps & StateProps> = ({
   chatId,
   threadId,
   type,
-  hasTools,
-  onFabToggle,
-  onNotchToggle,
-  isCurrentUserPremium,
   isChatLoaded,
+  isForum,
   isChannelChat,
   isGroupChat,
+  isChannelWithAvatars,
   canPost,
+  isSynced,
   isReady,
   isChatWithSelf,
-  isRepliesChat,
+  isSystemBotChat,
+  isAnonymousForwards,
   isCreator,
   isBot,
   messageIds,
@@ -170,28 +162,29 @@ const MessageList: FC<OwnProps & StateProps> = ({
   firstUnreadId,
   isComments,
   isViewportNewest,
-  threadFirstMessageId,
   isRestricted,
   restrictionReason,
+  isEmptyThread,
   focusingId,
   isSelectModeActive,
   lastMessage,
-  isLoadingBotInfo,
-  botInfo,
-  threadTopMessageId,
   hasLinkedChat,
-  lastSyncTime,
   withBottomShift,
   withDefaultBg,
   topic,
   noMessageSendingAnimation,
   isServiceNotificationsChat,
-  onPinnedIntersectionChange,
-  getForceNextPinnedInHeader,
+  currentUserId,
+  isContactRequirePremium,
+  areAdsEnabled,
+  channelJoinInfo,
+  onIntersectPinnedMessage,
+  onScrollDownToggle,
+  onNotchToggle,
 }) => {
   const {
     loadViewportMessages, setScrollOffset, loadSponsoredMessages, loadMessageReactions, copyMessagesByIds,
-    loadMessageViews,
+    loadMessageViews, loadPeerStoriesByIds, loadFactChecks,
   } = getActions();
 
   // eslint-disable-next-line no-null/no-null
@@ -214,14 +207,8 @@ const MessageList: FC<OwnProps & StateProps> = ({
   const isScrollTopJustUpdatedRef = useRef(false);
   const shouldAnimateAppearanceRef = useRef(Boolean(lastMessage));
 
-  const botInfoPhotoUrl = useMedia(botInfo?.photo ? getBotCoverMediaHash(botInfo.photo) : undefined);
-  const botInfoGifUrl = useMedia(botInfo?.gif ? getDocumentMediaHash(botInfo.gif) : undefined);
-  const botInfoDimensions = botInfo?.photo ? getPhotoFullDimensions(botInfo.photo) : botInfo?.gif
-    ? getVideoDimensions(botInfo.gif) : undefined;
-  const botInfoRealDimensions = botInfoDimensions && {
-    width: botInfoDimensions.width / DPR,
-    height: botInfoDimensions.height / DPR,
-  };
+  const isSavedDialog = getIsSavedDialog(chatId, threadId, currentUserId);
+  const hasOpenChatButton = isSavedDialog && threadId !== ANONYMOUS_USER_ID;
 
   const areMessagesLoaded = Boolean(messageIds);
 
@@ -240,10 +227,11 @@ const MessageList: FC<OwnProps & StateProps> = ({
   }, [firstUnreadId]);
 
   useEffect(() => {
-    if (!isCurrentUserPremium && isChannelChat && isReady && lastSyncTime) {
-      loadSponsoredMessages({ chatId });
+    const canHaveAds = isChannelChat || isBot;
+    if (areAdsEnabled && canHaveAds && isSynced && isReady) {
+      loadSponsoredMessages({ peerId: chatId });
     }
-  }, [isCurrentUserPremium, chatId, isReady, isChannelChat, lastSyncTime, loadSponsoredMessages]);
+  }, [chatId, isSynced, isReady, isChannelChat, isBot, areAdsEnabled]);
 
   // Updated only once when messages are loaded (as we want the unread divider to keep its position)
   useSyncEffect(() => {
@@ -259,23 +247,63 @@ const MessageList: FC<OwnProps & StateProps> = ({
   useNativeCopySelectedMessages(copyMessagesByIds);
 
   const messageGroups = useMemo(() => {
-    if (!messageIds || !messagesById) {
+    if (!messageIds?.length || !messagesById) {
       return undefined;
     }
 
-    const viewportIds = (
-      threadTopMessageId
-      && threadFirstMessageId !== threadTopMessageId
-      && (!messageIds[0] || threadFirstMessageId === messageIds[0])
-    )
-      ? [threadTopMessageId, ...messageIds]
-      : messageIds;
+    const listedMessages: ApiMessage[] = [];
+    messageIds.forEach((id, index, arr) => {
+      const prevMessage = listedMessages[listedMessages.length - 1];
 
-    if (!viewportIds.length) {
-      return undefined;
-    }
+      const message = messagesById[id];
+      if (!message) {
+        return;
+      }
 
-    const listedMessages = viewportIds.map((id) => messagesById[id]).filter(Boolean);
+      const { shouldAppendJoinMessage, shouldAppendJoinMessageAfterCurrent } = (() => {
+        if (!channelJoinInfo || type !== 'thread') return undefined;
+        if (prevMessage
+          && prevMessage.date < channelJoinInfo.joinedDate && channelJoinInfo.joinedDate <= message.date) {
+          return { shouldAppendJoinMessage: true, shouldAppendJoinMessageAfterCurrent: false };
+        }
+
+        if (index === arr.length - 1 && message.date < channelJoinInfo.joinedDate) {
+          return {
+            shouldAppendJoinMessage: true,
+            shouldAppendJoinMessageAfterCurrent: true,
+          };
+        }
+
+        return undefined;
+      })() || {};
+
+      if (shouldAppendJoinMessageAfterCurrent) {
+        listedMessages.push(message);
+      }
+
+      if (shouldAppendJoinMessage) {
+        const lastMessageId = shouldAppendJoinMessageAfterCurrent ? message.id : (prevMessage?.id || (message.id - 1));
+        listedMessages.push({
+          id: generateChannelJoinMessageId(lastMessageId),
+          chatId: message.chatId,
+          date: channelJoinInfo!.joinedDate,
+          isOutgoing: false,
+          content: {
+            action: {
+              type: 'joinedChannel',
+              mediaType: 'action',
+              text: '',
+              translationValues: [],
+              targetChatId: message.chatId,
+            },
+          },
+        } satisfies ApiMessage);
+      }
+
+      if (!shouldAppendJoinMessageAfterCurrent) {
+        listedMessages.push(message);
+      }
+    });
 
     // Service notifications have local IDs which may be not in sync with real message history
     const orderRule: (keyof ApiMessage)[] = type === 'scheduled' || isServiceNotificationsChat
@@ -283,15 +311,23 @@ const MessageList: FC<OwnProps & StateProps> = ({
       : ['id'];
 
     return listedMessages.length
-      ? groupMessages(orderBy(listedMessages, orderRule), memoUnreadDividerBeforeIdRef.current)
+      ? groupMessages(
+        orderBy(listedMessages, orderRule),
+        memoUnreadDividerBeforeIdRef.current,
+        !isForum ? Number(threadId) : undefined,
+        isChatWithSelf,
+      )
       : undefined;
-  }, [messageIds, messagesById, threadFirstMessageId, threadTopMessageId, type, isServiceNotificationsChat]);
+  }, [messageIds, messagesById, type, isServiceNotificationsChat, isForum, threadId, isChatWithSelf, channelJoinInfo]);
 
   useInterval(() => {
-    if (!messageIds || !messagesById) {
-      return;
-    }
-    const ids = messageIds.filter((id) => messagesById[id]?.reactions);
+    if (!messageIds || !messagesById || type === 'scheduled') return;
+    if (!isChannelChat && !isGroupChat) return;
+
+    const ids = messageIds.filter((id) => {
+      const message = messagesById[id];
+      return message && message.reactions?.results.length && !message.content.action;
+    });
 
     if (!ids.length) return;
 
@@ -299,16 +335,50 @@ const MessageList: FC<OwnProps & StateProps> = ({
   }, MESSAGE_REACTIONS_POLLING_INTERVAL);
 
   useInterval(() => {
-    if (!messageIds || !messagesById || threadId !== MAIN_THREAD_ID) {
+    if (!messageIds || !messagesById || type === 'scheduled') {
       return;
     }
-    const ids = messageIds.filter((id) => messagesById[id]?.repliesThreadInfo?.isComments
-      || messagesById[id]?.views !== undefined);
+    const storyDataList = messageIds.map((id) => messagesById[id]?.content.storyData).filter(Boolean);
+
+    if (!storyDataList.length) return;
+
+    const storiesByPeerIds = storyDataList.reduce((acc, storyData) => {
+      const { peerId, id } = storyData!;
+      if (!acc[peerId]) {
+        acc[peerId] = [];
+      }
+      acc[peerId].push(id);
+      return acc;
+    }, {} as Record<string, number[]>);
+
+    Object.entries(storiesByPeerIds).forEach(([peerId, storyIds]) => {
+      loadPeerStoriesByIds({ peerId, storyIds });
+    });
+  }, MESSAGE_STORY_POLLING_INTERVAL);
+
+  useInterval(() => {
+    if (!messageIds || !messagesById || threadId !== MAIN_THREAD_ID || type === 'scheduled') {
+      return;
+    }
+    const global = getGlobal();
+    const ids = messageIds.filter((id) => selectThreadInfo(global, chatId, id)?.isCommentsInfo
+      || messagesById[id]?.viewsCount !== undefined);
 
     if (!ids.length) return;
 
     loadMessageViews({ chatId, ids });
-  }, MESSAGE_COMMENTS_POLLING_INTERVAL);
+  }, MESSAGE_COMMENTS_POLLING_INTERVAL, true);
+
+  useInterval(() => {
+    if (!messageIds || !messagesById || threadId !== MAIN_THREAD_ID || type === 'scheduled') {
+      return;
+    }
+    const ids = messageIds.filter((id) => messagesById[id]?.factCheck?.shouldFetch);
+
+    if (!ids.length) return;
+
+    loadFactChecks({ chatId, ids });
+  }, MESSAGE_FACT_CHECK_UPDATE_INTERVAL);
 
   const loadMoreAround = useMemo(() => {
     if (type !== 'thread') {
@@ -321,7 +391,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
 
   const { isScrolled, updateStickyDates } = useStickyDates();
 
-  const handleScroll = useCallback(() => {
+  const handleScroll = useLastCallback(() => {
     if (isScrollTopJustUpdatedRef.current) {
       isScrollTopJustUpdatedRef.current = false;
       return;
@@ -333,14 +403,15 @@ const MessageList: FC<OwnProps & StateProps> = ({
     }
 
     if (!memoFocusingIdRef.current) {
-      updateStickyDates(container, hasTools);
+      updateStickyDates(container);
     }
 
     runDebouncedForScroll(() => {
       const global = getGlobal();
-      const forceNextPinnedInHeader = getForceNextPinnedInHeader() && !selectTabState(global).focusedMessage?.chatId;
-      if (forceNextPinnedInHeader) {
-        onPinnedIntersectionChange({ hasScrolled: true });
+
+      const isFocusing = Boolean(selectTabState(global).focusedMessage?.chatId);
+      if (!isFocusing) {
+        onIntersectPinnedMessage({ shouldCancelWaiting: true });
       }
 
       if (!container.parentElement) {
@@ -353,9 +424,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
         setScrollOffset({ chatId, threadId, scrollOffset: scrollOffsetRef.current });
       }
     });
-  }, [
-    updateStickyDates, hasTools, getForceNextPinnedInHeader, onPinnedIntersectionChange, type, chatId, threadId,
-  ]);
+  });
 
   const [getContainerHeight, prevContainerHeightRef] = useContainerHeight(containerRef, canPost && !isSelectModeActive);
 
@@ -373,7 +442,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
 
     const container = containerRef.current!;
 
-    if (!messageIds || (
+    if (!messageIds || messageIds.length === 1 || (
       messageIds.length < MESSAGE_LIST_SLICE / 2
       && (container.firstElementChild as HTMLDivElement).clientHeight <= container.offsetHeight
     )) {
@@ -403,7 +472,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
   useSyncEffect(
     () => forceMeasure(() => rememberScrollPositionRef.current()),
     // This will run before modifying content and should match deps for `useLayoutEffectWithPrevDeps` below
-    [messageIds, isViewportNewest, hasTools, rememberScrollPositionRef],
+    [messageIds, isViewportNewest, rememberScrollPositionRef],
   );
   useEffect(
     () => rememberScrollPositionRef.current(),
@@ -435,6 +504,9 @@ const MessageList: FC<OwnProps & StateProps> = ({
     const container = containerRef.current!;
     listItemElementsRef.current = Array.from(container.querySelectorAll<HTMLDivElement>('.message-list-item'));
     const lastItemElement = listItemElementsRef.current[listItemElementsRef.current.length - 1];
+    const firstUnreadElement = memoFirstUnreadIdRef.current
+      ? container.querySelector<HTMLDivElement>(`#${getMessageHtmlId(memoFirstUnreadIdRef.current)}`)
+      : undefined;
 
     const hasLastMessageChanged = (
       messageIds && prevMessageIds && messageIds[messageIds.length - 1] !== prevMessageIds[prevMessageIds.length - 1]
@@ -479,19 +551,18 @@ const MessageList: FC<OwnProps & StateProps> = ({
       const isAtBottom = isViewportNewest && prevIsViewportNewest && bottomOffset <= BOTTOM_THRESHOLD;
       const isAlreadyFocusing = messageIds && memoFocusingIdRef.current === messageIds[messageIds.length - 1];
 
-      // Animate incoming message
+      // Animate incoming message, but if app is in background mode, scroll to the first unread
       if (wasMessageAdded && isAtBottom && !isAlreadyFocusing) {
         // Break out of `forceLayout`
         requestMeasure(() => {
-          animateScroll(
+          const shouldScrollToBottom = !isBackgroundModeActive() || !firstUnreadElement;
+          animateScroll({
             container,
-            lastItemElement!,
-            'end',
-            BOTTOM_FOCUS_MARGIN,
-            undefined,
-            undefined,
-            noMessageSendingAnimation ? 0 : undefined,
-          );
+            element: shouldScrollToBottom ? lastItemElement! : firstUnreadElement!,
+            position: shouldScrollToBottom ? 'end' : 'start',
+            margin: BOTTOM_FOCUS_MARGIN,
+            forceDuration: noMessageSendingAnimation ? 0 : undefined,
+          });
         });
       }
 
@@ -515,7 +586,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
         newScrollTop = scrollTop + (newAnchorTop - (anchorTopRef.current || 0));
       } else if (unreadDivider) {
         newScrollTop = Math.min(
-          unreadDivider.offsetTop - (hasTools ? UNREAD_DIVIDER_TOP_WITH_TOOLS : UNREAD_DIVIDER_TOP),
+          getOffsetToContainer(unreadDivider, container).top - UNREAD_DIVIDER_TOP,
           scrollHeight - scrollOffset,
         );
       } else {
@@ -543,20 +614,20 @@ const MessageList: FC<OwnProps & StateProps> = ({
       };
     });
     // This should match deps for `useSyncEffect` above
-  }, [messageIds, isViewportNewest, hasTools, getContainerHeight, prevContainerHeightRef, noMessageSendingAnimation]);
+  }, [messageIds, isViewportNewest, getContainerHeight, prevContainerHeightRef, noMessageSendingAnimation]);
 
   useEffectWithPrevDeps(([prevIsSelectModeActive]) => {
     if (prevIsSelectModeActive !== undefined) {
-      dispatchHeavyAnimationEvent(SELECT_MODE_ANIMATION_DURATION + ANIMATION_END_DELAY);
+      beginHeavyAnimation(SELECT_MODE_ANIMATION_DURATION + ANIMATION_END_DELAY);
     }
   }, [isSelectModeActive]);
 
-  const lang = useLang();
-
-  const isPrivate = Boolean(chatId && isUserId(chatId));
-  const withUsers = Boolean((!isPrivate && !isChannelChat) || isChatWithSelf || isRepliesChat);
-  const noAvatars = Boolean(!withUsers || isChannelChat);
-  const shouldRenderGreeting = isUserId(chatId) && !isChatWithSelf && !isBot
+  const isPrivate = isUserId(chatId);
+  const withUsers = Boolean((!isPrivate && !isChannelChat)
+    || isChatWithSelf || isSystemBotChat || isAnonymousForwards || isChannelWithAvatars);
+  const noAvatars = Boolean(!withUsers || (isChannelChat && !isChannelWithAvatars));
+  const shouldRenderGreeting = isUserId(chatId) && !isChatWithSelf && !isBot && !isAnonymousForwards
+    && type === 'thread'
     && (
       (
         !messageGroups && !lastMessage && messageIds
@@ -572,8 +643,6 @@ const MessageList: FC<OwnProps & StateProps> = ({
   const isEmptyTopic = messageIds?.length === 1
     && messagesById?.[messageIds[0]]?.content.action?.type === 'topicCreate';
 
-  const isBotInfoEmpty = botInfo && !botInfo.description && !botInfo.gif && !botInfo.photo;
-
   const className = buildClassName(
     'MessageList custom-scroll',
     noAvatars && 'no-avatars',
@@ -584,7 +653,16 @@ const MessageList: FC<OwnProps & StateProps> = ({
     isSelectModeActive && 'select-mode-active',
     isScrolled && 'scrolled',
     !isReady && 'is-animating',
+    hasOpenChatButton && 'saved-dialog',
   );
+
+  const hasMessages = (messageIds && messageGroups) || lastMessage;
+
+  useEffect(() => {
+    if (hasMessages) return;
+
+    onScrollDownToggle(false);
+  }, [hasMessages, onScrollDownToggle]);
 
   return (
     <div
@@ -599,52 +677,12 @@ const MessageList: FC<OwnProps & StateProps> = ({
             {restrictionReason ? restrictionReason.text : `This is a private ${isChannelChat ? 'channel' : 'chat'}`}
           </span>
         </div>
-      ) : botInfo ? (
-        <div className="empty">
-          {isLoadingBotInfo && <span>{lang('Loading')}</span>}
-          {isBotInfoEmpty && !isLoadingBotInfo && <span>{lang('NoMessages')}</span>}
-          {botInfo && (
-            <div
-              className="bot-info"
-              style={botInfoRealDimensions && (
-                `width: ${botInfoRealDimensions.width}px`
-              )}
-            >
-              {botInfoPhotoUrl && (
-                <img
-                  src={botInfoPhotoUrl}
-                  width={botInfoRealDimensions?.width}
-                  height={botInfoRealDimensions?.height}
-                  alt="Bot info"
-                />
-              )}
-              {botInfoGifUrl && (
-                <OptimizedVideo
-                  canPlay
-                  src={botInfoGifUrl}
-                  loop
-                  disablePictureInPicture
-                  muted
-                  playsInline
-                />
-              )}
-              {botInfoDimensions && !botInfoPhotoUrl && !botInfoGifUrl && (
-                <Skeleton
-                  width={botInfoRealDimensions?.width}
-                  height={botInfoRealDimensions?.height}
-                />
-              )}
-              {botInfo.description && (
-                <div className="bot-info-description">
-                  <p className="bot-info-title">{lang('BotInfoTitle')}</p>
-                  {renderText(botInfo.description, ['br', 'emoji', 'links'])}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+      ) : isContactRequirePremium && !hasMessages ? (
+        <PremiumRequiredMessage userId={chatId} />
+      ) : isBot && !hasMessages ? (
+        <MessageListBotInfo chatId={chatId} />
       ) : shouldRenderGreeting ? (
-        <ContactGreeting userId={chatId} />
+        <ContactGreeting key={chatId} userId={chatId} />
       ) : messageIds && (!messageGroups || isGroupChatJustCreated || isEmptyTopic) ? (
         <NoMessages
           chatId={chatId}
@@ -653,17 +691,19 @@ const MessageList: FC<OwnProps & StateProps> = ({
           isChatWithSelf={isChatWithSelf}
           isGroupChatJustCreated={isGroupChatJustCreated}
         />
-      ) : ((messageIds && messageGroups) || lastMessage) ? (
+      ) : hasMessages ? (
         <MessageListContent
-          isCurrentUserPremium={isCurrentUserPremium}
+          canShowAds={areAdsEnabled && isChannelChat}
           chatId={chatId}
           isComments={isComments}
           isChannelChat={isChannelChat}
+          isSavedDialog={isSavedDialog}
           messageIds={messageIds || [lastMessage!.id]}
           messageGroups={messageGroups || groupMessages([lastMessage!])}
           getContainerHeight={getContainerHeight}
           isViewportNewest={Boolean(isViewportNewest)}
           isUnread={Boolean(firstUnreadId)}
+          isEmptyThread={isEmptyThread}
           withUsers={withUsers}
           noAvatars={noAvatars}
           containerRef={containerRef}
@@ -673,13 +713,13 @@ const MessageList: FC<OwnProps & StateProps> = ({
           threadId={threadId}
           type={type}
           isReady={isReady}
-          threadTopMessageId={threadTopMessageId}
           hasLinkedChat={hasLinkedChat}
           isSchedule={messageGroups ? type === 'scheduled' : false}
+          shouldRenderBotInfo={isBot}
           noAppearanceAnimation={!messageGroups || !shouldAnimateAppearanceRef.current}
-          onFabToggle={onFabToggle}
+          onScrollDownToggle={onScrollDownToggle}
           onNotchToggle={onNotchToggle}
-          onPinnedIntersectionChange={onPinnedIntersectionChange}
+          onIntersectPinnedMessage={onIntersectPinnedMessage}
         />
       ) : (
         <Loading color="white" backgroundColor="dark" />
@@ -690,26 +730,28 @@ const MessageList: FC<OwnProps & StateProps> = ({
 
 export default memo(withGlobal<OwnProps>(
   (global, { chatId, threadId, type }): StateProps => {
+    const currentUserId = global.currentUserId!;
     const chat = selectChat(global, chatId);
     if (!chat) {
-      return {};
+      return { currentUserId };
     }
 
     const messageIds = selectCurrentMessageIds(global, chatId, threadId, type);
     const messagesById = type === 'scheduled'
       ? selectChatScheduledMessages(global, chatId)
       : selectChatMessages(global, chatId);
-    const threadTopMessageId = selectThreadTopMessageId(global, chatId, threadId);
-    const threadInfo = selectThreadInfo(global, chatId, threadId);
+
+    const isSavedDialog = getIsSavedDialog(chatId, threadId, currentUserId);
 
     if (
-      threadId !== MAIN_THREAD_ID && !chat?.isForum
-      && !(messagesById && threadTopMessageId && messagesById[threadTopMessageId])
+      threadId !== MAIN_THREAD_ID && !isSavedDialog && !chat?.isForum
+      && !(messagesById && threadId && messagesById[Number(threadId)])
     ) {
-      return {};
+      return { currentUserId };
     }
 
-    const { isRestricted, restrictionReason, lastMessage } = chat;
+    const { isRestricted, restrictionReason } = chat;
+    const lastMessage = selectChatLastMessage(global, chatId, isSavedDialog ? 'saved' : 'all');
     const focusingId = selectFocusedMessageId(global, chatId);
 
     const withLastMessageWhenPreloading = (
@@ -717,49 +759,48 @@ export default memo(withGlobal<OwnProps>(
       && !messageIds && !chat.unreadCount && !focusingId && lastMessage && !lastMessage.groupedId
     );
 
-    const chatBot = selectChatBot(global, chatId)!;
-    let isLoadingBotInfo = false;
-    let botInfo;
-    if (selectIsChatBotNotStarted(global, chatId)) {
-      const chatBotFullInfo = selectUserFullInfo(global, chatBot.id);
-      if (chatBotFullInfo) {
-        botInfo = chatBotFullInfo.botInfo;
-      } else {
-        isLoadingBotInfo = true;
-      }
-    }
+    const chatBot = selectBot(global, chatId);
 
-    const topic = chat.topics?.[threadId];
+    const topic = selectTopic(global, chatId, threadId);
     const chatFullInfo = !isUserId(chatId) ? selectChatFullInfo(global, chatId) : undefined;
+    const isEmptyThread = !selectThreadInfo(global, chatId, threadId)?.messagesCount;
+
+    const isCurrentUserPremium = selectIsCurrentUserPremium(global);
+    const areAdsEnabled = !isCurrentUserPremium || selectUserFullInfo(global, currentUserId)?.areAdsEnabled;
 
     return {
-      isCurrentUserPremium: selectIsCurrentUserPremium(global),
+      areAdsEnabled,
       isChatLoaded: true,
       isRestricted,
       restrictionReason,
       isChannelChat: isChatChannel(chat),
       isGroupChat: isChatGroup(chat),
+      isChannelWithAvatars: chat.areProfilesShown,
       isCreator: chat.isCreator,
       isChatWithSelf: selectIsChatWithSelf(global, chatId),
-      isRepliesChat: isChatWithRepliesBot(chatId),
+      isSystemBotChat: isSystemBot(chatId),
+      isAnonymousForwards: isAnonymousForwardsChat(chatId),
       isBot: Boolean(chatBot),
+      isSynced: global.isSynced,
       messageIds,
       messagesById,
-      isComments: Boolean(threadInfo?.originChannelId),
       firstUnreadId: selectFirstUnreadId(global, chatId, threadId),
       isViewportNewest: type !== 'thread' || selectIsViewportNewest(global, chatId, threadId),
-      threadFirstMessageId: selectFirstMessageId(global, chatId, threadId),
       focusingId,
       isSelectModeActive: selectIsInSelectMode(global),
-      isLoadingBotInfo,
-      botInfo,
-      threadTopMessageId,
       hasLinkedChat: chatFullInfo ? Boolean(chatFullInfo.linkedChatId) : undefined,
-      lastSyncTime: global.lastSyncTime,
+      channelJoinInfo: chatFullInfo?.joinInfo,
       topic,
       noMessageSendingAnimation: !selectPerformanceSettingsValue(global, 'messageSendingAnimations'),
       isServiceNotificationsChat: chatId === SERVICE_NOTIFICATIONS_USER_ID,
+      isForum: chat.isForum,
+      isEmptyThread,
+      currentUserId,
       ...(withLastMessageWhenPreloading && { lastMessage }),
     };
   },
 )(MessageList));
+
+function generateChannelJoinMessageId(lastMessageId: number) {
+  return lastMessageId + 10e-7; // Smaller than smallest possible id with `getNextLocalMessageId`
+}

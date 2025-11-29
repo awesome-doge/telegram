@@ -1,14 +1,14 @@
 /* eslint-disable eslint-multitab-tt/set-global-only-variable */
+import { onFullyIdle } from '../lib/teact/teact';
+import { addCallback } from '../lib/teact/teactn';
 import { getActions, getGlobal, setGlobal } from '../global';
 
-import type { MethodArgs, Methods } from '../api/gramjs/methods/types';
 import type { LocalDb } from '../api/gramjs/localDb';
+import type { MethodArgs, Methods } from '../api/gramjs/methods/types';
 import type { ApiInitialArgs } from '../api/types';
 import type { GlobalState } from '../global/types';
 
-import { IS_MULTITAB_SUPPORTED } from './windowEnvironment';
-import { APP_VERSION, DATA_BROADCAST_CHANNEL_NAME, MULTITAB_LOCALSTORAGE_KEY } from '../config';
-import { deepMerge } from './deepMerge';
+import { DATA_BROADCAST_CHANNEL_NAME, MULTITAB_LOCALSTORAGE_KEY } from '../config';
 import { selectTabState } from '../global/selectors';
 import {
   callApiLocal,
@@ -19,10 +19,16 @@ import {
   updateFullLocalDb,
   updateLocalDb,
 } from '../api/gramjs';
-import { addCallback } from '../lib/teact/teactn';
 import { deepDiff } from './deepDiff';
+import { deepMerge } from './deepMerge';
 import { getCurrentTabId, signalPasscodeHash, subscribeToTokenDied } from './establishMultitabRole';
 import { omit } from './iteratees';
+import { IS_MULTITAB_SUPPORTED } from './windowEnvironment';
+
+type BroadcastChannelRefreshLangpack = {
+  type: 'langpackRefresh';
+  langCode: string;
+};
 
 type BroadcastChannelRequestGlobal = {
   type: 'requestGlobal';
@@ -99,19 +105,44 @@ export type TypedBroadcastChannel = {
 
 type BroadcastChannelMessage = (
   BroadcastChannelRequestGlobal | BroadcastChannelGlobalUpdate | BroadcastChannelCallApi |
-  BroadcastChannelMessageResponse |
+  BroadcastChannelMessageResponse | BroadcastChannelRefreshLangpack |
   BroadcastChannelMessageCallback | BroadcastChannelCancelApiProgress | BroadcastChannelLocalDbUpdate |
   BroadcastChannelLocalDbUpdateFull | BroadcastChannelGlobalDiff | BroadcastChannelInitApi
 );
 
 let resolveGlobalPromise: VoidFunction | undefined;
 let isFirstGlobalResolved = false;
-let prevGlobal: GlobalState | undefined;
+let currentGlobal: GlobalState | undefined;
 let isDisabled = false;
 
 const channel = IS_MULTITAB_SUPPORTED
   ? new BroadcastChannel(DATA_BROADCAST_CHANNEL_NAME) as TypedBroadcastChannel
   : undefined;
+
+let isBroadcastDiffScheduled = false;
+let lastBroadcastDiffGlobal: GlobalState | undefined;
+
+function broadcastDiffOnIdle() {
+  if (isBroadcastDiffScheduled) return;
+
+  isBroadcastDiffScheduled = true;
+  lastBroadcastDiffGlobal = currentGlobal;
+
+  onFullyIdle(() => {
+    if (!channel) return;
+
+    const diff = deepDiff(lastBroadcastDiffGlobal, currentGlobal);
+
+    if (typeof diff !== 'symbol') {
+      channel.postMessage({
+        type: 'globalDiffUpdate',
+        diff,
+      });
+    }
+
+    isBroadcastDiffScheduled = false;
+  });
+}
 
 export function unsubcribeFromMultitabBroadcastChannel() {
   if (channel) {
@@ -153,29 +184,27 @@ export function subscribeToMultitabBroadcastChannel() {
 
   addCallback((global: GlobalState) => {
     if (!isFirstGlobalResolved || isDisabled) {
-      prevGlobal = global;
+      currentGlobal = global;
       return;
     }
 
-    if (!prevGlobal) {
-      prevGlobal = global;
+    if (currentGlobal === global) {
+      return;
+    }
+
+    if (!currentGlobal) {
+      currentGlobal = global;
       channel.postMessage({
         type: 'globalUpdate',
         global,
       });
       return;
     }
-    const diff = deepDiff(prevGlobal, global);
 
-    if (typeof diff !== 'symbol') {
-      channel.postMessage({
-        type: 'globalDiffUpdate',
-        diff,
-      });
-    }
+    broadcastDiffOnIdle();
 
-    prevGlobal = global;
-  }, true);
+    currentGlobal = global;
+  });
 
   channel.addEventListener('message', handleMessage);
 }
@@ -198,11 +227,12 @@ export function handleMessage({ data }: { data: BroadcastChannelMessage }) {
       const { diff } = data;
       const oldGlobal = getGlobal();
       const global = deepMerge(oldGlobal, diff);
-      // @ts-ignore
-      global.DEBUG_capturedId = oldGlobal.DEBUG_capturedId;
 
-      setGlobal(global, { noUpdate: true });
-      prevGlobal = global;
+      // @ts-ignore
+      global.DEBUG_randomId = oldGlobal.DEBUG_randomId;
+
+      currentGlobal = global;
+      setGlobal(global);
       break;
     }
 
@@ -210,9 +240,9 @@ export function handleMessage({ data }: { data: BroadcastChannelMessage }) {
       if (isFirstGlobalResolved) return;
       const oldGlobal = getGlobal();
       // @ts-ignore
-      data.global.DEBUG_capturedId = oldGlobal.DEBUG_capturedId;
-      setGlobal(data.global, { noUpdate: true });
-      prevGlobal = data.global;
+      data.global.DEBUG_randomId = oldGlobal.DEBUG_randomId;
+      currentGlobal = data.global;
+      setGlobal(data.global);
       if (resolveGlobalPromise) {
         resolveGlobalPromise();
         resolveGlobalPromise = undefined;
@@ -335,6 +365,11 @@ export function handleMessage({ data }: { data: BroadcastChannelMessage }) {
 
       break;
     }
+
+    case 'langpackRefresh': {
+      getActions().refreshLangPackFromCache({ langCode: data.langCode });
+      break;
+    }
   }
 }
 
@@ -363,5 +398,14 @@ export function requestGlobal(appVersion: string): Promise<void> {
 
   return new Promise((resolve) => {
     resolveGlobalPromise = resolve;
+  });
+}
+
+export function notifyLangpackUpdate(langCode: string) {
+  if (!channel) return;
+
+  channel.postMessage({
+    type: 'langpackRefresh',
+    langCode,
   });
 }

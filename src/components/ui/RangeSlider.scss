@@ -1,4 +1,4 @@
-@import "../../styles/mixins";
+@use "../../styles/mixins";
 
 @mixin thumb-styles() {
   background: var(--slider-color);
@@ -30,10 +30,17 @@
     justify-content: space-between;
     margin-bottom: 0.625rem;
 
+    .value-min,
+    .value-max,
     .value {
       flex-shrink: 0;
       margin-left: 1rem;
       color: var(--color-text-secondary);
+    }
+
+    .value-min,
+    .value-max {
+      margin-left: 0;
     }
 
     &[dir="rtl"] {
@@ -86,11 +93,12 @@
   }
 
   // Reset range input browser styles
-  @include reset-range();
+  @include mixins.reset-range();
 
   // Apply custom styles
   input[type="range"] {
-    // Note that while we're repeating code here, that's necessary as you can't comma-separate these type of selectors.
+    // Note that while we're repeating code here, that's
+    // necessary as you can't comma-separate these type of selectors.
     // Browsers will drop the entire selector if it doesn't understand a part of it.
     &::-webkit-slider-thumb {
       @include thumb-styles();
@@ -125,7 +133,7 @@
     }
 
     &.active {
-      font-weight: 500;
+      font-weight: var(--font-weight-medium);
     }
 
     &:first-child {

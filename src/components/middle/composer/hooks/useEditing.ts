@@ -1,22 +1,24 @@
-import { useCallback, useEffect, useState } from '../../../../lib/teact/teact';
+import { useEffect, useState } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
-import { requestMeasure, requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
 
-import type { ApiFormattedText, ApiMessage } from '../../../../api/types';
-import type { MessageListType } from '../../../../global/types';
+import type { ApiDraft, ApiFormattedText, ApiMessage } from '../../../../api/types';
+import type { MessageListType, ThreadId } from '../../../../types';
 import type { Signal } from '../../../../util/signals';
 import { ApiMessageEntityTypes } from '../../../../api/types';
 
 import { EDITABLE_INPUT_CSS_SELECTOR } from '../../../../config';
-import useEffectWithPrevDeps from '../../../../hooks/useEffectWithPrevDeps';
-import parseMessageInput from '../../../../util/parseMessageInput';
-import focusEditableElement from '../../../../util/focusEditableElement';
+import { requestMeasure, requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
 import { hasMessageMedia } from '../../../../global/helpers';
+import focusEditableElement from '../../../../util/focusEditableElement';
+import parseHtmlAsFormattedText from '../../../../util/parseHtmlAsFormattedText';
 import { getTextWithEntitiesAsHtml } from '../../../common/helpers/renderTextWithEntities';
-import useBackgroundMode from '../../../../hooks/useBackgroundMode';
-import useBeforeUnload from '../../../../hooks/useBeforeUnload';
+
 import { useDebouncedResolver } from '../../../../hooks/useAsyncResolvers';
 import useDerivedSignal from '../../../../hooks/useDerivedSignal';
+import useEffectWithPrevDeps from '../../../../hooks/useEffectWithPrevDeps';
+import useLastCallback from '../../../../hooks/useLastCallback';
+import useBackgroundMode from '../../../../hooks/window/useBackgroundMode';
+import useBeforeUnload from '../../../../hooks/window/useBeforeUnload';
 
 const URL_ENTITIES = new Set<string>([ApiMessageEntityTypes.TextUrl, ApiMessageEntityTypes.Url]);
 const DEBOUNCE_MS = 300;
@@ -26,16 +28,18 @@ const useEditing = (
   setHtml: (html: string) => void,
   editedMessage: ApiMessage | undefined,
   resetComposer: (shouldPreserveInput?: boolean) => void,
-  openDeleteModal: () => void,
   chatId: string,
-  threadId: number,
+  threadId: ThreadId,
   type: MessageListType,
-  draft?: ApiFormattedText,
+  draft?: ApiDraft,
   editingDraft?: ApiFormattedText,
-  replyingToId?: number,
 ): [VoidFunction, VoidFunction, boolean] => {
-  const { editMessage, setEditingDraft, toggleMessageWebPage } = getActions();
+  const {
+    editMessage, setEditingDraft, toggleMessageWebPage, openDeleteMessageModal,
+  } = getActions();
   const [shouldForceShowEditing, setShouldForceShowEditing] = useState(false);
+
+  const replyingToId = draft?.replyInfo?.replyToMsgId;
 
   useEffectWithPrevDeps(([prevEditedMessage, prevReplyingToId]) => {
     if (!editedMessage) {
@@ -84,7 +88,7 @@ const useEditing = (
   useEffect(() => {
     if (!editedMessage) return undefined;
     return () => {
-      const edited = parseMessageInput(getHtml());
+      const edited = parseHtmlAsFormattedText(getHtml());
       const update = edited.text.length ? edited : undefined;
 
       setEditingDraft({
@@ -96,7 +100,7 @@ const useEditing = (
   const detectLinkDebounced = useDebouncedResolver(() => {
     if (!editedMessage) return false;
 
-    const edited = parseMessageInput(getHtml());
+    const edited = parseHtmlAsFormattedText(getHtml());
     return !('webPage' in editedMessage.content)
       && editedMessage.content.text?.entities?.some((entity) => URL_ENTITIES.has(entity.type))
       && !(edited.entities?.some((entity) => URL_ENTITIES.has(entity.type)));
@@ -118,12 +122,12 @@ const useEditing = (
     }
   }, [editedMessage, chatId, getHtml, threadId, getShouldResetNoWebPageDebounced]);
 
-  const restoreNewDraftAfterEditing = useCallback(() => {
+  const restoreNewDraftAfterEditing = useLastCallback(() => {
     if (!draft) return;
 
     // Run one frame after editing draft reset
     requestMeasure(() => {
-      setHtml(getTextWithEntitiesAsHtml(draft));
+      setHtml(getTextWithEntitiesAsHtml(draft.text));
 
       // Wait one more frame until new HTML is rendered
       requestNextMutation(() => {
@@ -133,43 +137,48 @@ const useEditing = (
         }
       });
     });
-  }, [draft, setHtml]);
+  });
 
-  const handleEditCancel = useCallback(() => {
+  const handleEditCancel = useLastCallback(() => {
     resetComposer();
     restoreNewDraftAfterEditing();
-  }, [resetComposer, restoreNewDraftAfterEditing]);
+  });
 
-  const handleEditComplete = useCallback(() => {
-    const { text, entities } = parseMessageInput(getHtml());
+  const handleEditComplete = useLastCallback(() => {
+    const { text, entities } = parseHtmlAsFormattedText(getHtml());
 
     if (!editedMessage) {
       return;
     }
 
     if (!text && !hasMessageMedia(editedMessage)) {
-      openDeleteModal();
+      openDeleteMessageModal({
+        chatId,
+        messageIds: [editedMessage.id],
+        isSchedule: type === 'scheduled',
+      });
       return;
     }
 
     editMessage({
+      messageList: { chatId, threadId, type },
       text,
       entities,
     });
 
     resetComposer();
     restoreNewDraftAfterEditing();
-  }, [editMessage, editedMessage, getHtml, openDeleteModal, resetComposer, restoreNewDraftAfterEditing]);
+  });
 
-  const handleBlur = useCallback(() => {
+  const handleBlur = useLastCallback(() => {
     if (!editedMessage) return;
-    const edited = parseMessageInput(getHtml());
+    const edited = parseHtmlAsFormattedText(getHtml());
     const update = edited.text.length ? edited : undefined;
 
     setEditingDraft({
       chatId, threadId, type, text: update,
     });
-  }, [chatId, editedMessage, getHtml, setEditingDraft, threadId, type]);
+  });
 
   useBackgroundMode(handleBlur);
   useBeforeUnload(handleBlur);

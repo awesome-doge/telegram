@@ -3,15 +3,17 @@ import React, { memo } from '../../../../lib/teact/teact';
 
 import type { ApiThumbnail } from '../../../../api/types';
 
-import useMedia from '../../../../hooks/useMedia';
 import buildClassName from '../../../../util/buildClassName';
-import useCanvasBlur from '../../../../hooks/useCanvasBlur';
-import useMediaTransition from '../../../../hooks/useMediaTransition';
 
-import DeviceFrame from '../../../../assets/premium/DeviceFrame.svg';
+import useCanvasBlur from '../../../../hooks/useCanvasBlur';
+import useMedia from '../../../../hooks/useMedia';
+import useMediaTransitionDeprecated from '../../../../hooks/useMediaTransitionDeprecated';
+
 import OptimizedVideo from '../../../ui/OptimizedVideo';
 
 import styles from './PremiumFeaturePreviewVideo.module.scss';
+
+import DeviceFrame from '../../../../assets/premium/DeviceFrame.svg';
 
 type OwnProps = {
   videoId: string;
@@ -32,7 +34,7 @@ const PremiumFeaturePreviewVideo: FC<OwnProps> = ({
 }) => {
   const mediaData = useMedia(`document${videoId}`);
   const thumbnailRef = useCanvasBlur(videoThumbnail.dataUri);
-  const transitionClassNames = useMediaTransition(mediaData);
+  const transitionClassNames = useMediaTransitionDeprecated(mediaData);
 
   return (
     <div className={styles.root}>
@@ -44,7 +46,7 @@ const PremiumFeaturePreviewVideo: FC<OwnProps> = ({
         )}
         id={`premium_feature_preview_video_${index}`}
       >
-        <img src={DeviceFrame} alt="" className={styles.frame} />
+        <img src={DeviceFrame} alt="" className={styles.frame} draggable={false} />
         <canvas ref={thumbnailRef} className={styles.video} />
         <OptimizedVideo
           canPlay={isActive}

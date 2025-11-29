@@ -1,4 +1,5 @@
 import type { CallbackManager } from './callbacks';
+
 import { createCallbackManager } from './callbacks';
 
 interface SignalState<T> {
@@ -11,7 +12,10 @@ const SIGNAL_MARK = Symbol('SIGNAL_MARK');
 export type Signal<T = any> = ((() => T) & {
   readonly [SIGNAL_MARK]: symbol;
   subscribe: (cb: AnyToVoidFunction) => NoneToVoidFunction;
+  once: (cb: AnyToVoidFunction) => NoneToVoidFunction;
 });
+
+export type SignalSetter = (newValue: any) => void;
 
 export function isSignal(obj: any): obj is Signal {
   return typeof obj === 'function' && SIGNAL_MARK in obj;
@@ -48,6 +52,15 @@ export function createSignal<T>(defaultValue?: T) {
     };
   }
 
+  function once(effect: NoneToVoidFunction) {
+    const unsub = subscribe(() => {
+      unsub();
+      effect();
+    });
+
+    return unsub;
+  }
+
   function getter() {
     if (currentEffect) {
       subscribe(currentEffect);
@@ -68,6 +81,7 @@ export function createSignal<T>(defaultValue?: T) {
   const signal = Object.assign(getter as Signal<T>, {
     [SIGNAL_MARK]: SIGNAL_MARK,
     subscribe,
+    once,
   });
 
   return [signal, setter] as const;

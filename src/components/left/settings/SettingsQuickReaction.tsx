@@ -1,12 +1,12 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiAvailableReaction } from '../../../api/types';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
 
-import ReactionStaticEmoji from '../../common/ReactionStaticEmoji';
+import ReactionStaticEmoji from '../../common/reactions/ReactionStaticEmoji';
 import RadioGroup from '../../ui/RadioGroup';
 
 type OwnProps = {
@@ -47,7 +47,7 @@ const SettingsQuickReaction: FC<OwnProps & StateProps> = ({
 
   const handleChange = useCallback((reaction: string) => {
     setDefaultReaction({
-      reaction: { emoticon: reaction },
+      reaction: { type: 'emoji', emoticon: reaction },
     });
   }, [setDefaultReaction]);
 
@@ -58,6 +58,7 @@ const SettingsQuickReaction: FC<OwnProps & StateProps> = ({
         options={options}
         selected={selectedReaction}
         onChange={handleChange}
+        withIcon
       />
     </div>
   );
@@ -65,10 +66,10 @@ const SettingsQuickReaction: FC<OwnProps & StateProps> = ({
 
 export default memo(withGlobal<OwnProps>(
   (global) => {
-    const { availableReactions, config } = global;
+    const { config, reactions } = global;
 
     return {
-      availableReactions,
+      availableReactions: reactions.availableReactions,
       selectedReaction: config?.defaultReaction,
     };
   },

@@ -1,9 +1,15 @@
 .ArchivedChats {
   height: 100%;
   overflow: hidden;
+  background: var(--color-background);
 
-  .chat-list {
-    height: calc(100% - var(--header-height));
+  .left-header {
+    position: relative;
+    z-index: var(--z-left-header);
+  }
+
+  .left-header-shadow {
+    box-shadow: 0 2px 2px var(--color-light-shadow);
   }
 
   .DropdownMenuFiller {
@@ -17,11 +23,10 @@
     z-index: 2;
 
     &.right-aligned {
-      transform: translateX(calc(clamp(
-      var(--left-column-min-width),
-      var(--left-column-width),
-      var(--left-column-max-width)
-      ) - 4.375rem));
+      transform:
+        translateX(
+          calc(clamp(var(--left-column-min-width), var(--left-column-width), var(--left-column-max-width)) - 4.375rem)
+        );
     }
 
     &.disable-transition {
@@ -31,5 +36,19 @@
 
   .archived-chats-more-menu {
     margin-left: auto !important;
+  }
+
+  .story-toggler-wrapper {
+    flex-grow: 1;
+    position: relative;
+  }
+
+  .chat-list-wrapper {
+    position: relative;
+    height: calc(100% - var(--header-height));
+
+    &.with-story-ribbon {
+      --extra-height: var(--header-height);
+    }
   }
 }

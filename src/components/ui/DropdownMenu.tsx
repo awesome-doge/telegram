@@ -1,17 +1,19 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  useState, useRef, useCallback, useMemo,
+  useCallback, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 
-import type { FC } from '../../lib/teact/teact';
-
-import Menu from './Menu';
+import Icon from '../common/icons/Icon';
 import Button from './Button';
+import Menu from './Menu';
 
 import './DropdownMenu.scss';
 
 type OwnProps = {
   className?: string;
   trigger?: FC<{ onTrigger: () => void; isOpen?: boolean }>;
+  transformOriginX?: number;
+  transformOriginY?: number;
   positionX?: 'left' | 'right';
   positionY?: 'top' | 'bottom';
   footer?: string;
@@ -22,12 +24,15 @@ type OwnProps = {
   onTransitionEnd?: NoneToVoidFunction;
   onMouseEnterBackdrop?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
   children: React.ReactNode;
+  autoClose?: boolean;
 };
 
 const DropdownMenu: FC<OwnProps> = ({
   trigger,
   className,
   children,
+  transformOriginX,
+  transformOriginY,
   positionX = 'left',
   positionY = 'top',
   footer,
@@ -37,15 +42,15 @@ const DropdownMenu: FC<OwnProps> = ({
   onTransitionEnd,
   onMouseEnterBackdrop,
   onHide,
+  autoClose = true,
 }) => {
   // eslint-disable-next-line no-null/no-null
   const menuRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
 
   const toggleIsOpen = () => {
     setIsOpen(!isOpen);
+
     if (isOpen) {
       onClose?.();
     } else {
@@ -85,14 +90,13 @@ const DropdownMenu: FC<OwnProps> = ({
         onClick={onTrigger}
         ariaLabel="More actions"
       >
-        <i className="icon icon-more" />
+        <Icon name="more" />
       </Button>
     );
   }, [trigger]);
 
   return (
     <div
-      ref={dropdownRef}
       className={`DropdownMenu ${className || ''}`}
       onKeyDown={handleKeyDown}
       onTransitionEnd={onTransitionEnd}
@@ -101,15 +105,15 @@ const DropdownMenu: FC<OwnProps> = ({
 
       <Menu
         ref={menuRef}
-        containerRef={dropdownRef}
         isOpen={isOpen || Boolean(forceOpen)}
         className={className || ''}
+        transformOriginX={transformOriginX}
+        transformOriginY={transformOriginY}
         positionX={positionX}
         positionY={positionY}
         footer={footer}
-        autoClose
+        autoClose={autoClose}
         onClose={handleClose}
-        shouldSkipTransition={forceOpen}
         onCloseAnimationEnd={onHide}
         onMouseEnterBackdrop={onMouseEnterBackdrop}
       >

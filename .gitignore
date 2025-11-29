@@ -1,3 +1,4 @@
+*/build-stats.json
 node_modules
 .cache
 .env
@@ -8,5 +9,5 @@ tests/
 *.iml
 dev/perf/screenshot*
 .DS_store
-
 dist/
+.github/

@@ -7,14 +7,15 @@ import { getActions, withGlobal } from '../../../global';
 
 import type { ApiSession } from '../../../api/types';
 
-import { formatPastTimeShort } from '../../../util/dateFormat';
-import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
+import { formatPastTimeShort } from '../../../util/dates/dateFormat';
 import getSessionIcon from './helpers/getSessionIcon';
 
-import ListItem from '../../ui/ListItem';
+import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useOldLang from '../../../hooks/useOldLang';
+
 import ConfirmDialog from '../../ui/ConfirmDialog';
+import ListItem from '../../ui/ListItem';
 import RadioGroup from '../../ui/RadioGroup';
 import SettingsActiveSession from './SettingsActiveSession';
 
@@ -44,7 +45,7 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
     changeSessionTtl,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [isConfirmTerminateAllDialogOpen, openConfirmTerminateAllDialog, closeConfirmTerminateAllDialog] = useFlag();
   const [openedSessionHash, setOpenedSessionHash] = useState<string | undefined>();
   const [isModalOpen, openModal, closeModal] = useFlag();
@@ -144,12 +145,12 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
   function renderCurrentSession(session: ApiSession) {
     return (
       <div className="settings-item">
-        <h4 className="settings-item-header mb-4" dir={lang.isRtl ? 'rtl' : undefined}>
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
           {lang('AuthSessions.CurrentSession')}
         </h4>
 
-        <ListItem narrow inactive icon={`device-${getSessionIcon(session)} icon-device`}>
-          <div className="multiline-menu-item" dir="auto">
+        <ListItem narrow inactive icon={`device-${getSessionIcon(session)}`} iconClassName="icon-device">
+          <div className="multiline-item full-size" dir="auto">
             <span className="title" dir="auto">{session.deviceModel}</span>
             <span className="subtitle black tight">
               {session.appName} {session.appVersion}, {session.platform} {session.systemVersion}
@@ -176,7 +177,7 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
   function renderOtherSessions(sessionHashes: string[]) {
     return (
       <div className="settings-item">
-        <h4 className="settings-item-header mb-4" dir={lang.isRtl ? 'rtl' : undefined}>
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
           {lang('OtherSessions')}
         </h4>
 
@@ -188,11 +189,11 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
   function renderAutoTerminate() {
     return (
       <div className="settings-item">
-        <h4 className="settings-item-header mb-4" dir={lang.isRtl ? 'rtl' : undefined}>
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
           {lang('TerminateOldSessionHeader')}
         </h4>
 
-        <p>{lang('IfInactiveFor')}</p>
+        <p className="settings-item-description-larger">{lang('IfInactiveFor')}</p>
         <RadioGroup
           name="session_ttl"
           options={AUTO_TERMINATE_OPTIONS}
@@ -219,10 +220,11 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
             handleTerminateSessionClick(session.hash);
           },
         }]}
-        icon={`device-${getSessionIcon(session)} icon-device`}
+        icon={`device-${getSessionIcon(session)}`}
+        iconClassName="icon-device"
         onClick={() => { handleOpenSessionModal(session.hash); }}
       >
-        <div className="multiline-menu-item full-size" dir="auto">
+        <div className="multiline-item full-size" dir="auto">
           <span className="date">{formatPastTimeShort(lang, session.dateActive * 1000)}</span>
           <span className="title">{session.deviceModel}</span>
           <span className="subtitle black tight">

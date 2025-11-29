@@ -1,16 +1,25 @@
-import type { Api as GramJs } from '../../../lib/gramjs';
+import { Api as GramJs } from '../../../lib/gramjs';
+
 import type {
+  ApiChannelMonetizationStatistics,
   ApiChannelStatistics,
   ApiGroupStatistics,
-  ApiMessageStatistics,
   ApiMessagePublicForward,
+  ApiPostStatistics,
+  ApiStoryPublicForward,
+  ChannelMonetizationBalances,
   StatisticsGraph,
+  StatisticsMessageInteractionCounter,
   StatisticsOverviewItem,
   StatisticsOverviewPercentage,
   StatisticsOverviewPeriod,
+  StatisticsStoryInteractionCounter,
 } from '../../types';
-import { buildAvatarHash } from './chats';
-import { buildApiPeerId } from './peers';
+
+import { buildApiUsernames, buildAvatarPhotoId } from './common';
+import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
+
+const DECIMALS = 10 ** 9;
 
 export function buildChannelStatistics(stats: GramJs.stats.BroadcastStats): ApiChannelStatistics {
   return {
@@ -25,16 +34,61 @@ export function buildChannelStatistics(stats: GramJs.stats.BroadcastStats): ApiC
     viewsBySourceGraph: (stats.viewsBySourceGraph as GramJs.StatsGraphAsync).token,
     newFollowersBySourceGraph: (stats.newFollowersBySourceGraph as GramJs.StatsGraphAsync).token,
     interactionsGraph: (stats.interactionsGraph as GramJs.StatsGraphAsync).token,
+    reactionsByEmotionGraph: (stats.reactionsByEmotionGraph as GramJs.StatsGraphAsync).token,
+    storyInteractionsGraph: (stats.storyInteractionsGraph as GramJs.StatsGraphAsync).token,
+    storyReactionsByEmotionGraph: (stats.storyReactionsByEmotionGraph as GramJs.StatsGraphAsync).token,
 
     // Statistics overview
     followers: buildStatisticsOverview(stats.followers),
     viewsPerPost: buildStatisticsOverview(stats.viewsPerPost),
     sharesPerPost: buildStatisticsOverview(stats.sharesPerPost),
     enabledNotifications: buildStatisticsPercentage(stats.enabledNotifications),
+    reactionsPerPost: buildStatisticsOverview(stats.reactionsPerPost),
+    viewsPerStory: buildStatisticsOverview(stats.viewsPerStory),
+    sharesPerStory: buildStatisticsOverview(stats.sharesPerStory),
+    reactionsPerStory: buildStatisticsOverview(stats.reactionsPerStory),
 
     // Recent posts
-    recentTopMessages: stats.recentMessageInteractions,
+    recentPosts: stats.recentPostsInteractions.map(buildApiPostInteractionCounter).filter(Boolean),
   };
+}
+
+export function buildChannelMonetizationStatistics(
+  stats: GramJs.stats.BroadcastRevenueStats,
+): ApiChannelMonetizationStatistics {
+  return {
+    // Graphs
+    topHoursGraph: buildGraph(stats.topHoursGraph),
+    revenueGraph: buildGraph(stats.revenueGraph, undefined, true, stats.usdRate),
+
+    // Statistics overview
+    balances: buildChannelMonetizationBalances(stats.balances),
+    usdRate: stats.usdRate,
+  };
+}
+
+export function buildApiPostInteractionCounter(
+  interaction: GramJs.TypePostInteractionCounters,
+): StatisticsMessageInteractionCounter | StatisticsStoryInteractionCounter | undefined {
+  if (interaction instanceof GramJs.PostInteractionCountersMessage) {
+    return {
+      msgId: interaction.msgId,
+      forwardsCount: interaction.forwards,
+      viewsCount: interaction.views,
+      reactionsCount: interaction.reactions,
+    };
+  }
+
+  if (interaction instanceof GramJs.PostInteractionCountersStory) {
+    return {
+      storyId: interaction.storyId,
+      reactionsCount: interaction.reactions,
+      viewsCount: interaction.views,
+      forwardsCount: interaction.forwards,
+    };
+  }
+
+  return undefined;
 }
 
 export function buildGroupStatistics(stats: GramJs.stats.MegagroupStats): ApiGroupStatistics {
@@ -58,9 +112,10 @@ export function buildGroupStatistics(stats: GramJs.stats.MegagroupStats): ApiGro
   };
 }
 
-export function buildMessageStatistics(stats: GramJs.stats.MessageStats): ApiMessageStatistics {
+export function buildPostsStatistics(stats: GramJs.stats.MessageStats): ApiPostStatistics {
   return {
     viewsGraph: buildGraph(stats.viewsGraph),
+    reactionsGraph: buildGraph(stats.reactionsByEmotionGraph),
   };
 }
 
@@ -71,27 +126,35 @@ export function buildMessagePublicForwards(
     return undefined;
   }
 
-  return result.messages.map((message) => {
-    const peerId = buildApiPeerId((message.peerId as GramJs.PeerChannel).channelId, 'channel');
-    const channel = result.chats.find((p) => buildApiPeerId(p.id, 'channel') === peerId);
+  return result.messages.map((message) => buildApiMessagePublicForward(message, result.chats));
+}
+
+export function buildStoryPublicForwards(
+  result: GramJs.stats.PublicForwards,
+): Array<ApiStoryPublicForward | ApiMessagePublicForward> | undefined {
+  if (!result || !('forwards' in result)) {
+    return undefined;
+  }
+
+  return result.forwards.map((forward) => {
+    if (forward instanceof GramJs.PublicForwardMessage) {
+      return buildApiMessagePublicForward(forward.message, result.chats);
+    }
+
+    const { peer, story } = forward;
+    const peerId = getApiChatIdFromMtpPeer(peer);
 
     return {
-      messageId: message.id,
-      views: (message as GramJs.Message).views,
-      title: (channel as GramJs.Channel).title,
-      chat: {
-        id: peerId,
-        type: 'chatTypeChannel',
-        title: (channel as GramJs.Channel).title,
-        username: (channel as GramJs.Channel).username,
-        avatarHash: buildAvatarHash((channel as GramJs.Channel).photo),
-      },
-    };
+      peerId,
+      storyId: story.id,
+      viewsCount: (story as GramJs.StoryItem).views?.viewsCount || 0,
+      reactionsCount: (story as GramJs.StoryItem).views?.reactionsCount || 0,
+    } as ApiStoryPublicForward;
   });
 }
 
 export function buildGraph(
-  result: GramJs.TypeStatsGraph, isPercentage?: boolean,
+  result: GramJs.TypeStatsGraph, isPercentage?: boolean, isCurrency?: boolean, currencyRate?: number,
 ): StatisticsGraph | undefined {
   if ((result as GramJs.StatsGraphError).error) {
     return undefined;
@@ -111,6 +174,8 @@ export function buildGraph(
     hasSecondYAxis,
     isStacked: data.stacked && !hasSecondYAxis,
     isPercentage,
+    isCurrency,
+    currencyRate,
     datasets: y.map((item: any) => {
       const key = item[0];
 
@@ -156,12 +221,14 @@ function buildStatisticsOverview({ current, previous }: GramJs.StatsAbsValueAndP
   return {
     current,
     change,
-    ...(previous && { percentage: (change ? ((Math.abs(change) / previous) * 100) : 0).toFixed(2) }),
+    percentage: (change ? ((Math.abs(change) / previous) * 100) : 0).toFixed(2),
   };
 }
 
-function buildStatisticsPercentage(data: GramJs.StatsPercentValue): StatisticsOverviewPercentage {
+export function buildStatisticsPercentage(data: GramJs.StatsPercentValue): StatisticsOverviewPercentage {
   return {
+    part: data.part,
+    total: data.total,
     percentage: ((data.part / data.total) * 100).toFixed(2),
   };
 }
@@ -170,5 +237,40 @@ function getOverviewPeriod(data: GramJs.StatsDateRangeDays): StatisticsOverviewP
   return {
     maxDate: data.maxDate,
     minDate: data.minDate,
+  };
+}
+
+function buildApiMessagePublicForward(message: GramJs.TypeMessage, chats: GramJs.TypeChat[]): ApiMessagePublicForward {
+  const peerId = getApiChatIdFromMtpPeer(message.peerId!);
+  const channel = chats.find((c) => buildApiPeerId(c.id, 'channel') === peerId);
+  const channelProfilePhoto = channel && 'photo' in channel && channel.photo instanceof GramJs.Photo
+    ? channel.photo : undefined;
+
+  return {
+    messageId: message.id,
+    views: (message as GramJs.Message).views,
+    title: (channel as GramJs.Channel).title,
+    chat: {
+      id: peerId,
+      type: 'chatTypeChannel',
+      title: (channel as GramJs.Channel).title,
+      usernames: buildApiUsernames(channel as GramJs.Channel),
+      avatarPhotoId: channelProfilePhoto && buildAvatarPhotoId(channelProfilePhoto),
+      hasVideoAvatar: Boolean(channelProfilePhoto?.videoSizes),
+    },
+  };
+}
+
+function buildChannelMonetizationBalances({
+  currentBalance,
+  availableBalance,
+  overallRevenue,
+  withdrawalEnabled,
+}: GramJs.BroadcastRevenueBalances): ChannelMonetizationBalances {
+  return {
+    currentBalance: Number(currentBalance) / DECIMALS,
+    availableBalance: Number(availableBalance) / DECIMALS,
+    overallRevenue: Number(overallRevenue) / DECIMALS,
+    isWithdrawalEnabled: withdrawalEnabled,
   };
 }

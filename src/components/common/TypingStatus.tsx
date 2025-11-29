@@ -2,12 +2,13 @@ import type { FC } from '../../lib/teact/teact';
 import React, { memo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
-import type { ApiUser, ApiTypingStatus } from '../../api/types';
+import type { ApiTypingStatus, ApiUser } from '../../api/types';
 
-import { selectUser } from '../../global/selectors';
 import { getUserFirstOrLastName } from '../../global/helpers';
+import { selectUser } from '../../global/selectors';
 import renderText from './helpers/renderText';
-import useLang from '../../hooks/useLang';
+
+import useOldLang from '../../hooks/useOldLang';
 
 import DotAnimation from './DotAnimation';
 
@@ -22,7 +23,7 @@ type StateProps = {
 };
 
 const TypingStatus: FC<OwnProps & StateProps> = ({ typingStatus, typingUser }) => {
-  const lang = useLang();
+  const lang = useOldLang();
   const typingUserName = typingUser && !typingUser.isSelf && getUserFirstOrLastName(typingUser);
   const content = lang(typingStatus.action)
     // Fix for translation "{user} is typing"

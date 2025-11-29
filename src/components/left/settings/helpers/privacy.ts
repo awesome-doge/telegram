@@ -1,4 +1,4 @@
-import type { ApiPrivacyKey } from '../../../../types';
+import type { ApiPrivacyKey } from '../../../../api/types';
 import { SettingsScreens } from '../../../../types';
 
 export function getPrivacyKey(screen: SettingsScreens): ApiPrivacyKey | undefined {
@@ -15,6 +15,18 @@ export function getPrivacyKey(screen: SettingsScreens): ApiPrivacyKey | undefine
     case SettingsScreens.PrivacyProfilePhotoAllowedContacts:
     case SettingsScreens.PrivacyProfilePhotoDeniedContacts:
       return 'profilePhoto';
+    case SettingsScreens.PrivacyBio:
+    case SettingsScreens.PrivacyBioAllowedContacts:
+    case SettingsScreens.PrivacyBioDeniedContacts:
+      return 'bio';
+    case SettingsScreens.PrivacyBirthday:
+    case SettingsScreens.PrivacyBirthdayAllowedContacts:
+    case SettingsScreens.PrivacyBirthdayDeniedContacts:
+      return 'birthday';
+    case SettingsScreens.PrivacyGifts:
+    case SettingsScreens.PrivacyGiftsAllowedContacts:
+    case SettingsScreens.PrivacyGiftsDeniedContacts:
+      return 'gifts';
     case SettingsScreens.PrivacyForwarding:
     case SettingsScreens.PrivacyForwardingAllowedContacts:
     case SettingsScreens.PrivacyForwardingDeniedContacts:
@@ -35,6 +47,8 @@ export function getPrivacyKey(screen: SettingsScreens): ApiPrivacyKey | undefine
     case SettingsScreens.PrivacyPhoneP2PAllowedContacts:
     case SettingsScreens.PrivacyPhoneP2PDeniedContacts:
       return 'phoneP2P';
+    case SettingsScreens.PrivacyAddByPhone:
+      return 'addByPhone';
   }
 
   return undefined;

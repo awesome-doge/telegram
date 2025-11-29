@@ -1,50 +1,56 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
-import {
-  joinGroupCall,
-  startSharingScreen,
-  leaveGroupCall,
-  toggleStream,
-  isStreamEnabled,
-  setVolume, stopPhoneCall,
-} from '../../../lib/secret-sauce';
-
 import type { ActionReturnType } from '../../types';
 
 import { GROUP_CALL_VOLUME_MULTIPLIER } from '../../../config';
-import { callApi } from '../../../api/gramjs';
-import { selectChat, selectTabState, selectUser } from '../../selectors';
 import {
-  selectActiveGroupCall, selectPhoneCallUser,
-} from '../../selectors/calls';
+  isStreamEnabled,
+  joinGroupCall,
+  leaveGroupCall,
+  setVolume, startSharingScreen,
+  stopPhoneCall,
+  toggleStream,
+} from '../../../lib/secret-sauce';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { callApi } from '../../../api/gramjs';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
   removeGroupCall,
   updateActiveGroupCall,
 } from '../../reducers/calls';
+import { updateTabState } from '../../reducers/tabs';
+import { selectChat, selectTabState, selectUser } from '../../selectors';
+import {
+  selectActiveGroupCall, selectPhoneCallUser,
+} from '../../selectors/calls';
 import { getGroupCallAudioContext, getGroupCallAudioElement, removeGroupCallAudioElement } from '../ui/calls';
 import { loadFullChat } from './chats';
-import { addUsers } from '../../reducers';
-import { buildCollectionByKey } from '../../../util/iteratees';
-import { updateTabState } from '../../reducers/tabs';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
 
 const HANG_UP_UI_DELAY = 500;
 
 addActionHandler('leaveGroupCall', async (global, actions, payload): Promise<void> => {
   const {
     isFromLibrary, shouldDiscard, shouldRemove, rejoin,
-    tabId = getCurrentTabId(),
+    isPageUnload, tabId = getCurrentTabId(),
   } = payload || {};
+
   const groupCall = selectActiveGroupCall(global);
   if (!groupCall) {
     return;
   }
 
   global = updateActiveGroupCall(global, { connectionState: 'disconnected' }, groupCall.participantsCount - 1);
+  global = {
+    ...global,
+    groupCalls: {
+      ...global.groupCalls,
+      activeGroupCallId: undefined,
+    },
+  };
   setGlobal(global);
 
   await callApi('leaveGroupCall', {
-    call: groupCall,
+    call: groupCall, isPageUnload,
   });
+  await callApi('abortRequestGroup', 'call');
 
   if (shouldDiscard) {
     await callApi('discardGroupCall', {
@@ -59,13 +65,6 @@ addActionHandler('leaveGroupCall', async (global, actions, payload): Promise<voi
 
   removeGroupCallAudioElement();
 
-  global = {
-    ...global,
-    groupCalls: {
-      ...global.groupCalls,
-      activeGroupCallId: undefined,
-    },
-  };
   setGlobal(global);
 
   actions.toggleGroupCallPanel({ force: undefined, tabId });
@@ -221,7 +220,15 @@ addActionHandler('connectToActiveGroupCall', async (global, actions, payload): P
 
   global = getGlobal();
 
-  if (!result) return;
+  if (!result) {
+    actions.showNotification({
+      // TODO[lang] Localize error message
+      message: 'Failed to join voice chat',
+      tabId,
+    });
+    actions.leaveGroupCall({ tabId });
+    return;
+  }
 
   actions.loadMoreGroupCallParticipants();
 
@@ -229,7 +236,7 @@ addActionHandler('connectToActiveGroupCall', async (global, actions, payload): P
     global = getGlobal();
     const chat = selectChat(global, groupCall.chatId);
     if (!chat) return;
-    await loadFullChat(global, actions, chat, tabId);
+    await loadFullChat(global, actions, chat);
   }
 });
 
@@ -254,11 +261,7 @@ addActionHandler('connectToActivePhoneCall', async (global, actions): Promise<vo
 
   if (!result) {
     if ('hangUp' in actions) actions.hangUp({ tabId: getCurrentTabId() });
-    return;
   }
-  global = getGlobal();
-  global = addUsers(global, buildCollectionByKey(result.users, 'id'));
-  setGlobal(global);
 });
 
 addActionHandler('acceptCall', async (global): Promise<void> => {
@@ -272,13 +275,7 @@ addActionHandler('acceptCall', async (global): Promise<void> => {
   await callApi('createPhoneCallState', [false]);
 
   const gB = await callApi('acceptPhoneCall', [dhConfig])!;
-  const result = await callApi('acceptCall', { call: phoneCall, gB });
-  if (!result) {
-    return;
-  }
-  global = getGlobal();
-  global = addUsers(global, buildCollectionByKey(result.users, 'id'));
-  setGlobal(global);
+  await callApi('acceptCall', { call: phoneCall, gB });
 });
 
 addActionHandler('sendSignalingData', (global, actions, payload): ActionReturnType => {
@@ -321,7 +318,7 @@ addActionHandler('setCallRating', (global, actions, payload): ActionReturnType =
 });
 
 addActionHandler('hangUp', (global, actions, payload): ActionReturnType => {
-  const { tabId = getCurrentTabId() } = payload || {};
+  const { isPageUnload, tabId = getCurrentTabId() } = payload || {};
   const { phoneCall } = global;
 
   if (!phoneCall) return undefined;
@@ -344,7 +341,7 @@ addActionHandler('hangUp', (global, actions, payload): ActionReturnType => {
 
   callApi('destroyPhoneCallState');
   stopPhoneCall();
-  callApi('discardCall', { call: phoneCall });
+  callApi('discardCall', { call: phoneCall, isPageUnload });
 
   if (phoneCall.state === 'requesting') {
     global = {

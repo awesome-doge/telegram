@@ -1,5 +1,6 @@
-import { addActionHandler } from '../../index';
 import type { ActionReturnType } from '../../types';
+
+import { addActionHandler } from '../../index';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
@@ -19,7 +20,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         ...global,
         twoFaSettings: {
           ...global.twoFaSettings,
-          error: update.message,
+          errorKey: update.messageKey,
         },
       };
     }

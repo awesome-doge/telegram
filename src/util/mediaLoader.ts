@@ -8,27 +8,27 @@ import {
 } from '../api/types';
 
 import {
-  DEBUG, MEDIA_CACHE_DISABLED, MEDIA_CACHE_NAME, MEDIA_CACHE_NAME_AVATARS,
+  DEBUG, ELECTRON_HOST_URL,
+  IS_PACKAGED_ELECTRON, MEDIA_CACHE_DISABLED, MEDIA_CACHE_NAME, MEDIA_CACHE_NAME_AVATARS,
 } from '../config';
 import { callApi, cancelApiProgress } from '../api/gramjs';
 import * as cacheApi from './cacheApi';
 import { fetchBlob } from './files';
-import {
-  IS_OPUS_SUPPORTED, IS_PROGRESSIVE_SUPPORTED, isWebpSupported,
-} from './windowEnvironment';
 import { oggToWav } from './oggToWav';
-import { webpToPng } from './webpToPng';
+import {
+  IS_OPUS_SUPPORTED, IS_PROGRESSIVE_SUPPORTED,
+} from './windowEnvironment';
 
 const asCacheApiType = {
   [ApiMediaFormat.BlobUrl]: cacheApi.Type.Blob,
   [ApiMediaFormat.Text]: cacheApi.Type.Text,
   [ApiMediaFormat.DownloadUrl]: undefined,
   [ApiMediaFormat.Progressive]: undefined,
-  [ApiMediaFormat.Stream]: undefined,
 };
 
-const PROGRESSIVE_URL_PREFIX = './progressive/';
+const PROGRESSIVE_URL_PREFIX = `${IS_PACKAGED_ELECTRON ? ELECTRON_HOST_URL : '.'}/progressive/`;
 const URL_DOWNLOAD_PREFIX = './download/';
+const MAX_MEDIA_RETRIES = 5;
 
 const memoryCache = new Map<string, ApiPreparedMedia>();
 const fetchPromises = new Map<string, Promise<ApiPreparedMedia | undefined>>();
@@ -114,6 +114,10 @@ export function removeCallback(url: string, callbackUniqueId: string) {
   callbacks.delete(callbackUniqueId);
 }
 
+export function getProgressiveUrl(url: string) {
+  return `${PROGRESSIVE_URL_PREFIX}${url}`;
+}
+
 function getProgressive(url: string) {
   const progressiveUrl = `${PROGRESSIVE_URL_PREFIX}${url}`;
 
@@ -127,8 +131,8 @@ function getDownloadUrl(url: string) {
 }
 
 async function fetchFromCacheOrRemote(
-  url: string, mediaFormat: ApiMediaFormat, isHtmlAllowed: boolean,
-) {
+  url: string, mediaFormat: ApiMediaFormat, isHtmlAllowed: boolean, retryNumber = 0,
+): Promise<string> {
   if (!MEDIA_CACHE_DISABLED) {
     const cacheName = url.startsWith('avatar') ? MEDIA_CACHE_NAME_AVATARS : MEDIA_CACHE_NAME;
     const cached = await cacheApi.fetch(cacheName, url, asCacheApiType[mediaFormat]!, isHtmlAllowed);
@@ -140,13 +144,6 @@ async function fetchFromCacheOrRemote(
         media = await oggToWav(media);
       }
 
-      if (cached.type === 'image/webp' && !isWebpSupported() && media) {
-        const mediaPng = await webpToPng(url, media);
-        if (mediaPng) {
-          media = mediaPng;
-        }
-      }
-
       const prepared = prepareMedia(media);
 
       memoryCache.set(url, prepared);
@@ -155,35 +152,20 @@ async function fetchFromCacheOrRemote(
     }
   }
 
-  if (mediaFormat === ApiMediaFormat.Stream) {
-    const mediaSource = new MediaSource();
-    const streamUrl = URL.createObjectURL(mediaSource);
-    let isOpen = false;
-
-    mediaSource.addEventListener('sourceopen', () => {
-      if (isOpen) {
-        return;
-      }
-      isOpen = true;
-
-      const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
-
-      const onProgress = makeOnProgress(url, mediaSource, sourceBuffer);
-      cancellableCallbacks.set(url, onProgress);
-
-      void callApi('downloadMedia', { url, mediaFormat }, onProgress);
-    });
-
-    memoryCache.set(url, streamUrl);
-    return streamUrl;
-  }
-
   const onProgress = makeOnProgress(url);
   cancellableCallbacks.set(url, onProgress);
 
   const remote = await callApi('downloadMedia', { url, mediaFormat, isHtmlAllowed }, onProgress);
   if (!remote) {
-    throw new Error(`Failed to fetch media ${url}`);
+    if (retryNumber >= MAX_MEDIA_RETRIES) {
+      throw new Error(`Failed to fetch media ${url}`);
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, getRetryTimeout(retryNumber));
+    });
+    // eslint-disable-next-line no-console
+    if (DEBUG) console.debug(`Retrying to fetch media ${url}`);
+    return fetchFromCacheOrRemote(url, mediaFormat, isHtmlAllowed, retryNumber + 1);
   }
 
   let { mimeType } = remote;
@@ -197,36 +179,17 @@ async function fetchFromCacheOrRemote(
     mimeType = media.type;
   }
 
-  if (mimeType === 'image/webp' && !isWebpSupported()) {
-    const blob = await fetchBlob(prepared as string);
-    URL.revokeObjectURL(prepared as string);
-    const media = await webpToPng(url, blob);
-    if (media) {
-      prepared = prepareMedia(media);
-    }
-  }
-
   memoryCache.set(url, prepared);
 
   return prepared;
 }
 
-function makeOnProgress(url: string, mediaSource?: MediaSource, sourceBuffer?: SourceBuffer) {
-  const onProgress: ApiOnProgress = (progress: number, arrayBuffer: ArrayBuffer) => {
+function makeOnProgress(url: string) {
+  const onProgress: ApiOnProgress = (progress: number) => {
     progressCallbacks.get(url)?.forEach((callback) => {
       callback(progress);
       if (callback.isCanceled) onProgress.isCanceled = true;
     });
-
-    if (progress === 1) {
-      mediaSource?.endOfStream();
-    }
-
-    if (!arrayBuffer) {
-      return;
-    }
-
-    sourceBuffer?.appendBuffer(arrayBuffer);
   };
 
   return onProgress;
@@ -269,4 +232,9 @@ if (IS_PROGRESSIVE_SUPPORTED) {
       },
     }, [arrayBuffer!]);
   });
+}
+
+function getRetryTimeout(retryNumber: number) {
+  // 250ms, 500ms, 1s, 2s, 4s
+  return 250 * 2 ** retryNumber;
 }

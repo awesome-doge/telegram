@@ -1,16 +1,20 @@
-import React, {
-  memo, useCallback, useRef,
-} from '../../lib/teact/teact';
-import { getActions, withGlobal } from '../../global';
-
 import type { FC } from '../../lib/teact/teact';
-import type { ApiSticker, ApiStickerSet } from '../../api/types';
+import React, {
+  memo,
+  useMemo,
+  useRef,
+} from '../../lib/teact/teact';
+import { getActions, getGlobal, withGlobal } from '../../global';
 
-import buildClassName from '../../util/buildClassName';
+import type { ApiSticker } from '../../api/types';
+
 import { selectCanPlayAnimatedEmojis } from '../../global/selectors';
+import buildClassName from '../../util/buildClassName';
+
 import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
-import usePrevious from '../../hooks/usePrevious';
-import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
 import Modal from '../ui/Modal';
 import StickerSetCard from './StickerSetCard';
@@ -23,17 +27,20 @@ export type OwnProps = {
 };
 
 type StateProps = {
-  customEmojiSets?: ApiStickerSet[];
   canPlayAnimatedEmojis?: boolean;
 };
 
 const CustomEmojiSetsModal: FC<OwnProps & StateProps> = ({
-  customEmojiSets,
+  customEmojiSetIds,
   canPlayAnimatedEmojis,
   onClose,
 }) => {
   const { openStickerSet } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
+
+  const customEmojiSets = useMemo(() => {
+    return customEmojiSetIds?.map((id) => getGlobal().stickers.setsById[id]);
+  }, [customEmojiSetIds]);
 
   // eslint-disable-next-line no-null/no-null
   const customEmojiModalRef = useRef<HTMLDivElement>(null);
@@ -41,14 +48,14 @@ const CustomEmojiSetsModal: FC<OwnProps & StateProps> = ({
     rootRef: customEmojiModalRef, isDisabled: !customEmojiSets,
   });
 
-  const prevCustomEmojiSets = usePrevious(customEmojiSets);
+  const prevCustomEmojiSets = usePreviousDeprecated(customEmojiSets);
   const renderingCustomEmojiSets = customEmojiSets || prevCustomEmojiSets;
 
-  const handleSetClick = useCallback((sticker: ApiSticker) => {
+  const handleSetClick = useLastCallback((sticker: ApiSticker) => {
     openStickerSet({
       stickerSetInfo: sticker.stickerSetInfo,
     });
-  }, [openStickerSet]);
+  });
 
   return (
     <Modal
@@ -59,27 +66,26 @@ const CustomEmojiSetsModal: FC<OwnProps & StateProps> = ({
       title={lang('lng_custom_emoji_used_sets')}
     >
       <div className={buildClassName(styles.sets, 'custom-scroll')} ref={customEmojiModalRef} teactFastList>
-        {renderingCustomEmojiSets?.map((customEmojiSet) => (
-          <StickerSetCard
-            key={customEmojiSet.id}
-            className={styles.setCard}
-            stickerSet={customEmojiSet}
-            onClick={handleSetClick}
-            observeIntersection={observeIntersectionForCovers}
-            noPlay={!canPlayAnimatedEmojis}
-          />
-        ))}
+        {renderingCustomEmojiSets?.map((customEmojiSet) => {
+          return (
+            <StickerSetCard
+              key={customEmojiSet.id}
+              className={styles.setCard}
+              stickerSet={customEmojiSet}
+              onClick={handleSetClick}
+              observeIntersection={observeIntersectionForCovers}
+              noPlay={!canPlayAnimatedEmojis}
+            />
+          );
+        })}
       </div>
     </Modal>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { customEmojiSetIds }): StateProps => {
-    const customEmojiSets = customEmojiSetIds?.map((id) => global.stickers.setsById[id]);
-
+  (global): StateProps => {
     return {
-      customEmojiSets,
       canPlayAnimatedEmojis: selectCanPlayAnimatedEmojis(global),
     };
   },

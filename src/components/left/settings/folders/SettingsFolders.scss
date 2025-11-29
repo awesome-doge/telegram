@@ -12,9 +12,14 @@
 }
 
 .settings-folders-list-item {
+  .ListItem-main-icon {
+    margin-inline-end: 1.875rem !important;
+  }
+
   .ChatInfo {
     display: flex;
     align-items: center;
+    width: 100%;
 
     .Avatar {
       margin-left: -0.25rem;
@@ -28,7 +33,7 @@
 
       h3 {
         font-size: 1rem;
-        font-weight: 500;
+        font-weight: var(--font-weight-medium);
         line-height: 1.3125;
         margin: 0;
         overflow: hidden;
@@ -36,6 +41,10 @@
         text-overflow: ellipsis;
         text-align: left;
       }
+    }
+
+    .info {
+      overflow: hidden;
     }
 
     .status {
@@ -88,4 +97,23 @@
 
 .settings-sortable-item .multiline-item {
   padding-inline-end: 3rem;
+}
+
+.settings-sortable-item .Button {
+  margin-right: -1rem;
+  &:hover,
+  &:active {
+    background-color: transparent !important;
+  }
+}
+
+.picker-category-title {
+  padding-top: 0.75rem;
+}
+
+.Picker {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }

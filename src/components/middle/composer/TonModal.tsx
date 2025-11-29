@@ -1,5 +1,4 @@
 import type { ChangeEvent } from 'react';
-
 import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useState,
@@ -10,11 +9,11 @@ import { TON_MAGIC_URL } from '../../../config';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
 import captureKeyboardListeners from '../../../util/captureKeyboardListeners';
 
-import Button from '../../ui/Button';
-import Modal from '../../ui/Modal';
-import InputText from '../../ui/InputText';
-import Spinner from '../../ui/Spinner';
 import PrivateChatInfo from '../../common/PrivateChatInfo';
+import Button from '../../ui/Button';
+import InputText from '../../ui/InputText';
+import Modal from '../../ui/Modal';
+import Spinner from '../../ui/Spinner';
 
 import './TonModal.scss';
 
@@ -70,7 +69,7 @@ const TonModal: FC<OwnProps & StateProps> = ({
     if (result instanceof Promise) {
       result
         .then(() => {
-          showNotification({ message: 'Toncoins successfully sent' });
+          showNotification({ message: 'TON successfully sent' });
         })
         .catch((err) => {
           setError(err.message);
@@ -102,12 +101,12 @@ const TonModal: FC<OwnProps & StateProps> = ({
           round
           color="translucent"
           size="smaller"
-          ariaLabel="Send Toncoins"
+          ariaLabel="Send TON"
           onClick={onClear}
         >
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
-        <div className="modal-title">Send Toncoins</div>
+        <div className="modal-title">Send TON</div>
         <Button
           color="primary"
           size="smaller"
@@ -125,7 +124,7 @@ const TonModal: FC<OwnProps & StateProps> = ({
     if (!isWalletInstalled && !canInstallWallet) {
       return (
         <div className="note big">
-          Sending Toncoins is only supported in Chrome
+          Sending TON is only supported in Chrome
           <br /> at this moment.
         </div>
       );

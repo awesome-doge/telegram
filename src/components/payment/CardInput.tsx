@@ -1,22 +1,24 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useState, useRef, useEffect,
+  memo, useCallback, useEffect,
+  useRef, useState,
 } from '../../lib/teact/teact';
 
+import { CardType, detectCardType } from '../common/helpers/detectCardType';
 import { formatCardNumber } from '../middle/helpers/inputFormatters';
-import { detectCardType, CardType } from '../common/helpers/detectCardType';
+
 import useFocusAfterAnimation from '../../hooks/useFocusAfterAnimation';
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import InputText from '../ui/InputText';
 
 import './CardInput.scss';
 
 import mastercardIconPath from '../../assets/mastercard.svg';
-import visaIconPath from '../../assets/visa.svg';
 import mirIconPath from '../../assets/mir.svg';
+import visaIconPath from '../../assets/visa.svg';
 
-const CARD_NUMBER_MAX_LENGTH = 23;
+const CARD_NUMBER_MAX_LENGTH = 19;
 
 export type OwnProps = {
   value: string;
@@ -25,7 +27,7 @@ export type OwnProps = {
 };
 
 const CardInput : FC<OwnProps> = ({ value, error, onChange }) => {
-  const lang = useLang();
+  const lang = useOldLang();
   // eslint-disable-next-line no-null/no-null
   const cardNumberRef = useRef<HTMLInputElement>(null);
 
@@ -71,11 +73,11 @@ export default memo(CardInput);
 function getCardIcon(cardType: CardType) {
   switch (cardType) {
     case CardType.Mastercard:
-      return <img src={mastercardIconPath} alt="" />;
+      return <img src={mastercardIconPath} draggable={false} alt="" />;
     case CardType.Visa:
-      return <img src={visaIconPath} alt="" />;
+      return <img src={visaIconPath} draggable={false} alt="" />;
     case CardType.Mir:
-      return <img src={mirIconPath} alt="" />;
+      return <img src={mirIconPath} draggable={false} alt="" />;
     default:
       return undefined;
   }

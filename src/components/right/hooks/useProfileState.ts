@@ -1,10 +1,12 @@
-import { useCallback, useEffect } from '../../../lib/teact/teact';
+import { useEffect } from '../../../lib/teact/teact';
 
-import { ProfileState } from '../../../types';
+import { ProfileState, type ProfileTabType } from '../../../types';
 
 import animateScroll from '../../../util/animateScroll';
 import { throttle } from '../../../util/schedulers';
+
 import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
+import useLastCallback from '../../../hooks/useLastCallback';
 
 const TRANSITION_DURATION = 300;
 const PROGRAMMATIC_SCROLL_TIMEOUT_MS = 350;
@@ -15,25 +17,35 @@ let isScrollingProgrammatically = false;
 
 export default function useProfileState(
   containerRef: { current: HTMLDivElement | null },
-  tabType: string,
+  tabType: ProfileTabType,
   profileState: ProfileState,
   onProfileStateChange: (state: ProfileState) => void,
+  forceScrollProfileTab = false,
+  allowAutoScrollToTabs = false,
+  handleStopAutoScrollToTabs: () => void,
 ) {
   // Scroll to tabs if needed
   useEffectWithPrevDeps(([prevTabType]) => {
-    if (prevTabType && prevTabType !== tabType) {
+    if ((prevTabType && prevTabType !== tabType && allowAutoScrollToTabs) || (tabType && forceScrollProfileTab)) {
       const container = containerRef.current!;
       const tabsEl = container.querySelector<HTMLDivElement>('.TabList')!;
+      handleStopAutoScrollToTabs();
       if (container.scrollTop < tabsEl.offsetTop) {
-        onProfileStateChange(tabType === 'members' ? ProfileState.MemberList : ProfileState.SharedMedia);
+        onProfileStateChange(getStateFromTabType(tabType));
         isScrollingProgrammatically = true;
-        animateScroll(container, tabsEl, 'start', undefined, undefined, undefined, TRANSITION_DURATION);
+        animateScroll({
+          container,
+          element: tabsEl,
+          position: 'start',
+          forceDuration: TRANSITION_DURATION,
+        });
         setTimeout(() => {
           isScrollingProgrammatically = false;
         }, PROGRAMMATIC_SCROLL_TIMEOUT_MS);
       }
     }
-  }, [tabType, onProfileStateChange, containerRef]);
+  }, [tabType, onProfileStateChange, containerRef, forceScrollProfileTab,
+    allowAutoScrollToTabs, handleStopAutoScrollToTabs]);
 
   // Scroll to top
   useEffectWithPrevDeps(([prevProfileState]) => {
@@ -52,22 +64,20 @@ export default function useProfileState(
     }
 
     isScrollingProgrammatically = true;
-    animateScroll(
+
+    animateScroll({
       container,
-      container.firstElementChild as HTMLElement,
-      'start',
-      undefined,
-      container.offsetHeight * 2,
-    );
+      element: container.firstElementChild as HTMLElement,
+      position: 'start',
+      maxDistance: container.offsetHeight * 2,
+    });
 
     setTimeout(() => {
       isScrollingProgrammatically = false;
     }, PROGRAMMATIC_SCROLL_TIMEOUT_MS);
+  }, [profileState, containerRef]);
 
-    onProfileStateChange(profileState);
-  }, [profileState, containerRef, onProfileStateChange]);
-
-  const determineProfileState = useCallback(() => {
+  const determineProfileState = useLastCallback(() => {
     const container = containerRef.current;
     if (!container) {
       return;
@@ -80,13 +90,11 @@ export default function useProfileState(
 
     let state: ProfileState = ProfileState.Profile;
     if (container.scrollTop >= tabListEl.offsetTop) {
-      state = tabType === 'members'
-        ? ProfileState.MemberList
-        : ProfileState.SharedMedia;
+      state = getStateFromTabType(tabType);
     }
 
     onProfileStateChange(state);
-  }, [containerRef, onProfileStateChange, tabType]);
+  });
 
   // Determine profile state when switching tabs
   useEffect(() => {
@@ -98,13 +106,28 @@ export default function useProfileState(
   }, [determineProfileState, tabType]);
 
   // Determine profile state when scrolling
-  const handleScroll = useCallback(() => {
+  const handleScroll = useLastCallback(() => {
     if (isScrollingProgrammatically) {
       return;
     }
 
     runThrottledForScroll(determineProfileState);
-  }, [determineProfileState]);
+  });
 
   return { handleScroll };
+}
+
+function getStateFromTabType(tabType: ProfileTabType) {
+  switch (tabType) {
+    case 'members':
+      return ProfileState.MemberList;
+    case 'gifts':
+      return ProfileState.GiftList;
+    case 'stories':
+      return ProfileState.StoryList;
+    case 'dialogs':
+      return ProfileState.SavedDialogs;
+    default:
+      return ProfileState.SharedMedia;
+  }
 }

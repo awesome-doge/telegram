@@ -1,21 +1,23 @@
-import React, { memo, useCallback, useState } from '../../lib/teact/teact';
+import type { FC } from '../../lib/teact/teact';
+import React, { memo, useState } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiMessage } from '../../api/types';
 import type { TextPart } from '../../types';
+import { MAIN_THREAD_ID } from '../../api/types';
 import { MediaViewerOrigin, SettingsScreens } from '../../types';
-import { ApiMediaFormat, MAIN_THREAD_ID } from '../../api/types';
 
-import { getMessageMediaHash } from '../../global/helpers';
-import * as mediaLoader from '../../util/mediaLoader';
-import useMedia from '../../hooks/useMedia';
-import useLang from '../../hooks/useLang';
+import { getPhotoMediaHash, getVideoProfilePhotoMediaHash } from '../../global/helpers';
+import { fetchBlob } from '../../util/files';
+
 import useFlag from '../../hooks/useFlag';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
+import useOldLang from '../../hooks/useOldLang';
 
 import Avatar from '../common/Avatar';
-import CropModal from '../ui/CropModal';
 import ConfirmDialog from '../ui/ConfirmDialog';
+import CropModal from '../ui/CropModal';
 
 type OwnProps = {
   message: ApiMessage;
@@ -32,13 +34,15 @@ const ActionMessageSuggestedAvatar: FC<OwnProps> = ({
 
   const { isOutgoing } = message;
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [cropModalBlob, setCropModalBlob] = useState<Blob | undefined>();
   const [isVideoModalOpen, openVideoModal, closeVideoModal] = useFlag(false);
-  const suggestedPhotoUrl = useMedia(getMessageMediaHash(message, 'full'));
+  const photo = message.content.action!.photo!;
+  const suggestedPhotoUrl = useMedia(getPhotoMediaHash(photo, 'full'));
+  const suggestedVideoUrl = useMedia(getVideoProfilePhotoMediaHash(photo));
   const isVideo = message.content.action!.photo?.isVideo;
 
-  const showAvatarNotification = useCallback(() => {
+  const showAvatarNotification = useLastCallback(() => {
     showNotification({
       title: lang('ApplyAvatarHintTitle'),
       message: lang('ApplyAvatarHint'),
@@ -50,44 +54,44 @@ const ActionMessageSuggestedAvatar: FC<OwnProps> = ({
       },
       actionText: lang('Open'),
     });
-  }, [lang, showNotification]);
+  });
 
-  const handleSetSuggestedAvatar = useCallback((file: File) => {
+  const handleSetSuggestedAvatar = useLastCallback((file: File) => {
     setCropModalBlob(undefined);
     uploadProfilePhoto({ file });
     showAvatarNotification();
-  }, [showAvatarNotification, uploadProfilePhoto]);
+  });
 
-  const handleCloseCropModal = useCallback(() => {
+  const handleCloseCropModal = useLastCallback(() => {
     setCropModalBlob(undefined);
-  }, []);
+  });
 
-  const handleSetVideo = useCallback(async () => {
+  const handleSetVideo = useLastCallback(async () => {
+    if (!suggestedVideoUrl) return;
+
     closeVideoModal();
     showAvatarNotification();
 
     // TODO Once we support uploading video avatars, add crop/trim modal here
-    const photo = message.content.action!.photo!;
-    const blobUrl = await mediaLoader.fetch(`videoAvatar${photo.id}?size=u`, ApiMediaFormat.BlobUrl);
-    const blob = await fetch(blobUrl).then((r) => r.blob());
+    const blob = await fetchBlob(suggestedVideoUrl);
     uploadProfilePhoto({
       file: new File([blob], 'avatar.mp4'),
       isVideo: true,
       videoTs: photo.videoSizes?.find((l) => l.videoStartTs !== undefined)?.videoStartTs,
     });
-  }, [closeVideoModal, message.content.action, showAvatarNotification, uploadProfilePhoto]);
+  });
 
   const handleViewSuggestedAvatar = async () => {
     if (!isOutgoing && suggestedPhotoUrl) {
       if (isVideo) {
         openVideoModal();
       } else {
-        setCropModalBlob(await fetch(suggestedPhotoUrl).then((r) => r.blob()));
+        setCropModalBlob(await fetchBlob(suggestedPhotoUrl));
       }
     } else {
       openMediaViewer({
         chatId: message.chatId,
-        mediaId: message.id,
+        messageId: message.id,
         threadId: MAIN_THREAD_ID,
         origin: MediaViewerOrigin.SuggestedAvatar,
       });

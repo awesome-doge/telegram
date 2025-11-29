@@ -1,6 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useEffect, memo, useMemo, useCallback, useRef,
+  memo, useCallback, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
@@ -9,10 +9,11 @@ import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 
 import { STICKER_SIZE_SEARCH } from '../../config';
 import { selectIsCurrentUserPremium, selectShouldLoopStickers, selectStickerSet } from '../../global/selectors';
-import useLang from '../../hooks/useLang';
 
-import Button from '../ui/Button';
+import useOldLang from '../../hooks/useOldLang';
+
 import StickerButton from '../common/StickerButton';
+import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
 
 type OwnProps = {
@@ -39,7 +40,7 @@ const StickerSetResult: FC<OwnProps & StateProps> = ({
   // eslint-disable-next-line no-null/no-null
   const sharedCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
   const isAdded = set && !set.isArchived && Boolean(set.installedDate);
   const areStickersLoaded = Boolean(set?.stickers);
 

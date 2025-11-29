@@ -1,8 +1,7 @@
 import { useEffect } from '../lib/teact/teact';
 
 import { createCallbackManager } from '../util/callbacks';
-
-import { useLastCallback } from './useLastCallback';
+import useLastCallback from './useLastCallback';
 
 const startCallbacks = createCallbackManager();
 const endCallbacks = createCallbackManager();

@@ -4,16 +4,18 @@ import { getActions, withGlobal } from '../../../global';
 
 import type { ApiSession } from '../../../api/types';
 
-import { formatDateTimeToString } from '../../../util/dateFormat';
-import useLang from '../../../hooks/useLang';
-import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
-import getSessionIcon from './helpers/getSessionIcon';
 import buildClassName from '../../../util/buildClassName';
+import { formatDateTimeToString } from '../../../util/dates/dateFormat';
+import getSessionIcon from './helpers/getSessionIcon';
 
+import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import useOldLang from '../../../hooks/useOldLang';
+
+import Icon from '../../common/icons/Icon';
+import Button from '../../ui/Button';
 import ListItem from '../../ui/ListItem';
 import Modal from '../../ui/Modal';
 import Switcher from '../../ui/Switcher';
-import Button from '../../ui/Button';
 
 import styles from './SettingsActiveSession.module.scss';
 
@@ -31,7 +33,7 @@ const SettingsActiveSession: FC<OwnProps & StateProps> = ({
   isOpen, session, onClose,
 }) => {
   const { changeSessionSettings, terminateAuthorization } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   const renderingSession = useCurrentOrPrev(session, true);
 
@@ -62,7 +64,7 @@ const SettingsActiveSession: FC<OwnProps & StateProps> = ({
     return (
       <div className="modal-header-condensed" dir={lang.isRtl ? 'rtl' : undefined}>
         <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={onClose}>
-          <i className="icon icon-close" />
+          <Icon name="close" />
         </Button>
         <div className="modal-title">{lang('SessionPreview.Title')}</div>
         <Button

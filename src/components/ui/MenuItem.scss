@@ -26,7 +26,7 @@
     color: white;
     font-size: 0.875rem;
     line-height: 1.5rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     text-align: center;
     flex-shrink: 0;
   }
@@ -129,17 +129,17 @@
     font-size: 0.875rem;
     margin: 0.125rem 0.25rem;
     padding: 0.25rem;
+    padding-inline-end: 0.75rem; // Icon padding + padding for symmetry
     border-radius: 0.375rem;
     width: auto;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     transform: scale(1);
     transition: 0.15s ease-in-out transform;
 
     .icon {
       max-width: 1.25rem;
       font-size: 1.25rem;
-      margin-left: 0.5rem;
-      margin-right: 1.25rem;
+      margin-inline: 0.5rem 1.25rem;
 
       &::before {
         max-width: 1.25rem;
@@ -161,7 +161,7 @@
   }
 
   b {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   &.wrap {
@@ -172,7 +172,7 @@
   &.menu-custom-emoji-sets {
     margin: 0 0.25rem;
     padding: 0.5rem 0.75rem;
-    font-weight: 400;
+    font-weight: var(--font-weight-normal);
     font-size: small;
     line-height: 1.125rem;
   }

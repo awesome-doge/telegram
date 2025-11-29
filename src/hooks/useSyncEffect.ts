@@ -1,10 +1,20 @@
-import usePrevious from './usePrevious';
+import { useRef, useUnmountCleanup } from '../lib/teact/teact';
 
-const useSyncEffect = <const T extends readonly any[]>(cb: (args: T | readonly []) => void, dependencies: T) => {
-  const prevDeps = usePrevious<T>(dependencies);
+import usePreviousDeprecated from './usePreviousDeprecated';
+
+export default function useSyncEffect<const T extends readonly any[]>(
+  effect: (args: T | readonly []) => NoneToVoidFunction | void,
+  dependencies: T,
+) {
+  const prevDeps = usePreviousDeprecated<T>(dependencies);
+  const cleanupRef = useRef<NoneToVoidFunction>();
+
   if (!prevDeps || dependencies.some((d, i) => d !== prevDeps[i])) {
-    cb(prevDeps || []);
+    cleanupRef.current?.();
+    cleanupRef.current = effect(prevDeps || []) ?? undefined;
   }
-};
 
-export default useSyncEffect;
+  useUnmountCleanup(() => {
+    cleanupRef.current?.();
+  });
+}

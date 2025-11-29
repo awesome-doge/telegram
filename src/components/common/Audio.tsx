@@ -1,43 +1,52 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  memo, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { ApiAudio, ApiMessage, ApiVoice } from '../../api/types';
-import { ApiMediaFormat } from '../../api/types';
+import type {
+  ApiAudio, ApiMessage, ApiVideo, ApiVoice,
+} from '../../api/types';
+import type { BufferedRange } from '../../hooks/useBuffering';
+import type { OldLangFn } from '../../hooks/useOldLang';
 import type { ISettings } from '../../types';
+import { ApiMediaFormat } from '../../api/types';
 import { AudioOrigin } from '../../types';
-import type { LangFn } from '../../hooks/useLang';
 
-import { MAX_EMPTY_WAVEFORM_POINTS, renderWaveform } from './helpers/waveform';
-import renderText from './helpers/renderText';
-import { getFileSizeString } from './helpers/documentInfo';
 import {
   getMediaDuration,
+  getMediaFormat,
+  getMediaHash,
   getMediaTransferState,
-  getMessageMediaFormat,
-  getMessageMediaHash,
+  getMessageWebPageAudio,
+  hasMessageTtl,
   isMessageLocal,
   isOwnMessage,
 } from '../../global/helpers';
-import buildClassName from '../../util/buildClassName';
-import { formatMediaDateTime, formatMediaDuration, formatPastTimeShort } from '../../util/dateFormat';
-import { decodeWaveform, interpolateArray } from '../../util/waveform';
 import { makeTrackId } from '../../util/audioPlayer';
-import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
-import useShowTransition from '../../hooks/useShowTransition';
-import type { BufferedRange } from '../../hooks/useBuffering';
-import useBuffering from '../../hooks/useBuffering';
-import useAudioPlayer from '../../hooks/useAudioPlayer';
-import useLang from '../../hooks/useLang';
+import buildClassName from '../../util/buildClassName';
 import { captureEvents } from '../../util/captureEvents';
-import useMedia from '../../hooks/useMedia';
+import { formatMediaDateTime, formatMediaDuration, formatPastTimeShort } from '../../util/dates/dateFormat';
+import { decodeWaveform, interpolateArray } from '../../util/waveform';
+import { LOCAL_TGS_URLS } from './helpers/animatedAssets';
+import { getFileSizeString } from './helpers/documentInfo';
+import renderText from './helpers/renderText';
+import { MAX_EMPTY_WAVEFORM_POINTS, renderWaveform } from './helpers/waveform';
+
 import useAppLayout from '../../hooks/useAppLayout';
+import useAudioPlayer from '../../hooks/useAudioPlayer';
+import useBuffering from '../../hooks/useBuffering';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
+import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
+import useOldLang from '../../hooks/useOldLang';
+import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 
 import Button from '../ui/Button';
-import ProgressSpinner from '../ui/ProgressSpinner';
 import Link from '../ui/Link';
+import ProgressSpinner from '../ui/ProgressSpinner';
+import AnimatedIcon from './AnimatedIcon';
+import Icon from './icons/Icon';
 
 import './Audio.scss';
 
@@ -48,7 +57,6 @@ type OwnProps = {
   uploadProgress?: number;
   origin: AudioOrigin;
   date?: number;
-  lastSyncTime?: number;
   noAvatars?: boolean;
   className?: string;
   isSelectable?: boolean;
@@ -60,11 +68,13 @@ type OwnProps = {
   canTranscribe?: boolean;
   isTranscriptionHidden?: boolean;
   isTranscriptionError?: boolean;
+  autoPlay?: boolean;
   onHideTranscription?: (isHidden: boolean) => void;
-  onPlay: (messageId: number, chatId: string) => void;
+  onPlay?: (messageId: number, chatId: string) => void;
+  onPause?: NoneToVoidFunction;
   onReadMedia?: () => void;
   onCancelUpload?: () => void;
-  onDateClick?: (messageId: number, chatId: string) => void;
+  onDateClick?: (arg: ApiMessage) => void;
 };
 
 export const TINY_SCREEN_WIDTH_MQL = window.matchMedia('(max-width: 375px)');
@@ -72,8 +82,6 @@ export const WITH_AVATAR_TINY_SCREEN_WIDTH_MQL = window.matchMedia('(max-width: 
 const AVG_VOICE_DURATION = 10;
 // This is needed for browsers requiring user interaction before playing.
 const PRELOAD = true;
-// eslint-disable-next-line max-len
-const TRANSCRIBE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 24" class="loading-svg"><rect class="loading-rect" fill="transparent" width="32" height="24" stroke-width="3" stroke-linejoin="round" rx="6" ry="6" stroke="var(--accent-color)" stroke-dashoffset="1" stroke-dasharray="32,68"></rect></svg>';
 
 const Audio: FC<OwnProps> = ({
   theme,
@@ -82,7 +90,6 @@ const Audio: FC<OwnProps> = ({
   uploadProgress,
   origin,
   date,
-  lastSyncTime,
   noAvatars,
   className,
   isSelectable,
@@ -94,72 +101,100 @@ const Audio: FC<OwnProps> = ({
   isTranscriptionError,
   canDownload,
   canTranscribe,
+  autoPlay,
   onHideTranscription,
   onPlay,
+  onPause,
   onReadMedia,
   onCancelUpload,
   onDateClick,
 }) => {
-  const { cancelMessageMediaDownload, downloadMessageMedia, transcribeAudio } = getActions();
+  const {
+    cancelMediaDownload, downloadMedia, transcribeAudio, openOneTimeMediaModal,
+  } = getActions();
 
-  const { content: { audio, voice, video }, isMediaUnread } = message;
+  const {
+    content: {
+      audio: contentAudio, voice, video,
+    }, isMediaUnread,
+  } = message;
+  const audio = contentAudio || getMessageWebPageAudio(message);
+  const media = (voice || video || audio)!;
+  const mediaSource = (voice || video);
   const isVoice = Boolean(voice || video);
   const isSeeking = useRef<boolean>(false);
   // eslint-disable-next-line no-null/no-null
   const seekerRef = useRef<HTMLDivElement>(null);
-  const lang = useLang();
+  const lang = useOldLang();
   const { isRtl } = lang;
 
   const { isMobile } = useAppLayout();
   const [isActivated, setIsActivated] = useState(false);
-  const shouldLoad = (isActivated || PRELOAD) && lastSyncTime;
-  const coverHash = getMessageMediaHash(message, 'pictogram');
+  const shouldLoad = isActivated || PRELOAD;
+  const coverHash = getMediaHash(media, 'pictogram');
   const coverBlobUrl = useMedia(coverHash, false, ApiMediaFormat.BlobUrl);
+  const hasTtl = hasMessageTtl(message);
+  const isInOneTimeModal = origin === AudioOrigin.OneTimeModal;
+  const trackType = isVoice ? (hasTtl ? 'oneTimeVoice' : 'voice') : 'audio';
 
   const mediaData = useMedia(
-    getMessageMediaHash(message, 'inline'),
+    getMediaHash(media, 'inline'),
     !shouldLoad,
-    getMessageMediaFormat(message, 'inline'),
+    getMediaFormat(media, 'inline'),
   );
 
   const { loadProgress: downloadProgress } = useMediaWithLoadProgress(
-    getMessageMediaHash(message, 'download'),
+    getMediaHash(media, 'download'),
     !isDownloading,
-    getMessageMediaFormat(message, 'download'),
+    getMediaFormat(media, 'download'),
   );
 
-  const handleForcePlay = useCallback(() => {
+  const handleForcePlay = useLastCallback(() => {
     setIsActivated(true);
-    onPlay(message.id, message.chatId);
-  }, [message, onPlay]);
+    onPlay?.(message.id, message.chatId);
+  });
 
-  const handleTrackChange = useCallback(() => {
+  const handleTrackChange = useLastCallback(() => {
     setIsActivated(false);
-  }, []);
+  });
 
   const {
     isBuffered, bufferedRanges, bufferingHandlers, checkBuffering,
   } = useBuffering();
 
+  const noReset = isInOneTimeModal;
   const {
     isPlaying, playProgress, playPause, setCurrentTime, duration,
   } = useAudioPlayer(
     makeTrackId(message),
     getMediaDuration(message)!,
-    isVoice ? 'voice' : 'audio',
+    trackType,
     mediaData,
     bufferingHandlers,
     undefined,
     checkBuffering,
-    isActivated,
+    Boolean(isActivated || autoPlay),
     handleForcePlay,
     handleTrackChange,
-    isMessageLocal(message),
+    isMessageLocal(message) || hasTtl,
+    undefined,
+    onPause,
+    noReset,
+    hasTtl && !isInOneTimeModal,
   );
 
+  const reversePlayProgress = 1 - playProgress;
   const isOwn = isOwnMessage(message);
+  const isReverse = hasTtl && isInOneTimeModal;
+
   const waveformCanvasRef = useWaveformCanvas(
-    theme, voice, (isMediaUnread && !isOwn) ? 1 : playProgress, isOwn, !noAvatars, isMobile,
+    theme,
+    mediaSource,
+    (isMediaUnread && !isOwn && !isReverse) ? 1 : playProgress,
+    isOwn,
+    !noAvatars,
+    isMobile,
+    isReverse,
   );
 
   const withSeekline = isPlaying || (playProgress > 0 && playProgress < 1);
@@ -173,32 +208,38 @@ const Audio: FC<OwnProps> = ({
   const {
     isUploading, isTransferring, transferProgress,
   } = getMediaTransferState(
-    message,
     uploadProgress || downloadProgress,
     isLoadingForPlaying || isDownloading,
+    uploadProgress !== undefined,
   );
 
   const {
     shouldRender: shouldRenderSpinner,
     transitionClassNames: spinnerClassNames,
-  } = useShowTransition(isTransferring);
+  } = useShowTransitionDeprecated(isTransferring);
 
   const shouldRenderCross = shouldRenderSpinner && (isLoadingForPlaying || isUploading);
 
-  const handleButtonClick = useCallback(() => {
+  const handleButtonClick = useLastCallback(() => {
     if (isUploading) {
       onCancelUpload?.();
       return;
     }
 
+    if (hasTtl) {
+      openOneTimeMediaModal({ message });
+      onReadMedia?.();
+      return;
+    }
+
     if (!isPlaying) {
-      onPlay(message.id, message.chatId);
+      onPlay?.(message.id, message.chatId);
     }
 
     getActions().setAudioPlayerOrigin({ origin });
     setIsActivated(!isActivated);
     playPause();
-  }, [isUploading, isPlaying, isActivated, playPause, onCancelUpload, onPlay, message.id, message.chatId, origin]);
+  });
 
   useEffect(() => {
     if (onReadMedia && isMediaUnread && (isPlaying || isDownloading)) {
@@ -206,15 +247,15 @@ const Audio: FC<OwnProps> = ({
     }
   }, [isPlaying, isMediaUnread, onReadMedia, isDownloading]);
 
-  const handleDownloadClick = useCallback(() => {
+  const handleDownloadClick = useLastCallback(() => {
     if (isDownloading) {
-      cancelMessageMediaDownload({ message });
+      cancelMediaDownload({ media });
     } else {
-      downloadMessageMedia({ message });
+      downloadMedia({ media, originMessage: message });
     }
-  }, [cancelMessageMediaDownload, downloadMessageMedia, isDownloading, message]);
+  });
 
-  const handleSeek = useCallback((e: MouseEvent | TouchEvent) => {
+  const handleSeek = useLastCallback((e: MouseEvent | TouchEvent) => {
     if (isSeeking.current && seekerRef.current) {
       const { width, left } = seekerRef.current.getBoundingClientRect();
       const clientX = e instanceof MouseEvent ? e.clientX : e.targetTouches[0].clientX;
@@ -222,39 +263,35 @@ const Audio: FC<OwnProps> = ({
       // Prevent track skipping while seeking near end
       setCurrentTime(Math.max(Math.min(duration * ((clientX - left) / width), duration - 0.1), 0.001));
     }
-  }, [duration, setCurrentTime]);
+  });
 
-  const handleStartSeek = useCallback((e: MouseEvent | TouchEvent) => {
+  const handleStartSeek = useLastCallback((e: MouseEvent | TouchEvent) => {
     if (e instanceof MouseEvent && e.button === 2) return;
     isSeeking.current = true;
     handleSeek(e);
-  }, [handleSeek]);
+  });
 
-  const handleStopSeek = useCallback(() => {
+  const handleStopSeek = useLastCallback(() => {
     isSeeking.current = false;
-  }, []);
+  });
 
-  const handleDateClick = useCallback(() => {
-    onDateClick!(message.id, message.chatId);
-  }, [onDateClick, message.id, message.chatId]);
+  const handleDateClick = useLastCallback(() => {
+    onDateClick!(message);
+  });
 
-  const handleTranscribe = useCallback(() => {
+  const handleTranscribe = useLastCallback(() => {
     transcribeAudio({ chatId: message.chatId, messageId: message.id });
-  }, [message.chatId, message.id, transcribeAudio]);
+  });
 
   useEffect(() => {
-    if (!seekerRef.current || !withSeekline) return undefined;
+    if (!seekerRef.current || !withSeekline || isInOneTimeModal) return undefined;
     return captureEvents(seekerRef.current, {
       onCapture: handleStartSeek,
       onRelease: handleStopSeek,
       onClick: handleStopSeek,
       onDrag: handleSeek,
     });
-  }, [withSeekline, handleStartSeek, handleSeek, handleStopSeek]);
-
-  const transcribeSvgMemo = useMemo(() => (
-    <div dangerouslySetInnerHTML={{ __html: TRANSCRIBE_SVG }} />
-  ), []);
+  }, [withSeekline, handleStartSeek, handleSeek, handleStopSeek, isInOneTimeModal]);
 
   function renderFirstLine() {
     if (isVoice) {
@@ -291,12 +328,14 @@ const Audio: FC<OwnProps> = ({
   const fullClassName = buildClassName(
     'Audio',
     className,
+    isInOneTimeModal && 'non-interactive',
+    origin === AudioOrigin.Inline && 'inline',
     isOwn && origin === AudioOrigin.Inline && 'own',
     (origin === AudioOrigin.Search || origin === AudioOrigin.SharedMedia) && 'bigger',
     isSelected && 'audio-is-selected',
   );
 
-  const buttonClassNames = ['toggle-play'];
+  const buttonClassNames = ['toogle-play-wrapper'];
   if (shouldRenderCross) {
     buttonClassNames.push('loading');
   } else {
@@ -336,35 +375,68 @@ const Audio: FC<OwnProps> = ({
     );
   }
 
+  function renderTooglePlayWrapper() {
+    return (
+      <div className={buildClassName(...buttonClassNames)}>
+        <Button
+          round
+          ripple={!isMobile}
+          size="smaller"
+          className="toggle-play"
+          color={coverBlobUrl ? 'translucent-white' : 'primary'}
+          ariaLabel={isPlaying ? 'Pause audio' : 'Play audio'}
+          onClick={handleButtonClick}
+          isRtl={lang.isRtl}
+          backgroundImage={coverBlobUrl}
+          nonInteractive={isInOneTimeModal}
+        >
+          {!isInOneTimeModal && <Icon name="play" />}
+          {!isInOneTimeModal && <Icon name="pause" />}
+          {isInOneTimeModal && (
+            <AnimatedIcon
+              className="flame"
+              tgsUrl={LOCAL_TGS_URLS.Flame}
+              nonInteractive
+              noLoop={false}
+              size={40}
+            />
+          )}
+        </Button>
+        {hasTtl && !isInOneTimeModal && (
+          <Icon name="view-once" />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={fullClassName} dir={lang.isRtl ? 'rtl' : 'ltr'}>
       {isSelectable && (
         <div className="message-select-control">
-          {isSelected && <i className="icon icon-select" />}
+          {isSelected && <Icon name="select" />}
         </div>
       )}
-      <Button
-        round
-        ripple={!isMobile}
-        size="smaller"
-        color={coverBlobUrl ? 'translucent-white' : 'primary'}
-        className={buttonClassNames.join(' ')}
-        ariaLabel={isPlaying ? 'Pause audio' : 'Play audio'}
-        onClick={handleButtonClick}
-        isRtl={lang.isRtl}
-        backgroundImage={coverBlobUrl}
-      >
-        <i className="icon icon-play" />
-        <i className="icon icon-pause" />
-      </Button>
+      {renderTooglePlayWrapper()}
       {shouldRenderSpinner && (
         <div className={buildClassName('media-loading', spinnerClassNames, shouldRenderCross && 'interactive')}>
           <ProgressSpinner
             progress={transferProgress}
             transparent
+            withColor
             size="m"
             onClick={shouldRenderCross ? handleButtonClick : undefined}
             noCross={!shouldRenderCross}
+          />
+        </div>
+      )}
+      {isInOneTimeModal && !shouldRenderSpinner && (
+        <div className={buildClassName('media-loading')}>
+          <ProgressSpinner
+            progress={playProgress}
+            transparent
+            size="m"
+            noCross
+            rotationOffset={3 / 4}
           />
         </div>
       )}
@@ -376,7 +448,7 @@ const Audio: FC<OwnProps> = ({
           ariaLabel={isDownloading ? 'Cancel download' : 'Download'}
           onClick={handleDownloadClick}
         >
-          <i className={buildClassName('icon', isDownloading ? 'icon-close' : 'icon-arrow-down')} />
+          <Icon name={isDownloading ? 'close' : 'arrow-down'} />
         </Button>
       )}
       {origin === AudioOrigin.Search && renderWithTitle()}
@@ -393,21 +465,21 @@ const Audio: FC<OwnProps> = ({
         transferProgress,
         onDateClick ? handleDateClick : undefined,
       )}
-      {origin === AudioOrigin.SharedMedia && (voice || video) && renderWithTitle()}
-      {origin === AudioOrigin.Inline && voice && (
+      {origin === AudioOrigin.SharedMedia && mediaSource && renderWithTitle()}
+      {(origin === AudioOrigin.Inline || isInOneTimeModal || isTranscribed) && mediaSource && (
         renderVoice(
-          voice,
+          mediaSource,
           seekerRef,
           waveformCanvasRef,
-          playProgress,
+          hasTtl ? reversePlayProgress : playProgress,
           isMediaUnread,
           isTranscribing,
           isTranscriptionHidden,
           isTranscribed,
           isTranscriptionError,
-          transcribeSvgMemo,
           canTranscribe ? handleTranscribe : undefined,
           onHideTranscription,
+          origin,
         )
       )}
     </div>
@@ -426,7 +498,7 @@ function getSeeklineSpikeAmounts(isMobile?: boolean, withAvatar?: boolean) {
 }
 
 function renderAudio(
-  lang: LangFn,
+  lang: OldLangFn,
   audio: ApiAudio,
   duration: number,
   isPlaying: boolean,
@@ -484,7 +556,7 @@ function renderAudio(
 }
 
 function renderVoice(
-  voice: ApiVoice,
+  media: ApiVoice | ApiVideo,
   seekerRef: React.Ref<HTMLDivElement>,
   waveformCanvasRef: React.Ref<HTMLCanvasElement>,
   playProgress: number,
@@ -493,9 +565,9 @@ function renderVoice(
   isTranscriptionHidden?: boolean,
   isTranscribed?: boolean,
   isTranscriptionError?: boolean,
-  svgMemo?: React.ReactNode,
   onClickTranscribe?: VoidFunction,
   onHideTranscription?: (isHidden: boolean) => void,
+  origin?: AudioOrigin,
 ) {
   return (
     <div className="content">
@@ -517,19 +589,39 @@ function renderVoice(
             }
           }}
           >
-            <i className={buildClassName(
-              'transcribe-icon',
-              'icon',
-              (isTranscribed || isTranscriptionError) ? 'icon-down' : 'icon-transcribe',
-              (isTranscribed || isTranscriptionError) && !isTranscriptionHidden && 'transcribe-shown',
-            )}
+            <Icon
+              name={(isTranscribed || isTranscriptionError) ? 'down' : 'transcribe'}
+              className={buildClassName(
+                'transcribe-icon',
+                (isTranscribed || isTranscriptionError) && !isTranscriptionHidden && 'transcribe-shown',
+              )}
             />
-            {isTranscribing && svgMemo}
+            {isTranscribing && (
+              <svg viewBox="0 0 32 24" className="loading-svg">
+                <rect
+                  className="loading-rect"
+                  fill="transparent"
+                  width="32"
+                  height="24"
+                  stroke-width="3"
+                  stroke-linejoin="round"
+                  rx="6"
+                  ry="6"
+                  stroke="white"
+                  stroke-dashoffset="1"
+                  stroke-dasharray="32,68"
+                />
+              </svg>
+            )}
           </Button>
         )}
       </div>
-      <p className={buildClassName('voice-duration', isMediaUnread && 'unread')} dir="auto">
-        {playProgress === 0 ? formatMediaDuration(voice.duration) : formatMediaDuration(voice.duration * playProgress)}
+      <p
+        className={buildClassName('voice-duration', origin !== AudioOrigin.OneTimeModal && isMediaUnread && 'unread')}
+        dir="auto"
+      >
+        {playProgress === 0 || playProgress === 1
+          ? formatMediaDuration(media!.duration) : formatMediaDuration(media!.duration * playProgress)}
       </p>
     </div>
   );
@@ -537,21 +629,22 @@ function renderVoice(
 
 function useWaveformCanvas(
   theme: ISettings['theme'],
-  voice?: ApiVoice,
+  media?: ApiVoice | ApiVideo,
   playProgress = 0,
   isOwn = false,
   withAvatar = false,
   isMobile = false,
+  isReverse = false,
 ) {
   // eslint-disable-next-line no-null/no-null
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const { data: spikes, peak } = useMemo(() => {
-    if (!voice) {
+    if (!media) {
       return undefined;
     }
 
-    const { waveform, duration } = voice;
+    const { waveform, duration } = media;
     if (!waveform) {
       return {
         data: new Array(Math.min(duration, MAX_EMPTY_WAVEFORM_POINTS)).fill(0),
@@ -565,7 +658,7 @@ function useWaveformCanvas(
     const decodedWaveform = decodeWaveform(new Uint8Array(waveform));
 
     return interpolateArray(decodedWaveform, spikesCount);
-  }, [isMobile, voice, withAvatar]) || {};
+  }, [isMobile, media, withAvatar]) || {};
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -579,12 +672,15 @@ function useWaveformCanvas(
     const progressFillColor = theme === 'dark' ? '#8774E1' : '#3390EC';
     const progressFillOwnColor = theme === 'dark' ? '#FFFFFF' : '#4FAE4E';
 
-    renderWaveform(canvas, spikes, playProgress, {
+    const fillStyle = isOwn ? fillOwnColor : fillColor;
+    const progressFillStyle = isOwn ? progressFillOwnColor : progressFillColor;
+
+    renderWaveform(canvas, spikes, isReverse ? 1 - playProgress : playProgress, {
       peak,
-      fillStyle: isOwn ? fillOwnColor : fillColor,
-      progressFillStyle: isOwn ? progressFillOwnColor : progressFillColor,
+      fillStyle,
+      progressFillStyle,
     });
-  }, [isOwn, peak, playProgress, spikes, theme]);
+  }, [isOwn, peak, playProgress, spikes, theme, isReverse]);
 
   return canvasRef;
 }
@@ -596,7 +692,7 @@ function renderSeekline(
 ) {
   return (
     <div
-      className="seekline no-selection"
+      className="seekline"
       ref={seekerRef as React.Ref<HTMLDivElement>}
     >
       {bufferedRanges.map(({ start, end }) => (

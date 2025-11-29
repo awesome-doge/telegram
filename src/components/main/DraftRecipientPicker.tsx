@@ -5,9 +5,10 @@ import React, {
 import { getActions } from '../../global';
 
 import type { TabState } from '../../global/types';
+import type { ThreadId } from '../../types';
 
-import useLang from '../../hooks/useLang';
 import useFlag from '../../hooks/useFlag';
+import useOldLang from '../../hooks/useOldLang';
 
 import RecipientPicker from '../common/RecipientPicker';
 
@@ -24,7 +25,7 @@ const DraftRecipientPicker: FC<OwnProps> = ({
     resetOpenChatWithDraft,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const [isShown, markIsShown, unmarkIsShown] = useFlag();
   useEffect(() => {
@@ -33,7 +34,7 @@ const DraftRecipientPicker: FC<OwnProps> = ({
     }
   }, [isOpen, markIsShown]);
 
-  const handleSelectRecipient = useCallback((recipientId: string, threadId?: number) => {
+  const handleSelectRecipient = useCallback((recipientId: string, threadId?: ThreadId) => {
     openChatWithDraft({
       chatId: recipientId,
       threadId,

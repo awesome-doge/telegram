@@ -1,10 +1,8 @@
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { oldTranslate } from '../../../util/oldLangProvider';
+import { callApi } from '../../../api/gramjs';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { selectChat } from '../../selectors';
-import { callApi } from '../../../api/gramjs';
-import { translate } from '../../../util/langProvider';
-import { addUsers } from '../../reducers';
-import { buildCollectionByKey } from '../../../util/iteratees';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
 
 addActionHandler('reportPeer', async (global, actions, payload): Promise<void> => {
   const {
@@ -30,7 +28,7 @@ addActionHandler('reportPeer', async (global, actions, payload): Promise<void> =
 
   actions.showNotification({
     message: result
-      ? translate('ReportPeer.AlertSuccess')
+      ? oldTranslate('ReportPeer.AlertSuccess')
       : 'An error occurred while submitting your report. Please, try again later.',
     tabId,
   });
@@ -62,7 +60,7 @@ addActionHandler('reportProfilePhoto', async (global, actions, payload): Promise
 
   actions.showNotification({
     message: result
-      ? translate('ReportPeer.AlertSuccess')
+      ? oldTranslate('ReportPeer.AlertSuccess')
       : 'An error occurred while submitting your report. Please, try again later.',
     tabId,
   });
@@ -135,11 +133,14 @@ addActionHandler('terminateAllAuthorizations', async (global): Promise<void> => 
 });
 
 addActionHandler('changeSessionSettings', async (global, actions, payload): Promise<void> => {
-  const { hash, areCallsEnabled, areSecretChatsEnabled } = payload;
+  const {
+    hash, areCallsEnabled, areSecretChatsEnabled, isConfirmed,
+  } = payload;
   const result = await callApi('changeSessionSettings', {
     hash,
     areCallsEnabled,
     areSecretChatsEnabled,
+    isConfirmed,
   });
 
   if (!result) {
@@ -157,6 +158,7 @@ addActionHandler('changeSessionSettings', async (global, actions, payload): Prom
           ...global.activeSessions.byHash[hash],
           ...(areCallsEnabled !== undefined ? { areCallsEnabled } : undefined),
           ...(areSecretChatsEnabled !== undefined ? { areSecretChatsEnabled } : undefined),
+          ...(isConfirmed && { isUnconfirmed: undefined }),
         },
       },
     },
@@ -189,10 +191,8 @@ addActionHandler('loadWebAuthorizations', async (global): Promise<void> => {
   if (!result) {
     return;
   }
-  const { users, webAuthorizations } = result;
+  const { webAuthorizations } = result;
   global = getGlobal();
-
-  global = addUsers(global, buildCollectionByKey(users, 'id'));
 
   global = {
     ...global,

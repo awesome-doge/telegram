@@ -4,22 +4,25 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
+import type { ApiMessage } from '../../../api/types';
+import type { StateProps } from './helpers/createMapStateToProps';
 import { LoadMoreDirection } from '../../../types';
 
 import { SLIDE_TRANSITION_DURATION } from '../../../config';
+import { formatMonthAndYear, toYearMonth } from '../../../util/dates/dateFormat';
+import { parseSearchResultKey } from '../../../util/keys/searchResultKey';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
-import type { StateProps } from './helpers/createMapStateToProps';
-import { createMapStateToProps } from './helpers/createMapStateToProps';
-import { formatMonthAndYear, toYearMonth } from '../../../util/dateFormat';
-import { getSenderName } from './helpers/getSenderName';
 import { throttle } from '../../../util/schedulers';
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import useLang from '../../../hooks/useLang';
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import { createMapStateToProps } from './helpers/createMapStateToProps';
+import { getSenderName } from './helpers/getSenderName';
 
-import InfiniteScroll from '../../ui/InfiniteScroll';
-import WebLink from '../../common/WebLink';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useOldLang from '../../../hooks/useOldLang';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
+
 import NothingFound from '../../common/NothingFound';
+import WebLink from '../../common/WebLink';
+import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
 
 export type OwnProps = {
@@ -38,7 +41,6 @@ const LinkResults: FC<OwnProps & StateProps> = ({
   usersById,
   globalMessagesByChatId,
   foundIds,
-  lastSyncTime,
   isChatProtected,
 }) => {
   const {
@@ -49,7 +51,7 @@ const LinkResults: FC<OwnProps & StateProps> = ({
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const { observe: observeIntersectionForMedia } = useIntersectionObserver({
     rootRef: containerRef,
@@ -57,7 +59,7 @@ const LinkResults: FC<OwnProps & StateProps> = ({
   });
 
   const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
-    if (lastSyncTime && direction === LoadMoreDirection.Backwards) {
+    if (direction === LoadMoreDirection.Backwards) {
       runThrottled(() => {
         searchMessagesGlobal({
           type: CURRENT_TYPE,
@@ -65,7 +67,7 @@ const LinkResults: FC<OwnProps & StateProps> = ({
       });
     }
   // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
-  }, [lastSyncTime, searchMessagesGlobal, searchQuery]);
+  }, [searchQuery]);
 
   const foundMessages = useMemo(() => {
     if (!foundIds || !globalMessagesByChatId) {
@@ -73,40 +75,47 @@ const LinkResults: FC<OwnProps & StateProps> = ({
     }
 
     return foundIds.map((id) => {
-      const [chatId, messageId] = id.split('_');
+      const [chatId, messageId] = parseSearchResultKey(id);
 
-      return globalMessagesByChatId[chatId]?.byId[Number(messageId)];
+      return globalMessagesByChatId[chatId]?.byId[messageId];
     }).filter(Boolean);
   }, [globalMessagesByChatId, foundIds]);
 
-  const handleMessageFocus = useCallback((messageId: number, chatId: string) => {
-    focusMessage({ chatId, messageId });
+  const handleMessageFocus = useCallback((message: ApiMessage) => {
+    focusMessage({ chatId: message.chatId, messageId: message.id });
   }, [focusMessage]);
 
   function renderList() {
     return foundMessages.map((message, index) => {
-      const shouldDrawDateDivider = index === 0
+      const isFirst = index === 0;
+      const shouldDrawDateDivider = isFirst
         || toYearMonth(message.date) !== toYearMonth(foundMessages[index - 1].date);
       return (
-        <div
-          className="ListItem small-icon"
-          dir={lang.isRtl ? 'rtl' : undefined}
-          key={message.id}
-        >
+        <>
           {shouldDrawDateDivider && (
-            <p className="section-heading" dir={lang.isRtl ? 'rtl' : undefined}>
+            <p
+              className="section-heading"
+              key={message.date}
+              dir={lang.isRtl ? 'rtl' : undefined}
+            >
               {formatMonthAndYear(lang, new Date(message.date * 1000))}
             </p>
           )}
-          <WebLink
+          <div
+            className="ListItem small-icon"
+            dir={lang.isRtl ? 'rtl' : undefined}
             key={message.id}
-            message={message}
-            senderTitle={getSenderName(lang, message, chatsById, usersById)}
-            isProtected={isChatProtected || message.isProtected}
-            observeIntersection={observeIntersectionForMedia}
-            onMessageClick={handleMessageFocus}
-          />
-        </div>
+          >
+            <WebLink
+              key={message.id}
+              message={message}
+              senderTitle={getSenderName(lang, message, chatsById, usersById)}
+              isProtected={isChatProtected || message.isProtected}
+              observeIntersection={observeIntersectionForMedia}
+              onMessageClick={handleMessageFocus}
+            />
+          </div>
+        </>
       );
     });
   }
@@ -114,10 +123,10 @@ const LinkResults: FC<OwnProps & StateProps> = ({
   const canRenderContents = useAsyncRendering([searchQuery], SLIDE_TRANSITION_DURATION) && !isLoading;
 
   return (
-    <div ref={containerRef} className="LeftSearch">
+    <div ref={containerRef} className="LeftSearch--content">
       <InfiniteScroll
         className="search-content documents-list custom-scroll"
-        items={foundMessages}
+        items={canRenderContents ? foundMessages : undefined}
         onLoadMore={handleLoadMore}
         noFastList
       >

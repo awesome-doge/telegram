@@ -1,19 +1,19 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  useCallback, useEffect, useRef, memo,
-} from '../../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { getGlobal } from '../../../global';
 
 import type { ApiUser } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
 import setTooltipItemVisible from '../../../util/setTooltipItemVisible';
-import usePrevious from '../../../hooks/usePrevious';
-import useShowTransition from '../../../hooks/useShowTransition';
+
+import useLastCallback from '../../../hooks/useLastCallback';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 
-import ListItem from '../../ui/ListItem';
 import PrivateChatInfo from '../../common/PrivateChatInfo';
+import ListItem from '../../ui/ListItem';
 
 import './MentionTooltip.scss';
 
@@ -32,9 +32,9 @@ const MentionTooltip: FC<OwnProps> = ({
 }) => {
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
-  const { shouldRender, transitionClassNames } = useShowTransition(isOpen, undefined, undefined, false);
+  const { shouldRender, transitionClassNames } = useShowTransitionDeprecated(isOpen, undefined, undefined, false);
 
-  const handleUserSelect = useCallback((userId: string, forceFocus = false) => {
+  const handleUserSelect = useLastCallback((userId: string, forceFocus = false) => {
     // No need for expensive global updates on users, so we avoid them
     const usersById = getGlobal().users.byId;
     const user = usersById[userId];
@@ -43,17 +43,17 @@ const MentionTooltip: FC<OwnProps> = ({
     }
 
     onInsertUserName(user, forceFocus);
-  }, [onInsertUserName]);
+  });
 
-  const handleClick = useCallback((e: React.MouseEvent, id: string) => {
+  const handleClick = useLastCallback((e: React.MouseEvent, id: string) => {
     e.preventDefault();
 
     handleUserSelect(id);
-  }, [handleUserSelect]);
+  });
 
-  const handleSelectMention = useCallback((member: ApiUser) => {
+  const handleSelectMention = useLastCallback((member: ApiUser) => {
     handleUserSelect(member.id, true);
-  }, [handleUserSelect]);
+  });
 
   const selectedMentionIndex = useKeyboardNavigation({
     isActive: isOpen,
@@ -74,7 +74,7 @@ const MentionTooltip: FC<OwnProps> = ({
     }
   }, [filteredUsers, onClose]);
 
-  const prevChatMembers = usePrevious(
+  const prevChatMembers = usePreviousDeprecated(
     filteredUsers?.length
       ? filteredUsers
       : undefined,
@@ -98,7 +98,7 @@ const MentionTooltip: FC<OwnProps> = ({
       {renderedChatMembers?.map(({ id }, index) => (
         <ListItem
           key={id}
-          className="chat-item-clickable scroll-item"
+          className="chat-item-clickable scroll-item smaller-icon"
           onClick={handleClick}
           clickArg={id}
           focus={selectedMentionIndex === index}

@@ -4,8 +4,9 @@ import { getActions } from '../../global';
 
 import { ensureProtocol } from '../../util/ensureProtocol';
 import renderText from '../common/helpers/renderText';
-import useLang from '../../hooks/useLang';
+
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useOldLang from '../../hooks/useOldLang';
 
 import ConfirmDialog from '../ui/ConfirmDialog';
 
@@ -16,7 +17,7 @@ export type OwnProps = {
 const SafeLinkModal: FC<OwnProps> = ({ url }) => {
   const { toggleSafeLinkModal } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleOpen = useCallback(() => {
     window.open(ensureProtocol(url), '_blank', 'noopener');

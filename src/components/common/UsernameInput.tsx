@@ -1,15 +1,17 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  useState, useCallback, memo, useEffect, useMemo,
+  memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
-
 import { TME_LINK_PREFIX } from '../../config';
 import { debounce } from '../../util/schedulers';
+import {
+  isUsernameValid, MAX_USERNAME_LENGTH, MIN_UPDATE_USERNAME_LENGTH, USERNAME_REGEX,
+} from '../../util/username';
 
-import useLang from '../../hooks/useLang';
-import usePrevious from '../../hooks/usePrevious';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
 import InputText from '../ui/InputText';
 
@@ -22,20 +24,9 @@ type OwnProps = {
   onChange: (value: string) => void;
 };
 
-const MIN_USERNAME_LENGTH = 5;
-const MAX_USERNAME_LENGTH = 32;
 const LINK_PREFIX_REGEX = /https:\/\/t\.me\/?/i;
-const USERNAME_REGEX = /^\D([a-zA-Z0-9_]+)$/;
 
 const runDebouncedForCheckUsername = debounce((cb) => cb(), 250, false);
-
-function isUsernameValid(username: string) {
-  return username.length === 0 || (
-    username.length >= MIN_USERNAME_LENGTH
-    && username.length <= MAX_USERNAME_LENGTH
-    && USERNAME_REGEX.test(username)
-  );
-}
 
 const UsernameInput: FC<OwnProps> = ({
   currentUsername,
@@ -48,11 +39,11 @@ const UsernameInput: FC<OwnProps> = ({
   const { checkUsername, checkPublicLink } = getActions();
   const [username, setUsername] = useState(currentUsername || '');
 
-  const lang = useLang();
+  const lang = useOldLang();
   const langPrefix = asLink ? 'SetUrl' : 'Username';
   const label = asLink ? lang('SetUrlPlaceholder') : lang('Username');
 
-  const previousIsUsernameAvailable = usePrevious(isUsernameAvailable);
+  const previousIsUsernameAvailable = usePreviousDeprecated(isUsernameAvailable);
   const renderingIsUsernameAvailable = currentUsername !== username
     ? (isUsernameAvailable ?? previousIsUsernameAvailable) : undefined;
   const isChecking = username && currentUsername !== username && checkedUsername !== username;
@@ -62,7 +53,7 @@ const UsernameInput: FC<OwnProps> = ({
       return [];
     }
 
-    if (username.length < MIN_USERNAME_LENGTH) {
+    if (username.length < MIN_UPDATE_USERNAME_LENGTH) {
       return [undefined, lang(`${langPrefix}InvalidShort`)];
     }
     if (username.length > MAX_USERNAME_LENGTH) {
@@ -88,10 +79,20 @@ const UsernameInput: FC<OwnProps> = ({
   }, [asLink, currentUsername]);
 
   const handleUsernameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newUsername = e.target.value.trim().replace(LINK_PREFIX_REGEX, '');
+    const value = e.target.value.trim();
+    // Prevent prefix editing
+    if (asLink && !value.match(LINK_PREFIX_REGEX)) {
+      if (!value.length) {
+        setUsername('');
+        onChange?.('');
+      }
+      return;
+    }
+    const newUsername = value.replace(LINK_PREFIX_REGEX, '');
+
     setUsername(newUsername);
 
-    const isValid = isUsernameValid(newUsername);
+    const isValid = newUsername === '' ? true : isUsernameValid(newUsername, true);
     if (!isValid) return;
 
     onChange?.(newUsername);

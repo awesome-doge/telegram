@@ -1,12 +1,13 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useMemo } from '../../../lib/teact/teact';
 
-import type { ISettings } from '../../../types';
 import type { ApiDocument } from '../../../api/types';
+import type { ISettings } from '../../../types';
 import { ApiMediaFormat } from '../../../api/types';
 
 import { getDocumentMediaHash } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
+
 import useAppLayout from '../../../hooks/useAppLayout';
 import useMedia from '../../../hooks/useMedia';
 
@@ -26,7 +27,7 @@ const AttachBotIcon: FC<OwnProps> = ({
   icon, theme,
 }) => {
   const { isTouchScreen } = useAppLayout();
-  const mediaData = useMedia(getDocumentMediaHash(icon), false, ApiMediaFormat.Text);
+  const mediaData = useMedia(getDocumentMediaHash(icon, 'full'), false, ApiMediaFormat.Text);
 
   const iconSvg = useMemo(() => {
     if (!mediaData) return '';
@@ -44,7 +45,12 @@ const AttachBotIcon: FC<OwnProps> = ({
 
   return (
     <i className={buildClassName(styles.root, 'icon', !isTouchScreen && styles.compact)}>
-      <img src={iconSvg} alt="" className={buildClassName(styles.image, !isTouchScreen && styles.compact)} />
+      <img
+        src={iconSvg}
+        alt=""
+        className={buildClassName(styles.image, !isTouchScreen && styles.compact)}
+        draggable={false}
+      />
     </i>
   );
 };

@@ -1,22 +1,22 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
-import { selectActiveGroupCall, selectGroupCallParticipant, selectPhoneCallUser } from '../../selectors/calls';
-import { updateGroupCall, updateGroupCallParticipant } from '../../reducers/calls';
-import { buildCollectionByKey, omit } from '../../../util/iteratees';
+import type { ApiPhoneCall } from '../../../api/types';
 import type { ApiCallProtocol } from '../../../lib/secret-sauce';
+import type { ActionReturnType } from '../../types';
+
 import {
   handleUpdateGroupCallConnection,
   handleUpdateGroupCallParticipants,
   joinPhoneCall, processSignalingMessage,
 } from '../../../lib/secret-sauce';
-import type { ApiPhoneCall } from '../../../api/types';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { omit } from '../../../util/iteratees';
+import * as langProvider from '../../../util/oldLangProvider';
+import { EMOJI_DATA, EMOJI_OFFSETS } from '../../../util/phoneCallEmojiConstants';
 import { ARE_CALLS_SUPPORTED } from '../../../util/windowEnvironment';
 import { callApi } from '../../../api/gramjs';
-import * as langProvider from '../../../util/langProvider';
-import { EMOJI_DATA, EMOJI_OFFSETS } from '../../../util/phoneCallEmojiConstants';
-import type { ActionReturnType } from '../../types';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import { updateGroupCall, updateGroupCallParticipant } from '../../reducers/calls';
 import { updateTabState } from '../../reducers/tabs';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { addUsers } from '../../reducers';
+import { selectActiveGroupCall, selectGroupCallParticipant, selectPhoneCallUser } from '../../selectors/calls';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   const { activeGroupCallId } = global.groupCalls;
@@ -89,6 +89,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         ...global,
         phoneCall: call,
       };
+      setGlobal(global);
+      global = getGlobal();
 
       if (phoneCall && phoneCall.id && call.id !== phoneCall.id) {
         if (call.state !== 'discarded') {
@@ -109,7 +111,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           const user = selectPhoneCallUser(global);
           if ('hangUp' in actions) actions.hangUp({ tabId: getCurrentTabId() });
           actions.showNotification({
-            message: langProvider.translate('VoipPeerIncompatible', user?.firstName),
+            message: langProvider.oldTranslate('VoipPeerIncompatible', user?.firstName),
             tabId: getCurrentTabId(),
           });
           return undefined;
@@ -140,14 +142,9 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           };
           setGlobal(global);
 
-          const result = await callApi('confirmCall', {
+          callApi('confirmCall', {
             call, gA, keyFingerprint,
           });
-          if (result) {
-            global = getGlobal();
-            global = addUsers(global, buildCollectionByKey(result.users, 'id'));
-            setGlobal(global);
-          }
         })();
       } else if (state === 'active' && connections && phoneCall?.state !== 'active') {
         if (!isOutgoing) {
@@ -169,7 +166,12 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           })();
         }
         void joinPhoneCall(
-          connections, actions.sendSignalingData, isOutgoing, Boolean(call?.isVideo), actions.apiUpdate,
+          connections,
+          actions.sendSignalingData,
+          isOutgoing,
+          Boolean(call?.isVideo),
+          Boolean(call.isP2pAllowed),
+          actions.apiUpdate,
         );
       }
 

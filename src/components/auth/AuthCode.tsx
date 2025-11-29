@@ -1,22 +1,24 @@
 import type { FormEvent } from 'react';
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useState, useEffect, useCallback, memo, useRef,
+  memo, useCallback, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
+
 import type { GlobalState } from '../../global/types';
 
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { pick } from '../../util/iteratees';
-import renderText from '../common/helpers/renderText';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+
 import useHistoryBack from '../../hooks/useHistoryBack';
 import useLang from '../../hooks/useLang';
 
+import Icon from '../common/icons/Icon';
+import TrackingMonkey from '../common/TrackingMonkey';
 import InputText from '../ui/InputText';
 import Loading from '../ui/Loading';
-import TrackingMonkey from '../common/TrackingMonkey';
 
-type StateProps = Pick<GlobalState, 'authPhoneNumber' | 'authIsCodeViaApp' | 'authIsLoading' | 'authError'>;
+type StateProps = Pick<GlobalState, 'authPhoneNumber' | 'authIsCodeViaApp' | 'authIsLoading' | 'authErrorKey'>;
 
 const CODE_LENGTH = 5;
 
@@ -24,12 +26,12 @@ const AuthCode: FC<StateProps> = ({
   authPhoneNumber,
   authIsCodeViaApp,
   authIsLoading,
-  authError,
+  authErrorKey,
 }) => {
   const {
     setAuthCode,
     returnToAuthPhoneNumber,
-    clearAuthError,
+    clearAuthErrorKey,
   } = getActions();
 
   const lang = useLang();
@@ -52,8 +54,8 @@ const AuthCode: FC<StateProps> = ({
   });
 
   const onCodeChange = useCallback((e: FormEvent<HTMLInputElement>) => {
-    if (authError) {
-      clearAuthError();
+    if (authErrorKey) {
+      clearAuthErrorKey();
     }
 
     const { currentTarget: target } = e;
@@ -80,7 +82,7 @@ const AuthCode: FC<StateProps> = ({
     if (target.value.length === CODE_LENGTH) {
       setAuthCode({ code: target.value });
     }
-  }, [authError, clearAuthError, code, isTracking, setAuthCode]);
+  }, [authErrorKey, code, isTracking, setAuthCode]);
 
   function handleReturnToAuthPhoneNumber() {
     returnToAuthPhoneNumber();
@@ -103,12 +105,16 @@ const AuthCode: FC<StateProps> = ({
             role="button"
             tabIndex={0}
             title={lang('WrongNumber')}
+            aria-label={lang('WrongNumber')}
           >
-            <i className="icon icon-edit" />
+            <Icon name="edit" />
           </div>
         </h1>
         <p className="note">
-          {renderText(lang(authIsCodeViaApp ? 'SentAppCode' : 'Login.JustSentSms'), ['simple_markdown'])}
+          {lang(authIsCodeViaApp ? 'SentAppCode' : 'LoginJustSentSms', undefined, {
+            withNodes: true,
+            withMarkdown: true,
+          })}
         </p>
         <InputText
           ref={inputRef}
@@ -116,7 +122,7 @@ const AuthCode: FC<StateProps> = ({
           label={lang('Code')}
           onInput={onCodeChange}
           value={code}
-          error={authError && lang(authError)}
+          error={authErrorKey && lang.withRegular(authErrorKey)}
           autoComplete="off"
           inputMode="numeric"
         />
@@ -127,5 +133,5 @@ const AuthCode: FC<StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => pick(global, ['authPhoneNumber', 'authIsCodeViaApp', 'authIsLoading', 'authError']),
+  (global): StateProps => pick(global, ['authPhoneNumber', 'authIsCodeViaApp', 'authIsLoading', 'authErrorKey']),
 )(AuthCode));

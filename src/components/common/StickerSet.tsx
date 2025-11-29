@@ -1,38 +1,45 @@
-import React, {
-  memo, useCallback, useEffect, useMemo, useRef, useState,
-} from '../../lib/teact/teact';
-import { getActions, getGlobal } from '../../global';
-
 import type { FC } from '../../lib/teact/teact';
-import type { ApiAvailableReaction, ApiReaction, ApiSticker } from '../../api/types';
-import type { StickerSetOrReactionsSetOrRecent } from '../../types';
+import React, {
+  memo, useEffect, useMemo, useRef, useState,
+} from '../../lib/teact/teact';
+import { getActions, getGlobal, withGlobal } from '../../global';
+
+import type {
+  ApiAvailableReaction, ApiEmojiStatusType, ApiReactionWithPaid, ApiSticker,
+} from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
+import type { StickerSetOrReactionsSetOrRecent } from '../../types';
 
 import {
+  COLLECTIBLE_STATUS_SET_ID,
   DEFAULT_STATUS_ICON_ID,
   DEFAULT_TOPIC_ICON_STICKER_ID,
+  EFFECT_EMOJIS_SET_ID,
+  EFFECT_STICKERS_SET_ID,
   EMOJI_SIZE_PICKER,
   FAVORITE_SYMBOL_SET_ID,
   POPULAR_SYMBOL_SET_ID,
   RECENT_SYMBOL_SET_ID,
   STICKER_SIZE_PICKER,
 } from '../../config';
-import buildClassName from '../../util/buildClassName';
+import { getReactionKey } from '../../global/helpers';
 import { selectIsAlwaysHighPriorityEmoji, selectIsSetPremium } from '../../global/selectors';
-import { getReactionUniqueKey } from '../../global/helpers';
+import buildClassName from '../../util/buildClassName';
 
-import useLang from '../../hooks/useLang';
-import useFlag from '../../hooks/useFlag';
-import useMediaTransition from '../../hooks/useMediaTransition';
-import useResizeObserver from '../../hooks/useResizeObserver';
-import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
 import useAppLayout from '../../hooks/useAppLayout';
-import useWindowSize from '../../hooks/useWindowSize';
+import useFlag from '../../hooks/useFlag';
+import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMediaTransitionDeprecated from '../../hooks/useMediaTransitionDeprecated';
+import useOldLang from '../../hooks/useOldLang';
+import useResizeObserver from '../../hooks/useResizeObserver';
+import useWindowSize from '../../hooks/window/useWindowSize';
 
-import StickerButton from './StickerButton';
-import ConfirmDialog from '../ui/ConfirmDialog';
 import Button from '../ui/Button';
-import ReactionEmoji from './ReactionEmoji';
+import ConfirmDialog from '../ui/ConfirmDialog';
+import Icon from './icons/Icon';
+import ReactionEmoji from './reactions/ReactionEmoji';
+import StickerButton from './StickerButton';
 
 import grey from '../../assets/icons/forumTopic/grey.svg';
 
@@ -40,7 +47,7 @@ type OwnProps = {
   stickerSet: StickerSetOrReactionsSetOrRecent;
   loadAndPlay: boolean;
   index: number;
-  idPrefix?: string;
+  idPrefix: string;
   isNearActive: boolean;
   favoriteStickers?: ApiSticker[];
   isSavedMessages?: boolean;
@@ -51,13 +58,18 @@ type OwnProps = {
   selectedReactionIds?: string[];
   withDefaultTopicIcon?: boolean;
   withDefaultStatusIcon?: boolean;
+  isChatEmojiSet?: boolean;
+  isChatStickerSet?: boolean;
   isTranslucent?: boolean;
+  noContextMenus?: boolean;
+  forcePlayback?: boolean;
   observeIntersection?: ObserveFn;
   observeIntersectionForPlayingItems: ObserveFn;
   observeIntersectionForShowingItems: ObserveFn;
   availableReactions?: ApiAvailableReaction[];
   onStickerSelect?: (sticker: ApiSticker, isSilent?: boolean, shouldSchedule?: boolean) => void;
-  onReactionSelect?: (reaction: ApiReaction) => void;
+  onReactionSelect?: (reaction: ApiReactionWithPaid) => void;
+  onReactionContext?: (reaction: ApiReactionWithPaid) => void;
   onStickerUnfave?: (sticker: ApiSticker) => void;
   onStickerFave?: (sticker: ApiSticker) => void;
   onStickerRemoveRecent?: (sticker: ApiSticker) => void;
@@ -66,13 +78,17 @@ type OwnProps = {
   onContextMenuClick?: NoneToVoidFunction;
 };
 
+type StateProps = {
+  collectibleStatuses?: ApiEmojiStatusType[];
+};
+
 const ITEMS_PER_ROW_FALLBACK = 8;
 const ITEMS_MOBILE_PER_ROW_FALLBACK = 7;
 const ITEMS_MINI_MOBILE_PER_ROW_FALLBACK = 6;
 const MOBILE_WIDTH_THRESHOLD_PX = 440;
 const MINI_MOBILE_WIDTH_THRESHOLD_PX = 362;
 
-const StickerSet: FC<OwnProps> = ({
+const StickerSet: FC<OwnProps & StateProps> = ({
   stickerSet,
   loadAndPlay,
   index,
@@ -88,11 +104,16 @@ const StickerSet: FC<OwnProps> = ({
   withDefaultTopicIcon,
   selectedReactionIds,
   withDefaultStatusIcon,
+  isChatEmojiSet,
+  isChatStickerSet,
   isTranslucent,
+  noContextMenus,
+  forcePlayback,
   observeIntersection,
   observeIntersectionForPlayingItems,
   observeIntersectionForShowingItems,
   onReactionSelect,
+  onReactionContext,
   onStickerSelect,
   onStickerUnfave,
   onStickerFave,
@@ -100,6 +121,7 @@ const StickerSet: FC<OwnProps> = ({
   onContextMenuOpen,
   onContextMenuClose,
   onContextMenuClick,
+  collectibleStatuses,
 }) => {
   const {
     clearRecentStickers,
@@ -118,7 +140,7 @@ const StickerSet: FC<OwnProps> = ({
   // eslint-disable-next-line no-null/no-null
   const sharedCanvasHqRef = useRef<HTMLCanvasElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
   const { width: windowWidth } = useWindowSize();
   const [isConfirmModalOpen, openConfirmModal, closeConfirmModal] = useFlag();
   const { isMobile } = useAppLayout();
@@ -126,7 +148,7 @@ const StickerSet: FC<OwnProps> = ({
   const [itemsPerRow, setItemsPerRow] = useState(getItemsPerRowFallback(windowWidth));
 
   const isIntersecting = useIsIntersecting(ref, observeIntersection ?? observeIntersectionForShowingItems);
-  const transitionClassNames = useMediaTransition(isIntersecting);
+  const transitionClassNames = useMediaTransitionDeprecated(isIntersecting);
 
   // `isNearActive` is set in advance during animation, but it is not reliable for short sets
   const shouldRender = isNearActive || isIntersecting;
@@ -135,12 +157,13 @@ const StickerSet: FC<OwnProps> = ({
   const emojiMarginPx = isMobile ? 8 : 10;
   const emojiVerticalMarginPx = isMobile ? 8 : 4;
   const isRecent = stickerSet.id === RECENT_SYMBOL_SET_ID;
+  const isStatusCollectible = stickerSet.id === COLLECTIBLE_STATUS_SET_ID;
   const isFavorite = stickerSet.id === FAVORITE_SYMBOL_SET_ID;
   const isPopular = stickerSet.id === POPULAR_SYMBOL_SET_ID;
   const isEmoji = stickerSet.isEmoji;
   const isPremiumSet = !isRecent && selectIsSetPremium(stickerSet);
 
-  const handleClearRecent = useCallback(() => {
+  const handleClearRecent = useLastCallback(() => {
     if (isReactionPicker) {
       clearRecentReactions();
     } else if (isEmoji) {
@@ -149,11 +172,9 @@ const StickerSet: FC<OwnProps> = ({
       clearRecentStickers();
     }
     closeConfirmModal();
-  }, [
-    clearRecentCustomEmoji, clearRecentReactions, clearRecentStickers, closeConfirmModal, isEmoji, isReactionPicker,
-  ]);
+  });
 
-  const handleAddClick = useCallback(() => {
+  const handleAddClick = useLastCallback(() => {
     if (isPremiumSet && !isCurrentUserPremium) {
       openPremiumModal({
         initialSection: 'animated_emoji',
@@ -163,10 +184,11 @@ const StickerSet: FC<OwnProps> = ({
         stickerSetId: stickerSet.id,
       });
     }
-  }, [isCurrentUserPremium, isPremiumSet, openPremiumModal, stickerSet, toggleStickerSet]);
+  });
 
-  const handleDefaultTopicIconClick = useCallback(() => {
+  const handleDefaultTopicIconClick = useLastCallback(() => {
     onStickerSelect?.({
+      mediaType: 'sticker',
       id: DEFAULT_TOPIC_ICON_STICKER_ID,
       isLottie: false,
       isVideo: false,
@@ -174,10 +196,11 @@ const StickerSet: FC<OwnProps> = ({
         shortName: 'dummy',
       },
     } satisfies ApiSticker);
-  }, [onStickerSelect]);
+  });
 
-  const handleDefaultStatusIconClick = useCallback(() => {
+  const handleDefaultStatusIconClick = useLastCallback(() => {
     onStickerSelect?.({
+      mediaType: 'sticker',
       id: DEFAULT_STATUS_ICON_ID,
       isLottie: false,
       isVideo: false,
@@ -185,23 +208,24 @@ const StickerSet: FC<OwnProps> = ({
         shortName: 'dummy',
       },
     } satisfies ApiSticker);
-  }, [onStickerSelect]);
+  });
 
   const itemSize = isEmoji ? EMOJI_SIZE_PICKER : STICKER_SIZE_PICKER;
   const margin = isEmoji ? emojiMarginPx : stickerMarginPx;
   const verticalMargin = isEmoji ? emojiVerticalMarginPx : stickerMarginPx;
 
-  const calculateItemsPerRow = useCallback((width: number) => {
+  const calculateItemsPerRow = useLastCallback((width: number) => {
     if (!width) {
       return getItemsPerRowFallback(windowWidth);
     }
 
     return Math.floor((width + margin) / (itemSize + margin));
-  }, [itemSize, margin, windowWidth]);
+  });
 
-  const handleResize = useCallback((entry: ResizeObserverEntry) => {
+  const handleResize = useLastCallback((entry: ResizeObserverEntry) => {
     setItemsPerRow(calculateItemsPerRow(entry.contentRect.width));
-  }, [calculateItemsPerRow]);
+  });
+
   useResizeObserver(ref, handleResize);
 
   useEffect(() => {
@@ -220,14 +244,17 @@ const StickerSet: FC<OwnProps> = ({
     }
   }, [shouldRender, loadStickers, stickerSet]);
 
-  const isLocked = !isSavedMessages && !isRecent && isEmoji && !isCurrentUserPremium
-    && stickerSet.stickers?.some(({ isFree }) => !isFree);
+  const isLocked = !isSavedMessages && !isCurrentUserPremium && isPremiumSet && !isChatEmojiSet;
 
   const isInstalled = stickerSet.installedDate && !stickerSet.isArchived;
-  const canCut = !isInstalled && stickerSet.id !== RECENT_SYMBOL_SET_ID && stickerSet.id !== POPULAR_SYMBOL_SET_ID;
+
+  const canCut = !isInstalled && stickerSet.id !== RECENT_SYMBOL_SET_ID
+    && stickerSet.id !== POPULAR_SYMBOL_SET_ID && stickerSet.id !== EFFECT_EMOJIS_SET_ID
+    && stickerSet.id !== EFFECT_STICKERS_SET_ID && !isChatEmojiSet && !isChatStickerSet;
+
   const [isCut, , expand] = useFlag(canCut);
   const itemsBeforeCutout = itemsPerRow * 3 - 1;
-  const totalItemsCount = withDefaultTopicIcon ? stickerSet.count + 1 : stickerSet.count;
+  const totalItemsCount = (withDefaultTopicIcon || withDefaultStatusIcon) ? stickerSet.count + 1 : stickerSet.count;
 
   const itemHeight = itemSize + verticalMargin;
   const heightWhenCut = Math.ceil(Math.min(itemsBeforeCutout, totalItemsCount) / itemsPerRow)
@@ -237,28 +264,46 @@ const StickerSet: FC<OwnProps> = ({
   const favoriteStickerIdsSet = useMemo(() => (
     favoriteStickers ? new Set(favoriteStickers.map(({ id }) => id)) : undefined
   ), [favoriteStickers]);
-  const withAddSetButton = !shouldHideHeader && !isRecent && isEmoji && !isInstalled && !isPopular;
+  const collectibleEmojiIdsSet = useMemo(() => (
+    collectibleStatuses ? new Set(collectibleStatuses.map(({ documentId }) => documentId)) : undefined
+  ), [collectibleStatuses]);
+  const withAddSetButton = !shouldHideHeader && !isRecent && !isStatusCollectible
+   && isEmoji && !isPopular && !isChatEmojiSet
+    && (!isInstalled || (!isCurrentUserPremium && !isSavedMessages));
+  const addSetButtonText = useMemo(() => {
+    if (isLocked) {
+      if (isInstalled) return lang('lng_emoji_premium_restore');
+      return lang('Unlock');
+    }
+
+    return lang('Add');
+  }, [isLocked, lang, isInstalled]);
 
   return (
     <div
       ref={ref}
       key={stickerSet.id}
-      id={`${idPrefix || 'sticker-set'}-${index}`}
+      id={`${idPrefix}-${index}`}
       className={
         buildClassName('symbol-set', isLocked && 'symbol-set-locked')
       }
     >
       {!shouldHideHeader && (
         <div className="symbol-set-header">
-          <p className={buildClassName('symbol-set-name', withAddSetButton && 'symbol-set-name-external')}>
-            {isLocked && <i className="symbol-set-locked-icon icon icon-lock-badge" />}
-            {stickerSet.title}
+          <p className={buildClassName('symbol-set-title', withAddSetButton && 'symbol-set-title-external')}>
+            {isLocked && <Icon name="lock-badge" className="symbol-set-locked-icon" />}
+            <span className="symbol-set-name">{stickerSet.title}</span>
+            {(isChatEmojiSet || isChatStickerSet) && (
+              <span className="symbol-set-chat">{lang(isChatEmojiSet ? 'GroupEmoji' : 'GroupStickers')}</span>
+            )}
             {withAddSetButton && Boolean(stickerSet.stickers) && (
-              <span className="symbol-set-amount">{lang('Stickers', stickerSet.stickers.length, 'i')}</span>
+              <span className="symbol-set-amount">
+                {lang(isEmoji ? 'EmojiCount' : 'Stickers', stickerSet.stickers.length, 'i')}
+              </span>
             )}
           </p>
           {isRecent && (
-            <i className="symbol-set-remove icon icon-close" onClick={openConfirmModal} />
+            <Icon className="symbol-set-remove" name="close" onClick={openConfirmModal} />
           )}
           {withAddSetButton && (
             <Button
@@ -269,13 +314,17 @@ const StickerSet: FC<OwnProps> = ({
               size="tiny"
               fluid
             >
-              {isPremiumSet && isLocked ? lang('Unlock') : lang('Add')}
+              {addSetButtonText}
             </Button>
           )}
         </div>
       )}
       <div
-        className={buildClassName('symbol-set-container shared-canvas-container', transitionClassNames)}
+        className={buildClassName(
+          'symbol-set-container shared-canvas-container',
+          transitionClassNames,
+          stickerSet.id === EFFECT_EMOJIS_SET_ID && 'effect-emojis',
+        )}
         style={`height: ${height}px;`}
       >
         <canvas
@@ -291,7 +340,7 @@ const StickerSet: FC<OwnProps> = ({
             onClick={handleDefaultTopicIconClick}
             key="default-topic-icon"
           >
-            <img src={grey} alt="Reset" className="sticker-media" />
+            <img src={grey} alt="Reset" className="sticker-media" draggable={false} />
           </Button>
         )}
         {withDefaultStatusIcon && (
@@ -301,11 +350,11 @@ const StickerSet: FC<OwnProps> = ({
             onClick={handleDefaultStatusIconClick}
             key="default-status-icon"
           >
-            <i className="icon icon-premium" />
+            <Icon name="star" />
           </Button>
         )}
         {shouldRender && stickerSet.reactions?.map((reaction) => {
-          const reactionId = getReactionUniqueKey(reaction);
+          const reactionId = getReactionKey(reaction);
           const isSelected = reactionId ? selectedReactionIds?.includes(reactionId) : undefined;
 
           return (
@@ -317,8 +366,10 @@ const StickerSet: FC<OwnProps> = ({
               availableReactions={availableReactions}
               observeIntersection={observeIntersectionForPlayingItems}
               onClick={onReactionSelect!}
+              onContextMenu={onReactionContext}
               sharedCanvasRef={sharedCanvasRef}
               sharedCanvasHqRef={sharedCanvasHqRef}
+              forcePlayback={forcePlayback}
             />
           );
         })}
@@ -332,6 +383,9 @@ const StickerSet: FC<OwnProps> = ({
             const reactionId = sticker.isCustomEmoji ? sticker.id : sticker.emoji;
             const isSelected = reactionId ? selectedReactionIds?.includes(reactionId) : undefined;
 
+            const withSparkles = sticker.id === COLLECTIBLE_STATUS_SET_ID
+            || collectibleEmojiIdsSet?.has(sticker.id);
+
             return (
               <StickerButton
                 key={sticker.id}
@@ -343,7 +397,9 @@ const StickerSet: FC<OwnProps> = ({
                 isSavedMessages={isSavedMessages}
                 isStatusPicker={isStatusPicker}
                 canViewSet
+                noContextMenu={noContextMenus}
                 isCurrentUserPremium={isCurrentUserPremium}
+                shouldIgnorePremium={isChatEmojiSet}
                 sharedCanvasRef={canvasRef}
                 withTranslucentThumb={isTranslucent}
                 onClick={onStickerSelect}
@@ -355,6 +411,11 @@ const StickerSet: FC<OwnProps> = ({
                 onContextMenuOpen={onContextMenuOpen}
                 onContextMenuClose={onContextMenuClose}
                 onContextMenuClick={onContextMenuClick}
+                forcePlayback={forcePlayback}
+                isEffectEmoji={stickerSet.id === EFFECT_EMOJIS_SET_ID}
+                noShowPremium={isCurrentUserPremium
+                  && (stickerSet.id === EFFECT_STICKERS_SET_ID || stickerSet.id === EFFECT_EMOJIS_SET_ID)}
+                withSparkles={withSparkles}
               />
             );
           })}
@@ -384,7 +445,13 @@ const StickerSet: FC<OwnProps> = ({
   );
 };
 
-export default memo(StickerSet);
+export default memo(withGlobal<OwnProps>(
+  (global): StateProps => {
+    const collectibleStatuses = global.collectibleEmojiStatuses?.statuses;
+
+    return { collectibleStatuses };
+  },
+)(StickerSet));
 
 function getItemsPerRowFallback(windowWidth: number): number {
   return windowWidth > MOBILE_WIDTH_THRESHOLD_PX

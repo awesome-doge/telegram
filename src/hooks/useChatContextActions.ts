@@ -1,16 +1,17 @@
 import { useMemo } from '../lib/teact/teact';
 import { getActions } from '../global';
 
-import type { ApiChat, ApiUser } from '../api/types';
 import type { MenuItemContextAction } from '../components/ui/ListItem';
+import { type ApiChat, type ApiUser } from '../api/types';
 
-import { IS_OPEN_IN_NEW_TAB_SUPPORTED } from '../util/windowEnvironment';
 import { SERVICE_NOTIFICATIONS_USER_ID } from '../config';
 import {
-  isChatArchived, getCanDeleteChat, isUserId, isChatChannel, isChatGroup,
+  getCanDeleteChat, isChatArchived, isChatChannel, isChatGroup,
+  isUserId,
 } from '../global/helpers';
 import { compact } from '../util/iteratees';
-import useLang from './useLang';
+import { IS_ELECTRON, IS_OPEN_IN_NEW_TAB_SUPPORTED } from '../util/windowEnvironment';
+import useOldLang from './useOldLang';
 
 const useChatContextActions = ({
   chat,
@@ -19,7 +20,11 @@ const useChatContextActions = ({
   isPinned,
   isMuted,
   canChangeFolder,
+  isSavedDialog,
+  currentUserId,
+  isPreview,
   handleDelete,
+  handleMute,
   handleChatFolderChange,
   handleReport,
 }: {
@@ -29,22 +34,49 @@ const useChatContextActions = ({
   isPinned?: boolean;
   isMuted?: boolean;
   canChangeFolder?: boolean;
-  handleDelete: () => void;
-  handleChatFolderChange: () => void;
-  handleReport?: () => void;
+  isSavedDialog?: boolean;
+  currentUserId?: string;
+  isPreview?: boolean;
+  handleDelete?: NoneToVoidFunction;
+  handleMute?: NoneToVoidFunction;
+  handleChatFolderChange: NoneToVoidFunction;
+  handleReport?: NoneToVoidFunction;
 }, isInSearch = false) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   const { isSelf } = user || {};
   const isServiceNotifications = user?.id === SERVICE_NOTIFICATIONS_USER_ID;
 
+  const deleteTitle = useMemo(() => {
+    if (!chat) return undefined;
+
+    if (isSavedDialog) {
+      return lang('Delete');
+    }
+
+    if (isUserId(chat.id)) {
+      return lang('DeleteChatUser');
+    }
+
+    if (getCanDeleteChat(chat)) {
+      return lang('DeleteChat');
+    }
+
+    if (isChatChannel(chat)) {
+      return lang('LeaveChannel');
+    }
+
+    return lang('Group.LeaveGroup');
+  }, [chat, isSavedDialog, lang]);
+
   return useMemo(() => {
-    if (!chat) {
+    if (!chat || isPreview) {
       return undefined;
     }
 
     const {
       toggleChatPinned,
+      toggleSavedDialogPinned,
       updateChatMutedState,
       toggleChatArchived,
       toggleChatUnread,
@@ -52,12 +84,47 @@ const useChatContextActions = ({
     } = getActions();
 
     const actionOpenInNewTab = IS_OPEN_IN_NEW_TAB_SUPPORTED && {
-      title: 'Open in new tab',
+      title: IS_ELECTRON ? 'Open in new window' : 'Open in new tab',
       icon: 'open-in-new-tab',
       handler: () => {
-        openChatInNewTab({ chatId: chat.id });
+        if (isSavedDialog) {
+          openChatInNewTab({ chatId: currentUserId!, threadId: chat.id });
+        } else {
+          openChatInNewTab({ chatId: chat.id });
+        }
       },
     };
+
+    const togglePinned = () => {
+      if (isSavedDialog) {
+        toggleSavedDialogPinned({ id: chat.id });
+      } else {
+        toggleChatPinned({ id: chat.id, folderId: folderId! });
+      }
+    };
+
+    const actionPin = isPinned
+      ? {
+        title: lang('UnpinFromTop'),
+        icon: 'unpin',
+        handler: togglePinned,
+      }
+      : {
+        title: lang('PinToTop'),
+        icon: 'pin',
+        handler: togglePinned,
+      };
+
+    const actionDelete = {
+      title: deleteTitle,
+      icon: 'delete',
+      destructive: true,
+      handler: handleDelete,
+    };
+
+    if (isSavedDialog) {
+      return compact([actionOpenInNewTab, actionPin, actionDelete]) as MenuItemContextAction[];
+    }
 
     const actionAddToFolder = canChangeFolder ? {
       title: lang('ChatList.Filter.AddToFolder'),
@@ -65,16 +132,20 @@ const useChatContextActions = ({
       handler: handleChatFolderChange,
     } : undefined;
 
-    const actionPin = isPinned
+    const actionMute = isMuted
       ? {
-        title: lang('UnpinFromTop'),
-        icon: 'unpin',
-        handler: () => toggleChatPinned({ id: chat.id, folderId: folderId! }),
+        title: lang('ChatList.Unmute'),
+        icon: 'unmute',
+        handler: () => updateChatMutedState({ chatId: chat.id, isMuted: false }),
       }
-      : { title: lang('PinToTop'), icon: 'pin', handler: () => toggleChatPinned({ id: chat.id, folderId: folderId! }) };
+      : {
+        title: `${lang('ChatList.Mute')}...`,
+        icon: 'mute',
+        handler: handleMute,
+      };
 
     if (isInSearch) {
-      return compact([actionOpenInNewTab, actionPin, actionAddToFolder]);
+      return compact([actionOpenInNewTab, actionPin, actionAddToFolder, actionMute]) as MenuItemContextAction[];
     }
 
     const actionMaskAsRead = (chat.unreadCount || chat.hasUnreadMark)
@@ -84,37 +155,14 @@ const useChatContextActions = ({
       ? { title: lang('MarkAsUnread'), icon: 'unread', handler: () => toggleChatUnread({ id: chat.id }) }
       : undefined;
 
-    const actionMute = isMuted
-      ? {
-        title: lang('ChatList.Unmute'),
-        icon: 'unmute',
-        handler: () => updateChatMutedState({ chatId: chat.id, isMuted: false }),
-      }
-      : {
-        title: lang('ChatList.Mute'),
-        icon: 'mute',
-        handler: () => updateChatMutedState({ chatId: chat.id, isMuted: true }),
-      };
-
     const actionArchive = isChatArchived(chat)
       ? { title: lang('Unarchive'), icon: 'unarchive', handler: () => toggleChatArchived({ id: chat.id }) }
       : { title: lang('Archive'), icon: 'archive', handler: () => toggleChatArchived({ id: chat.id }) };
 
-    const canReport = handleReport && (isChatChannel(chat) || isChatGroup(chat) || (user && !user.isSelf));
+    const canReport = handleReport && !user && (isChatChannel(chat) || isChatGroup(chat));
     const actionReport = canReport
       ? { title: lang('ReportPeer.Report'), icon: 'flag', handler: handleReport }
       : undefined;
-
-    const actionDelete = {
-      title: isUserId(chat.id)
-        ? lang('Delete')
-        : lang(getCanDeleteChat(chat)
-          ? 'DeleteChat'
-          : (isChatChannel(chat) ? 'LeaveChannel' : 'Group.LeaveGroup')),
-      icon: 'delete',
-      destructive: true,
-      handler: handleDelete,
-    };
 
     const isInFolder = folderId !== undefined;
 
@@ -130,8 +178,9 @@ const useChatContextActions = ({
       actionDelete,
     ]) as MenuItemContextAction[];
   }, [
-    chat, user, canChangeFolder, lang, handleChatFolderChange, isPinned, isInSearch, isMuted,
-    handleDelete, handleReport, folderId, isSelf, isServiceNotifications,
+    chat, user, canChangeFolder, lang, handleChatFolderChange, isPinned, isInSearch, isMuted, currentUserId,
+    handleDelete, handleMute, handleReport, folderId, isSelf, isServiceNotifications, isSavedDialog, deleteTitle,
+    isPreview,
   ]);
 };
 

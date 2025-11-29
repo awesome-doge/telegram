@@ -1,11 +1,9 @@
-import { requestMutation } from '../lib/fasterdom/fasterdom';
-
 import type { ISettings } from '../types';
 
+import { requestMutation } from '../lib/fasterdom/fasterdom';
+import themeColors from '../styles/themes.json';
 import { animate } from './animation';
 import { lerp } from './math';
-
-import themeColors from '../styles/themes.json';
 
 type RGBAColor = {
   r: number;
@@ -16,12 +14,15 @@ type RGBAColor = {
 
 let isInitialized = false;
 
+const DECIMAL_PLACES = 3;
 const HEX_COLOR_REGEX = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i;
 const DURATION_MS = 200;
 const ENABLE_ANIMATION_DELAY_MS = 500;
 const RGB_VARIABLES = new Set([
+  '--color-text',
   '--color-primary-shade',
   '--color-text-secondary',
+  '--color-accent-own',
 ]);
 
 const DISABLE_ANIMATION_CSS = `
@@ -107,18 +108,28 @@ export function hexToRgb(hex: string): RGBAColor {
   };
 }
 
+export function lerpRgb(start: RGBAColor, end: RGBAColor, interpolationRatio: number): RGBAColor {
+  const r = Math.round(lerp(start.r, end.r, interpolationRatio));
+  const g = Math.round(lerp(start.g, end.g, interpolationRatio));
+  const b = Math.round(lerp(start.b, end.b, interpolationRatio));
+  const a = start.a !== undefined
+    ? Math.round(lerp(start.a!, end.a!, interpolationRatio))
+    : undefined;
+
+  return {
+    r, g, b, a,
+  };
+}
+
 function applyColorAnimationStep(startIndex: number, endIndex: number, interpolationRatio: number = 1) {
   colors.forEach(({ property, colors: propertyColors }) => {
-    const r = Math.round(lerp(propertyColors[startIndex].r, propertyColors[endIndex].r, interpolationRatio));
-    const g = Math.round(lerp(propertyColors[startIndex].g, propertyColors[endIndex].g, interpolationRatio));
-    const b = Math.round(lerp(propertyColors[startIndex].b, propertyColors[endIndex].b, interpolationRatio));
-    const a = propertyColors[startIndex].a !== undefined
-      ? Math.round(lerp(propertyColors[startIndex].a!, propertyColors[endIndex].a!, interpolationRatio))
-      : undefined;
+    const {
+      r, g, b, a,
+    } = lerpRgb(propertyColors[startIndex], propertyColors[endIndex], interpolationRatio);
 
-    document.documentElement.style.setProperty(property, a !== undefined
-      ? `rgba(${r},${g},${b},${a / 255})`
-      : `rgb(${r},${g},${b})`);
+    const roundedA = a !== undefined ? Math.round((a / 255) * 10 ** DECIMAL_PLACES) / 10 ** DECIMAL_PLACES : undefined;
+
+    document.documentElement.style.setProperty(property, `rgb(${r},${g},${b}${roundedA ? `,${roundedA}` : ''})`);
 
     if (RGB_VARIABLES.has(property)) {
       document.documentElement.style.setProperty(`${property}-rgb`, `${r},${g},${b}`);

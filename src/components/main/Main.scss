@@ -22,8 +22,8 @@
   --call-header-height: 2rem;
 
   #LeftColumn, #MiddleColumn, #RightColumn-wrapper {
-    height: calc(100% - 2rem);
-    margin-top: 2rem;
+    height: calc(100% - var(--call-header-height));
+    margin-top: var(--call-header-height);
   }
 }
 
@@ -39,10 +39,6 @@
   position: relative;
 
   background-color: var(--color-background);
-
-  @media (max-width: 600px) {
-    height: calc(var(--vh, 1vh) * 100);
-  }
 
   @media (min-width: 926px) {
     --left-column-max-width: 40vw;
@@ -115,16 +111,23 @@
   }
 
   @media (max-width: 600px) {
+    height: calc(var(--vh, 1vh) * 100);
     max-width: none;
     --left-column-max-width: calc(100vw - env(safe-area-inset-left));
     transform: translate3d(-20vw, 0, 0);
     left: env(safe-area-inset-left) !important;
     width: calc(100vw - env(safe-area-inset-left)) !important;
 
-    // Target: Old Firefox (Waterfox Classic)
-    @supports not (left: env(safe-area-inset-left)) {
-      left: 0 !important;
-      width: 100vw !important;
+    // Fix: when opening the SymbolMenu, the chat list flashes in the background
+    body.is-symbol-menu-open &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      background: var(--color-background);
+      z-index: 1;
     }
   }
 }

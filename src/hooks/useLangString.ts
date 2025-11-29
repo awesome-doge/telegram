@@ -1,26 +1,30 @@
-import * as langProvider from '../util/langProvider';
-import { useState } from '../lib/teact/teact';
+import { useEffect, useState } from '../lib/teact/teact';
 
-const useLangString = (
-  langCode: string | undefined,
-  key: string,
-  shouldIgnoreSameValue = false,
-): string | undefined => {
-  const [translation, setTranslation] = useState<string>();
+import type { RegularLangKey } from '../types/language';
 
-  if (langCode) {
-    langProvider
-      .getTranslationForLangString(langCode, key)
-      .then((value) => {
-        // The string is not translated, maybe the language pack was not loaded due to network errors or a timeout
-        if (shouldIgnoreSameValue && value === key) {
-          return;
-        }
-        setTranslation(value);
-      });
-  }
+import { LANG_PACK } from '../config';
+import { callApi } from '../api/gramjs';
+import useLastCallback from './useLastCallback';
 
-  return translation;
-};
+export default function useLangString(key: RegularLangKey, langCode?: string) {
+  const [value, setValue] = useState<string | undefined>(undefined);
 
-export default useLangString;
+  const fetchLangString = useLastCallback(async () => {
+    if (!langCode) return undefined;
+
+    const result = await callApi('fetchLangStrings', {
+      langCode,
+      langPack: LANG_PACK,
+      keys: [key],
+    });
+    const langString = result?.strings[key];
+    if (!langString || typeof langString !== 'string') return undefined;
+    return langString;
+  });
+
+  useEffect(() => {
+    fetchLangString().then(setValue);
+  }, [key, langCode]);
+
+  return value;
+}

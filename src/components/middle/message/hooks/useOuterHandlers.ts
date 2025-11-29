@@ -1,16 +1,19 @@
 import type { RefObject } from 'react';
 import type React from '../../../../lib/teact/teact';
 import { useEffect, useRef } from '../../../../lib/teact/teact';
-import { requestMeasure } from '../../../../lib/fasterdom/fasterdom';
 import { getActions } from '../../../../global';
 
+import type { Signal } from '../../../../util/signals';
+
+import { requestMeasure } from '../../../../lib/fasterdom/fasterdom';
+import { captureEvents, SwipeDirection } from '../../../../util/captureEvents';
+import stopEvent from '../../../../util/stopEvent';
 import { IS_ANDROID, IS_TOUCH_ENV } from '../../../../util/windowEnvironment';
 import windowSize from '../../../../util/windowSize';
-import { captureEvents, SwipeDirection } from '../../../../util/captureEvents';
-import useFlag from '../../../../hooks/useFlag';
-import { preventMessageInputBlur } from '../../helpers/preventMessageInputBlur';
-import stopEvent from '../../../../util/stopEvent';
 import { REM } from '../../../common/helpers/mediaDimensions';
+import { preventMessageInputBlur } from '../../helpers/preventMessageInputBlur';
+
+import useFlag from '../../../../hooks/useFlag';
 import useThrottledCallback from '../../../../hooks/useThrottledCallback';
 
 const ANDROID_KEYBOARD_HIDE_DELAY_MS = 350;
@@ -24,7 +27,6 @@ export default function useOuterHandlers(
   selectMessage: (e?: React.MouseEvent<HTMLDivElement, MouseEvent>, groupedId?: string) => void,
   containerRef: RefObject<HTMLDivElement>,
   messageId: number,
-  isAlbum: boolean,
   isInSelectMode: boolean,
   canReply: boolean,
   isProtected: boolean,
@@ -33,10 +35,10 @@ export default function useOuterHandlers(
   chatId: string,
   isContextMenuShown: boolean,
   quickReactionRef: RefObject<HTMLDivElement>,
-  isOwn: boolean,
   shouldHandleMouseLeave: boolean,
+  getIsMessageListReady: Signal<boolean>,
 ) {
-  const { setReplyingToId, sendDefaultReaction } = getActions();
+  const { updateDraftReplyInfo, sendDefaultReaction } = getActions();
 
   const [isQuickReactionVisible, markQuickReactionVisible, unmarkQuickReactionVisible] = useFlag();
   const [isSwiped, markSwiped, unmarkSwiped] = useFlag();
@@ -136,7 +138,7 @@ export default function useOuterHandlers(
   function handleContainerDoubleClick() {
     if (IS_TOUCH_ENV || !canReply) return;
 
-    setReplyingToId({ messageId });
+    updateDraftReplyInfo({ replyToMsgId: messageId, replyToPeerId: undefined, quoteText: undefined });
   }
 
   function stopPropagation(e: React.MouseEvent<HTMLDivElement, MouseEvent>) {
@@ -144,7 +146,7 @@ export default function useOuterHandlers(
   }
 
   useEffect(() => {
-    if (!IS_TOUCH_ENV || isInSelectMode || !canReply || isContextMenuShown) {
+    if (!IS_TOUCH_ENV || isInSelectMode || !canReply || isContextMenuShown || !getIsMessageListReady()) {
       return undefined;
     }
 
@@ -170,14 +172,15 @@ export default function useOuterHandlers(
           return;
         }
 
-        setReplyingToId({ messageId });
+        updateDraftReplyInfo({ replyToMsgId: messageId });
 
         setTimeout(unmarkSwiped, Math.max(0, SWIPE_ANIMATION_DURATION - (Date.now() - startedAt)));
         startedAt = undefined;
       },
     });
   }, [
-    containerRef, isInSelectMode, messageId, setReplyingToId, markSwiped, unmarkSwiped, canReply, isContextMenuShown,
+    containerRef, isInSelectMode, messageId, markSwiped, unmarkSwiped, canReply, isContextMenuShown,
+    getIsMessageListReady,
   ]);
 
   function handleMouseLeave(e: React.MouseEvent<HTMLDivElement>) {

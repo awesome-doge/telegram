@@ -16,6 +16,18 @@ export function buildCollectionByKey<T extends AnyLiteral>(collection: T[], key:
   }, {});
 }
 
+export function buildCollectionByCallback<T extends AnyLiteral, K extends number | string, R extends unknown>(
+  collection: T[],
+  callback: (member: T) => [K, R],
+) {
+  return collection.reduce((byKey: Record<K, R>, member: T) => {
+    const [key, value] = callback(member);
+    byKey[key] = value;
+
+    return byKey;
+  }, {} as Record<K, R>);
+}
+
 export function mapValues<R extends any, M extends any>(
   byKey: CollectionByKey<M>,
   callback: (member: M, key: string, index: number, originalByKey: CollectionByKey<M>) => R,
@@ -49,6 +61,16 @@ export function omit<T extends object, K extends keyof T>(object: T, keys: K[]):
     .filter((key) => !stringKeys.has(key)) as Array<Exclude<keyof T, K>>;
 
   return pick(object, savedKeys);
+}
+
+export function omitUndefined<T extends object>(object: T): T {
+  return Object.keys(object).reduce((result, stringKey) => {
+    const key = stringKey as keyof T;
+    if (object[key] !== undefined) {
+      result[key as keyof T] = object[key];
+    }
+    return result;
+  }, {} as T);
 }
 
 export function orderBy<T>(
@@ -103,9 +125,35 @@ export function areSortedArraysEqual(array1: any[], array2: any[]) {
 export function areSortedArraysIntersecting(array1: any[], array2: any[]) {
   return array1[0] <= array2[array2.length - 1] && array1[array1.length - 1] >= array2[0];
 }
+export function isInsideSortedArrayRange(value:any, array: any[]) {
+  return array[0] <= value && value <= array[array.length - 1];
+}
 
 export function findIntersectionWithSet<T>(array: T[], set: Set<T>): T[] {
   return array.filter((a) => set.has(a));
+}
+/**
+ * Exlude elements from base array. Both arrays should be sorted in same order
+ * @param base
+ * @param toExclude
+ * @returns New array without excluded elements
+ */
+export function excludeSortedArray<T extends any>(base: T[], toExclude: T[]) {
+  if (!base?.length) return base;
+
+  const result: T[] = [];
+
+  let excludeIndex = 0;
+
+  for (let i = 0; i < base.length; i++) {
+    if (toExclude[excludeIndex] === base[i]) {
+      excludeIndex += 1;
+    } else {
+      result.push(base[i]);
+    }
+  }
+
+  return result;
 }
 
 export function split<T extends any>(array: T[], chunkSize: number) {
@@ -118,7 +166,7 @@ export function split<T extends any>(array: T[], chunkSize: number) {
 }
 
 export function partition<T extends unknown>(
-  array: T[], filter: (value: T, index: number, array: T[]) => boolean,
+  array: T[], filter: (value: T, index: number, array: T[]) => boolean | undefined,
 ): [T[], T[]] {
   const pass: T[] = [];
   const fail: T[] = [];
@@ -143,6 +191,10 @@ export function cloneDeep<T>(value: T): T {
   }, {} as T);
 }
 
+export function isLiteralObject(value: any): value is AnyLiteral {
+  return isObject(value) && !Array.isArray(value);
+}
+
 function isObject(value: any): value is object {
   // eslint-disable-next-line no-null/no-null
   return typeof value === 'object' && value !== null;
@@ -158,4 +210,8 @@ export function findLast<T>(array: Array<T>, predicate: (value: T, index: number
   }
 
   return undefined;
+}
+
+export function compareFields<T>(a: T, b: T) {
+  return Number(b) - Number(a);
 }

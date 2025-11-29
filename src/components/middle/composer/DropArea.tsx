@@ -1,14 +1,19 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useRef,
-} from '../../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
+import { getActions } from '../../../global';
 
-import useShowTransition from '../../../hooks/useShowTransition';
+import type { ApiMessage } from '../../../api/types';
+
+import { canReplaceMessageMedia } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
+import captureEscKeyListener from '../../../util/captureEscKeyListener';
+import buildAttachment from './helpers/buildAttachment';
 import getFilesFromDataTransferItems from './helpers/getFilesFromDataTransferItems';
 
-import captureEscKeyListener from '../../../util/captureEscKeyListener';
-import usePrevious from '../../../hooks/usePrevious';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 
 import Portal from '../../ui/Portal';
 import DropTarget from './DropTarget';
@@ -20,6 +25,7 @@ export type OwnProps = {
   withQuick?: boolean;
   onHide: NoneToVoidFunction;
   onFileSelect: (files: File[], suggestCompression?: boolean) => void;
+  editingMessage?: ApiMessage | undefined;
 };
 
 export enum DropAreaState {
@@ -31,16 +37,19 @@ export enum DropAreaState {
 const DROP_LEAVE_TIMEOUT_MS = 150;
 
 const DropArea: FC<OwnProps> = ({
-  isOpen, withQuick, onHide, onFileSelect,
+  isOpen, withQuick, onHide, onFileSelect, editingMessage,
 }) => {
+  const lang = useOldLang();
+  const { showNotification } = getActions();
   // eslint-disable-next-line no-null/no-null
   const hideTimeoutRef = useRef<number>(null);
-  const prevWithQuick = usePrevious(withQuick);
-  const { shouldRender, transitionClassNames } = useShowTransition(isOpen);
+  const prevWithQuick = usePreviousDeprecated(withQuick);
+  const { shouldRender, transitionClassNames } = useShowTransitionDeprecated(isOpen);
+  const isInAlbum = editingMessage && editingMessage?.groupedId;
 
   useEffect(() => (isOpen ? captureEscKeyListener(onHide) : undefined), [isOpen, onHide]);
 
-  const handleFilesDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+  const handleFilesDrop = useLastCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     const { dataTransfer: dt } = e;
     let files: File[] = [];
 
@@ -48,6 +57,13 @@ const DropArea: FC<OwnProps> = ({
       files = files.concat(Array.from(dt.files));
     } else if (dt.items && dt.items.length > 0) {
       const folderFiles = await getFilesFromDataTransferItems(dt.items);
+      const newAttachment = folderFiles && await buildAttachment(folderFiles[0].name, folderFiles[0]);
+      const canReplace = editingMessage && newAttachment && canReplaceMessageMedia(editingMessage, newAttachment);
+
+      if (canReplace) {
+        showNotification({ message: lang(isInAlbum ? 'lng_edit_media_album_error' : 'lng_edit_media_invalid_file') });
+        return;
+      }
       if (folderFiles?.length) {
         files = files.concat(folderFiles);
       }
@@ -55,29 +71,33 @@ const DropArea: FC<OwnProps> = ({
 
     onHide();
     onFileSelect(files, withQuick ? false : undefined);
-  }, [onFileSelect, onHide, withQuick]);
+  });
 
-  const handleQuickFilesDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleQuickFilesDrop = useLastCallback((e: React.DragEvent<HTMLDivElement>) => {
     const { dataTransfer: dt } = e;
 
     if (dt.files && dt.files.length > 0) {
       onHide();
       onFileSelect(Array.from(dt.files), true);
     }
-  }, [onFileSelect, onHide]);
+  });
 
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = useLastCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.stopPropagation();
 
     const { target: fromTarget, relatedTarget: toTarget } = e;
 
     // Esc button pressed during drag event
-    if ((fromTarget as HTMLDivElement).matches('.DropTarget, .DropArea') && !toTarget) {
+    if (
+      (fromTarget as HTMLDivElement).matches('.DropTarget, .DropArea') && (
+        !toTarget || !(toTarget as HTMLDivElement)!.matches('.DropTarget, .DropArea')
+      )
+    ) {
       hideTimeoutRef.current = window.setTimeout(() => {
         onHide();
       }, DROP_LEAVE_TIMEOUT_MS);
     }
-  }, [onHide]);
+  });
 
   const handleDragOver = () => {
     if (hideTimeoutRef.current) {
@@ -97,7 +117,7 @@ const DropArea: FC<OwnProps> = ({
   );
 
   return (
-    <Portal containerId="#middle-column-portals">
+    <Portal containerSelector="#middle-column-portals">
       <div
         className={className}
         onDragLeave={handleDragLeave}

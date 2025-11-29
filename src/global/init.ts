@@ -1,47 +1,31 @@
+import './intervals';
+
+import type { ActionReturnType, GlobalState } from './types';
+
+import { isCacheApiSupported } from '../util/cacheApi';
+import { getCurrentTabId, reestablishMasterToSelf } from '../util/establishMultitabRole';
+import { initGlobal } from '../util/init';
+import { cloneDeep } from '../util/iteratees';
+import { isLocalMessageId } from '../util/keys/messageKey';
+import { Bundles, loadBundle } from '../util/moduleLoader';
+import { parseLocationHash } from '../util/routing';
+import { updatePeerColors } from '../util/theme';
+import { IS_MULTITAB_SUPPORTED } from '../util/windowEnvironment';
+import { initializeChatMediaSearchResults } from './reducers/middleSearch';
+import { updateTabState } from './reducers/tabs';
+import { initCache } from './cache';
 import {
   addActionHandler, getGlobal, setGlobal,
 } from './index';
-
-import { INITIAL_GLOBAL_STATE, INITIAL_TAB_STATE } from './initialState';
-import { IS_MULTITAB_SUPPORTED } from '../util/windowEnvironment';
-import { IS_MOCKED_CLIENT } from '../config';
-import { initCache, loadCache } from './cache';
-import { cloneDeep } from '../util/iteratees';
-import { replaceTabThreadParam, replaceThreadParam, updatePasscodeSettings } from './reducers';
-import { clearStoredSession } from '../util/sessions';
-import { parseLocationHash } from '../util/routing';
+import { INITIAL_TAB_STATE } from './initialState';
+import { replaceTabThreadParam, replaceThreadParam } from './reducers';
 import { selectTabState, selectThreadParam } from './selectors';
-import { Bundles, loadBundle } from '../util/moduleLoader';
-import { getCurrentTabId, reestablishMasterToSelf } from '../util/establishMultitabRole';
-import { updateTabState } from './reducers/tabs';
-import type { ActionReturnType, GlobalState } from './types';
-import { isLocalMessageId } from './helpers';
-import { isCacheApiSupported } from '../util/cacheApi';
 
 initCache();
 
-addActionHandler('initShared', (prevGlobal, actions, payload): ActionReturnType => {
+addActionHandler('initShared', async (prevGlobal, actions, payload): Promise<void> => {
   const { force } = payload || {};
-  if (!force && 'byTabId' in prevGlobal) return prevGlobal;
-
-  const initial = cloneDeep(INITIAL_GLOBAL_STATE);
-  let global = loadCache(initial) || initial;
-  if (IS_MOCKED_CLIENT) global.authState = 'authorizationStateReady';
-
-  const { hasPasscode, isScreenLocked } = global.passcode;
-  if (hasPasscode && !isScreenLocked) {
-    global = updatePasscodeSettings(global, {
-      isScreenLocked: true,
-    });
-
-    clearStoredSession();
-  }
-
-  if (force) {
-    global.byTabId = prevGlobal.byTabId;
-  }
-
-  return global;
+  await initGlobal(force, prevGlobal);
 });
 
 addActionHandler('init', (global, actions, payload): ActionReturnType => {
@@ -76,6 +60,7 @@ addActionHandler('init', (global, actions, payload): ActionReturnType => {
         global = replaceThreadParam(global, chatId, threadId, 'lastViewportIds', undefined);
         return;
       }
+      global = initializeChatMediaSearchResults(global, chatId, threadId, tabId);
       global = replaceTabThreadParam(
         global,
         chatId,
@@ -114,7 +99,7 @@ addActionHandler('init', (global, actions, payload): ActionReturnType => {
     };
   });
 
-  const parsedMessageList = parseLocationHash();
+  const parsedMessageList = parseLocationHash(global.currentUserId);
 
   if (global.authState !== 'authorizationStateReady'
     && !global.passcode.hasPasscode && !global.passcode.isScreenLocked) {
@@ -135,6 +120,10 @@ addActionHandler('init', (global, actions, payload): ActionReturnType => {
     global.isCacheApiSupported = isSupported;
     setGlobal(global);
   });
+
+  if (global.peerColors) {
+    updatePeerColors(global.peerColors.general);
+  }
 
   return updateTabState(global, {
     messageLists: parsedMessageList ? [parsedMessageList] : initialTabState.messageLists,

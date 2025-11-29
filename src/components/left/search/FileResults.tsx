@@ -5,23 +5,25 @@ import React, {
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiMessage } from '../../../api/types';
+import type { StateProps } from './helpers/createMapStateToProps';
 import { LoadMoreDirection } from '../../../types';
 
 import { SLIDE_TRANSITION_DURATION } from '../../../config';
+import { getIsDownloading, getMessageDocument } from '../../../global/helpers';
+import { formatMonthAndYear, toYearMonth } from '../../../util/dates/dateFormat';
+import { parseSearchResultKey } from '../../../util/keys/searchResultKey';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
-import type { StateProps } from './helpers/createMapStateToProps';
-import { createMapStateToProps } from './helpers/createMapStateToProps';
-import { formatMonthAndYear, toYearMonth } from '../../../util/dateFormat';
-import { getSenderName } from './helpers/getSenderName';
 import { throttle } from '../../../util/schedulers';
-import { getMessageDocument } from '../../../global/helpers';
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import useLang from '../../../hooks/useLang';
+import { createMapStateToProps } from './helpers/createMapStateToProps';
+import { getSenderName } from './helpers/getSenderName';
+
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useOldLang from '../../../hooks/useOldLang';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
 
 import Document from '../../common/Document';
-import InfiniteScroll from '../../ui/InfiniteScroll';
 import NothingFound from '../../common/NothingFound';
+import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
 
 export type OwnProps = {
@@ -41,7 +43,7 @@ const FileResults: FC<OwnProps & StateProps> = ({
   globalMessagesByChatId,
   foundIds,
   activeDownloads,
-  lastSyncTime,
+  shouldWarnAboutSvg,
 }) => {
   const {
     searchMessagesGlobal,
@@ -51,7 +53,7 @@ const FileResults: FC<OwnProps & StateProps> = ({
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const { observe: observeIntersectionForMedia } = useIntersectionObserver({
     rootRef: containerRef,
@@ -59,15 +61,15 @@ const FileResults: FC<OwnProps & StateProps> = ({
   });
 
   const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
-    if (lastSyncTime && direction === LoadMoreDirection.Backwards) {
+    if (direction === LoadMoreDirection.Backwards) {
       runThrottled(() => {
         searchMessagesGlobal({
           type: CURRENT_TYPE,
         });
       });
     }
-  // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
-  }, [lastSyncTime, searchMessagesGlobal, searchQuery]);
+    // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
+  }, [searchQuery]);
 
   const foundMessages = useMemo(() => {
     if (!foundIds || !globalMessagesByChatId) {
@@ -75,41 +77,52 @@ const FileResults: FC<OwnProps & StateProps> = ({
     }
 
     return foundIds.map((id) => {
-      const [chatId, messageId] = id.split('_');
-      const message = globalMessagesByChatId[chatId]?.byId[Number(messageId)];
+      const [chatId, messageId] = parseSearchResultKey(id);
+      const message = globalMessagesByChatId[chatId]?.byId[messageId];
 
       return message && getMessageDocument(message) ? message : undefined;
     }).filter(Boolean) as ApiMessage[];
   }, [globalMessagesByChatId, foundIds]);
 
-  const handleMessageFocus = useCallback((messageId: number, chatId: string) => {
-    focusMessage({ chatId, messageId });
+  const handleMessageFocus = useCallback((message: ApiMessage) => {
+    focusMessage({ chatId: message.chatId, messageId: message.id });
   }, [focusMessage]);
 
   function renderList() {
     return foundMessages.map((message, index) => {
-      const shouldDrawDateDivider = index === 0
+      const isFirst = index === 0;
+      const shouldDrawDateDivider = isFirst
         || toYearMonth(message.date) !== toYearMonth(foundMessages[index - 1].date);
       return (
-        <div
-          className="ListItem small-icon"
-          key={message.id}
-        >
+        <>
           {shouldDrawDateDivider && (
-            <p className="section-heading">{formatMonthAndYear(lang, new Date(message.date * 1000))}</p>
+            <p
+              className="section-heading"
+              dir={lang.isRtl ? 'rtl' : undefined}
+              key={message.date}
+            >
+              {formatMonthAndYear(lang, new Date(message.date * 1000))}
+            </p>
           )}
-          <Document
-            message={message}
-            withDate
-            datetime={message.date}
-            smaller
-            sender={getSenderName(lang, message, chatsById, usersById)}
-            className="scroll-item"
-            isDownloading={activeDownloads[message.chatId]?.ids?.includes(message.id)}
-            observeIntersection={observeIntersectionForMedia}
-            onDateClick={handleMessageFocus}
-          />
-        </div>
+          <div
+            className="ListItem small-icon"
+            key={message.id}
+          >
+            <Document
+              document={getMessageDocument(message)!}
+              message={message}
+              withDate
+              datetime={message.date}
+              smaller
+              sender={getSenderName(lang, message, chatsById, usersById)}
+              className="scroll-item"
+              isDownloading={getIsDownloading(activeDownloads, message.content.document!)}
+              shouldWarnAboutSvg={shouldWarnAboutSvg}
+              observeIntersection={observeIntersectionForMedia}
+              onDateClick={handleMessageFocus}
+            />
+          </div>
+        </>
       );
     });
   }
@@ -117,10 +130,10 @@ const FileResults: FC<OwnProps & StateProps> = ({
   const canRenderContents = useAsyncRendering([searchQuery], SLIDE_TRANSITION_DURATION) && !isLoading;
 
   return (
-    <div ref={containerRef} className="LeftSearch">
+    <div ref={containerRef} className="LeftSearch--content">
       <InfiniteScroll
         className="search-content documents-list custom-scroll"
-        items={foundMessages}
+        items={canRenderContents ? foundMessages : undefined}
         onLoadMore={handleLoadMore}
         noFastList
       >

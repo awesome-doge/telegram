@@ -1,15 +1,15 @@
-import React, { memo, useRef, useEffect } from '../../lib/teact/teact';
+import type { FC, TeactNode } from '../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
 
-import type { FC } from '../../lib/teact/teact';
 import type { MenuItemContextAction } from './ListItem';
 
-import { ALL_FOLDER_ID } from '../../config';
-import { IS_ANDROID, IS_IOS } from '../../util/windowEnvironment';
 import animateHorizontalScroll from '../../util/animateHorizontalScroll';
+import buildClassName from '../../util/buildClassName';
+import { IS_ANDROID, IS_IOS } from '../../util/windowEnvironment';
 
-import usePrevious from '../../hooks/usePrevious';
 import useHorizontalScroll from '../../hooks/useHorizontalScroll';
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
 import Tab from './Tab';
 
@@ -17,7 +17,7 @@ import './TabList.scss';
 
 export type TabWithProperties = {
   id?: number;
-  title: string;
+  title: TeactNode;
   badgeCount?: number;
   isBlocked?: boolean;
   isBadgeActive?: boolean;
@@ -26,9 +26,9 @@ export type TabWithProperties = {
 
 type OwnProps = {
   tabs: readonly TabWithProperties[];
-  areFolders?: boolean;
   activeTab: number;
-  big?: boolean;
+  className?: string;
+  tabClassName?: string;
   onSwitchTab: (index: number) => void;
   contextRootElementSelector?: string;
 };
@@ -38,12 +38,12 @@ const TAB_SCROLL_THRESHOLD_PX = 16;
 const SCROLL_DURATION = IS_IOS ? 450 : IS_ANDROID ? 400 : 300;
 
 const TabList: FC<OwnProps> = ({
-  tabs, areFolders, activeTab, big, onSwitchTab,
-  contextRootElementSelector,
+  tabs, activeTab, onSwitchTab,
+  contextRootElementSelector, className, tabClassName,
 }) => {
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
-  const previousActiveTab = usePrevious(activeTab);
+  const previousActiveTab = usePreviousDeprecated(activeTab);
 
   useHorizontalScroll(containerRef, undefined, true);
 
@@ -71,19 +71,18 @@ const TabList: FC<OwnProps> = ({
     animateHorizontalScroll(container, newLeft, SCROLL_DURATION);
   }, [activeTab]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   return (
     <div
-      className={`TabList no-selection no-scrollbar ${big ? 'big' : ''}`}
+      className={buildClassName('TabList', 'no-scrollbar', className)}
       ref={containerRef}
       dir={lang.isRtl ? 'rtl' : undefined}
     >
       {tabs.map((tab, i) => (
         <Tab
-          key={tab.id ?? tab.title}
-          // TODO Remove dependency on usage context
-          title={(!areFolders || tab.id === ALL_FOLDER_ID) ? lang(tab.title) : tab.title}
+          key={tab.id}
+          title={tab.title}
           isActive={i === activeTab}
           isBlocked={tab.isBlocked}
           badgeCount={tab.badgeCount}
@@ -93,6 +92,7 @@ const TabList: FC<OwnProps> = ({
           clickArg={i}
           contextActions={tab.contextActions}
           contextRootElementSelector={contextRootElementSelector}
+          className={tabClassName}
         />
       ))}
     </div>

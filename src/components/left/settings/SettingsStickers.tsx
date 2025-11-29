@@ -1,31 +1,31 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import { SettingsScreens } from '../../../types';
-import type { ISettings } from '../../../types';
 import type {
   ApiAvailableReaction,
   ApiReaction,
   ApiSticker,
   ApiStickerSet,
 } from '../../../api/types';
-
-import renderText from '../../common/helpers/renderText';
-import { pick } from '../../../util/iteratees';
-import { REM } from '../../common/helpers/mediaDimensions';
+import type { ISettings } from '../../../types';
+import { SettingsScreens } from '../../../types';
 
 import { selectCanPlayAnimatedEmojis } from '../../../global/selectors';
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useHistoryBack from '../../../hooks/useHistoryBack';
-import useLang from '../../../hooks/useLang';
+import { pick } from '../../../util/iteratees';
+import { REM } from '../../common/helpers/mediaDimensions';
+import renderText from '../../common/helpers/renderText';
 
-import ReactionStaticEmoji from '../../common/ReactionStaticEmoji';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useOldLang from '../../../hooks/useOldLang';
+
+import ReactionStaticEmoji from '../../common/reactions/ReactionStaticEmoji';
+import StickerSetCard from '../../common/StickerSetCard';
 import Checkbox from '../../ui/Checkbox';
 import ListItem from '../../ui/ListItem';
-import StickerSetCard from '../../common/StickerSetCard';
 
 const DEFAULT_REACTION_SIZE = 1.5 * REM;
 
@@ -64,7 +64,7 @@ const SettingsStickers: FC<OwnProps & StateProps> = ({
     setSettingOption,
     openStickerSet,
   } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   // eslint-disable-next-line no-null/no-null
   const stickerSettingsRef = useRef<HTMLDivElement>(null);
@@ -102,7 +102,7 @@ const SettingsStickers: FC<OwnProps & StateProps> = ({
           onCheck={handleSuggestStickersChange}
         />
         <ListItem
-          className="mt-4"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.CustomEmoji)}
           icon="smile"
@@ -113,6 +113,7 @@ const SettingsStickers: FC<OwnProps & StateProps> = ({
         {defaultReaction && (
           <ListItem
             className="SettingsDefaultReaction"
+            narrow
             // eslint-disable-next-line react/jsx-no-bind
             onClick={() => onScreenSelect(SettingsScreens.QuickReaction)}
           >
@@ -175,7 +176,7 @@ export default memo(withGlobal<OwnProps>(
       customEmojiSetIds: global.customEmojis.added.setIds,
       stickerSetsById: global.stickers.setsById,
       defaultReaction: global.config?.defaultReaction,
-      availableReactions: global.availableReactions,
+      availableReactions: global.reactions.availableReactions,
       canPlayAnimatedEmojis: selectCanPlayAnimatedEmojis(global),
     };
   },

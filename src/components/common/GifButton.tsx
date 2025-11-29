@@ -1,29 +1,30 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef, useState,
+  memo, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
 
 import type { ApiVideo } from '../../api/types';
-import { ApiMediaFormat } from '../../api/types';
-
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
-import buildClassName from '../../util/buildClassName';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
-import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+
+import { getVideoMediaHash, getVideoPreviewMediaHash } from '../../global/helpers';
+import buildClassName from '../../util/buildClassName';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { preventMessageInputBlurWithBubbling } from '../middle/helpers/preventMessageInputBlur';
 
-import useMedia from '../../hooks/useMedia';
 import useBuffering from '../../hooks/useBuffering';
 import useCanvasBlur from '../../hooks/useCanvasBlur';
-import useLang from '../../hooks/useLang';
-import useMenuPosition from '../../hooks/useMenuPosition';
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
+import useOldLang from '../../hooks/useOldLang';
 
-import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
 import OptimizedVideo from '../ui/OptimizedVideo';
+import Spinner from '../ui/Spinner';
+import Icon from './icons/Icon';
 
 import './GifButton.scss';
 
@@ -49,83 +50,70 @@ const GifButton: FC<OwnProps> = ({
   // eslint-disable-next-line no-null/no-null
   const ref = useRef<HTMLDivElement>(null);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
-  const localMediaHash = `gif${gif.id}`;
   const isIntersecting = useIsIntersecting(ref, observeIntersection);
   const loadAndPlay = isIntersecting && !isDisabled;
-  const previewBlobUrl = useMedia(`${localMediaHash}?size=m`, !loadAndPlay, ApiMediaFormat.BlobUrl);
+  const previewHash = !gif.hasVideoPreview && gif.thumbnail && getVideoMediaHash(gif, 'pictogram');
+  const previewBlobUrl = useMedia(previewHash, !loadAndPlay);
+
   const [withThumb] = useState(gif.thumbnail?.dataUri && !previewBlobUrl);
   const thumbRef = useCanvasBlur(gif.thumbnail?.dataUri, !withThumb);
-  const videoData = useMedia(localMediaHash, !loadAndPlay, ApiMediaFormat.BlobUrl);
+
+  const videoHash = getVideoPreviewMediaHash(gif) || getVideoMediaHash(gif, 'full');
+  const videoData = useMedia(videoHash, !loadAndPlay);
+
   const shouldRenderVideo = Boolean(loadAndPlay && videoData);
   const { isBuffered, bufferingHandlers } = useBuffering(true);
   const shouldRenderSpinner = loadAndPlay && !isBuffered;
   const isVideoReady = loadAndPlay && isBuffered;
 
   const {
-    isContextMenuOpen, contextMenuPosition,
+    isContextMenuOpen, contextMenuAnchor,
     handleBeforeContextMenu, handleContextMenu,
     handleContextMenuClose, handleContextMenuHide,
   } = useContextMenuHandlers(ref);
 
-  const getTriggerElement = useCallback(() => ref.current, []);
+  const getTriggerElement = useLastCallback(() => ref.current);
+  const getRootElement = useLastCallback(() => ref.current!.closest('.custom-scroll, .no-scrollbar'));
+  const getMenuElement = useLastCallback(() => ref.current!.querySelector('.gif-context-menu .bubble'));
 
-  const getRootElement = useCallback(
-    () => ref.current!.closest('.custom-scroll, .no-scrollbar'),
-    [],
-  );
-
-  const getMenuElement = useCallback(
-    () => ref.current!.querySelector('.gif-context-menu .bubble'),
-    [],
-  );
-
-  const {
-    positionX, positionY, transformOriginX, transformOriginY, style: menuStyle,
-  } = useMenuPosition(
-    contextMenuPosition,
-    getTriggerElement,
-    getRootElement,
-    getMenuElement,
-  );
-
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     if (isContextMenuOpen || !onClick) return;
     onClick({
       ...gif,
       blobUrl: videoData,
     });
-  }, [isContextMenuOpen, onClick, gif, videoData]);
+  });
 
-  const handleUnsaveClick = useCallback((e: React.MouseEvent) => {
+  const handleUnsaveClick = useLastCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     onUnsaveClick!(gif);
-  }, [onUnsaveClick, gif]);
+  });
 
-  const handleContextDelete = useCallback(() => {
+  const handleContextDelete = useLastCallback(() => {
     onUnsaveClick?.(gif);
-  }, [gif, onUnsaveClick]);
+  });
 
-  const handleSendQuiet = useCallback(() => {
+  const handleSendQuiet = useLastCallback(() => {
     onClick!({
       ...gif,
       blobUrl: videoData,
     }, true);
-  }, [gif, onClick, videoData]);
+  });
 
-  const handleSendScheduled = useCallback(() => {
+  const handleSendScheduled = useLastCallback(() => {
     onClick!({
       ...gif,
       blobUrl: videoData,
     }, undefined, true);
-  }, [gif, onClick, videoData]);
+  });
 
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLElement>) => {
+  const handleMouseDown = useLastCallback((e: React.MouseEvent<HTMLElement>) => {
     preventMessageInputBlurWithBubbling(e);
     handleBeforeContextMenu(e);
-  }, [handleBeforeContextMenu]);
+  });
 
   useEffect(() => {
     if (isDisabled) handleContextMenuClose();
@@ -135,7 +123,6 @@ const GifButton: FC<OwnProps> = ({
     'GifButton',
     gif.width && gif.height && gif.width < gif.height ? 'vertical' : 'horizontal',
     onClick && 'interactive',
-    localMediaHash,
     className,
   );
 
@@ -155,15 +142,13 @@ const GifButton: FC<OwnProps> = ({
           noFastClick
           onClick={handleUnsaveClick}
         >
-          <i className="icon icon-close gif-unsave-button-icon" />
+          <Icon name="close" className="gif-unsave-button-icon" />
         </Button>
       )}
       {withThumb && (
         <canvas
           ref={thumbRef}
           className="thumbnail"
-          // We need to always render to avoid blur re-calculation
-          style={isVideoReady ? 'display: none;' : undefined}
         />
       )}
       {previewBlobUrl && !isVideoReady && (
@@ -171,6 +156,7 @@ const GifButton: FC<OwnProps> = ({
           src={previewBlobUrl}
           alt=""
           className="preview"
+          draggable={false}
         />
       )}
       {shouldRenderVideo && (
@@ -190,14 +176,13 @@ const GifButton: FC<OwnProps> = ({
       {shouldRenderSpinner && (
         <Spinner color={previewBlobUrl || withThumb ? 'white' : 'black'} />
       )}
-      {onClick && contextMenuPosition !== undefined && (
+      {onClick && contextMenuAnchor !== undefined && (
         <Menu
           isOpen={isContextMenuOpen}
-          transformOriginX={transformOriginX}
-          transformOriginY={transformOriginY}
-          positionX={positionX}
-          positionY={positionY}
-          style={menuStyle}
+          anchor={contextMenuAnchor}
+          getTriggerElement={getTriggerElement}
+          getRootElement={getRootElement}
+          getMenuElement={getMenuElement}
           className="gif-context-menu"
           autoClose
           onClose={handleContextMenuClose}

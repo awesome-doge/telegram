@@ -1,20 +1,21 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiUsername } from '../../api/types';
 
-import { copyTextToClipboard } from '../../util/clipboard';
 import buildClassName from '../../util/buildClassName';
+import { copyTextToClipboard } from '../../util/clipboard';
 import { isBetween } from '../../util/math';
-import usePrevious from '../../hooks/usePrevious';
-import useLang from '../../hooks/useLang';
 
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
+
+import ConfirmDialog from '../ui/ConfirmDialog';
 import Draggable from '../ui/Draggable';
 import ListItem from '../ui/ListItem';
-import ConfirmDialog from '../ui/ConfirmDialog';
 
 import styles from './ManageUsernames.module.scss';
 
@@ -44,11 +45,11 @@ const ManageUsernames: FC<OwnProps> = ({
     sortUsernames,
     sortChatUsernames,
   } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
   const [usernameForConfirm, setUsernameForConfirm] = useState<ApiUsername | undefined>();
 
   const usernameList = useMemo(() => usernames.map(({ username }) => username), [usernames]);
-  const prevUsernameList = usePrevious(usernameList);
+  const prevUsernameList = usePreviousDeprecated(usernameList);
 
   const [state, setState] = useState<SortState>({
     orderedUsernames: usernameList,
@@ -87,16 +88,20 @@ const ManageUsernames: FC<OwnProps> = ({
   }, []);
 
   const handleUsernameToggle = useCallback(() => {
+    if (!usernameForConfirm) {
+      return;
+    }
+
     if (chatId) {
       toggleChatUsername({
         chatId,
-        username: usernameForConfirm!.username,
-        isActive: !usernameForConfirm!.isActive,
+        username: usernameForConfirm.username,
+        isActive: !usernameForConfirm.isActive,
       });
     } else {
       toggleUsername({
-        username: usernameForConfirm!.username,
-        isActive: !usernameForConfirm!.isActive,
+        username: usernameForConfirm.username,
+        isActive: !usernameForConfirm.isActive,
       });
     }
     closeConfirmUsernameDialog();

@@ -1,10 +1,11 @@
 import type {
+  ApiAvailableReaction,
   ApiChatReactions,
   ApiMessage,
-  ApiReaction,
-  ApiReactions,
   ApiReactionCount,
-  ApiAvailableReaction,
+  ApiReactionKey,
+  ApiReactions,
+  ApiReactionWithPaid,
 } from '../../api/types';
 import type { GlobalState } from '../types';
 
@@ -14,33 +15,45 @@ export function getMessageRecentReaction(message: Partial<ApiMessage>) {
 export function checkIfHasUnreadReactions(global: GlobalState, reactions: ApiReactions) {
   const { currentUserId } = global;
   return reactions?.recentReactions?.some(
-    ({ isUnread, userId }) => isUnread && userId !== currentUserId,
+    ({ isUnread, isOwn, peerId }) => isUnread && !isOwn && currentUserId !== peerId,
   );
 }
 
 export function areReactionsEmpty(reactions: ApiReactions) {
-  return !reactions.results.some(({ count }) => count > 0);
+  return !reactions.results.some(({ count, localAmount }) => count || localAmount);
 }
 
-export function isSameReaction(first?: ApiReaction, second?: ApiReaction) {
+export function getReactionKey(reaction: ApiReactionWithPaid): ApiReactionKey {
+  switch (reaction.type) {
+    case 'emoji':
+      return `emoji-${reaction.emoticon}`;
+    case 'custom':
+      return `document-${reaction.documentId}`;
+    case 'paid':
+      return 'paid';
+    default: {
+      // Legacy reactions
+      const uniqueValue = (reaction as any).emoticon || (reaction as any).documentId;
+      return `unsupported-${uniqueValue}`;
+    }
+  }
+}
+
+export function isSameReaction(first?: ApiReactionWithPaid, second?: ApiReactionWithPaid) {
+  if (first === second) {
+    return true;
+  }
+
   if (!first || !second) {
     return false;
   }
 
-  if ('emoticon' in first && 'emoticon' in second) {
-    return first.emoticon === second.emoticon;
-  }
-
-  if ('documentId' in first && 'documentId' in second) {
-    return first.documentId === second.documentId;
-  }
-
-  return false;
+  return getReactionKey(first) === getReactionKey(second);
 }
 
-export function canSendReaction(reaction: ApiReaction, chatReactions: ApiChatReactions) {
+export function canSendReaction(reaction: ApiReactionWithPaid, chatReactions: ApiChatReactions) {
   if (chatReactions.type === 'all') {
-    return 'emoticon' in reaction || chatReactions.areCustomAllowed;
+    return reaction.type === 'emoji' || chatReactions.areCustomAllowed;
   }
 
   if (chatReactions.type === 'some') {
@@ -50,13 +63,17 @@ export function canSendReaction(reaction: ApiReaction, chatReactions: ApiChatRea
   return false;
 }
 
-export function sortReactions<T extends ApiAvailableReaction | ApiReaction>(
+export function sortReactions<T extends ApiAvailableReaction | ApiReactionWithPaid>(
   reactions: T[],
-  topReactions?: ApiReaction[],
+  topReactions?: ApiReactionWithPaid[],
 ): T[] {
   return reactions.slice().sort((left, right) => {
-    const reactionOne = left ? ('reaction' in left ? left.reaction : left) as ApiReaction : undefined;
-    const reactionTwo = right ? ('reaction' in right ? right.reaction : right) as ApiReaction : undefined;
+    const reactionOne = left ? ('reaction' in left ? left.reaction : left) as ApiReactionWithPaid : undefined;
+    const reactionTwo = right ? ('reaction' in right ? right.reaction : right) as ApiReactionWithPaid : undefined;
+
+    if (reactionOne?.type === 'paid') return -1;
+    if (reactionTwo?.type === 'paid') return 1;
+
     const indexOne = topReactions?.findIndex((reaction) => isSameReaction(reaction, reactionOne)) || 0;
     const indexTwo = topReactions?.findIndex((reaction) => isSameReaction(reaction, reactionTwo)) || 0;
     return (
@@ -65,20 +82,77 @@ export function sortReactions<T extends ApiAvailableReaction | ApiReaction>(
   });
 }
 
-export function getUserReactions(message: ApiMessage): ApiReaction[] {
+export function getUserReactions(message: ApiMessage): ApiReactionWithPaid[] {
   return message.reactions?.results?.filter((r): r is Required<ApiReactionCount> => isReactionChosen(r))
     .sort((a, b) => a.chosenOrder - b.chosenOrder)
     .map((r) => r.reaction) || [];
 }
 
-export function getReactionUniqueKey(reaction: ApiReaction) {
-  if ('emoticon' in reaction) {
-    return reaction.emoticon;
-  }
-
-  return reaction.documentId;
-}
-
 export function isReactionChosen(reaction: ApiReactionCount) {
   return reaction.chosenOrder !== undefined;
+}
+
+export function updateReactionCount(reactionCount: ApiReactionCount[], newReactions: ApiReactionWithPaid[]) {
+  const results = reactionCount.map((current) => (
+    isReactionChosen(current) ? {
+      ...current,
+      chosenOrder: undefined,
+      count: current.count - 1,
+    } : current
+  )).filter(({ count }) => count > 0);
+
+  newReactions.forEach((reaction, i) => {
+    const existingIndex = results.findIndex((r) => isSameReaction(r.reaction, reaction));
+    if (existingIndex > -1) {
+      results[existingIndex] = {
+        ...results[existingIndex],
+        chosenOrder: i,
+        count: results[existingIndex].count + 1,
+      };
+    } else {
+      results.push({
+        reaction,
+        chosenOrder: i,
+        count: 1,
+      });
+    }
+  });
+
+  return results;
+}
+
+export function addPaidReaction(
+  reactionCount: ApiReactionCount[], count: number, isAnonymous?: boolean,
+): ApiReactionCount[] {
+  const results: ApiReactionCount[] = [];
+  const hasPaid = reactionCount.some((current) => current.reaction.type === 'paid');
+  if (hasPaid) {
+    reactionCount.forEach((current) => {
+      if (current.reaction.type === 'paid') {
+        results.push({
+          ...current,
+          localAmount: (current.localAmount || 0) + count,
+          chosenOrder: -1,
+          localIsPrivate: isAnonymous !== undefined ? isAnonymous : current.localIsPrivate,
+          localPreviousChosenOrder: current.chosenOrder,
+        });
+        return;
+      }
+
+      results.push(current);
+    });
+
+    return results;
+  }
+
+  return [
+    {
+      reaction: { type: 'paid' },
+      count: 0,
+      chosenOrder: -1,
+      localAmount: count,
+      localIsPrivate: isAnonymous,
+    },
+    ...reactionCount,
+  ];
 }

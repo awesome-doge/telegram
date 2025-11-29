@@ -1,17 +1,21 @@
-import { useState } from '../lib/teact/teact';
+import { useEffect, useState } from '../lib/teact/teact';
+
+import type { Signal } from '../util/signals';
 
 import { detectLanguage } from '../util/languageDetection';
 
-import useSyncEffect from './useSyncEffect';
+export default function useTextLanguage(text?: string, isDisabled?: boolean, getIsReady?: Signal<boolean>) {
+  const [language, setLanguage] = useState<string | undefined>();
 
-export default function useTextLanguage(text?: string) {
-  const [language, setLanguage] = useState<string>();
+  useEffect(() => {
+    if (isDisabled || (getIsReady && !getIsReady())) return;
 
-  useSyncEffect(() => {
     if (text) {
       detectLanguage(text).then(setLanguage);
+    } else {
+      setLanguage(undefined);
     }
-  }, [text]);
+  }, [isDisabled, text, getIsReady]);
 
   return language;
 }

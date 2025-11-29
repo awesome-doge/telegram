@@ -1,25 +1,20 @@
 import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
+
 import type {
-  ApiStickerSetInfo, ApiSticker, ApiVideo, OnApiUpdate,
+  ApiSticker, ApiStickerSetInfo, ApiVideo,
 } from '../../types';
 
-import { invokeRequest } from './client';
+import { DEFAULT_GIF_SEARCH_BOT_USERNAME, RECENT_STATUS_LIMIT, RECENT_STICKERS_LIMIT } from '../../../config';
+import { buildVideoFromDocument } from '../apiBuilders/messageContent';
+import { buildApiEmojiStatus } from '../apiBuilders/peers';
 import {
   buildStickerSet, buildStickerSetCovered, processStickerPackResult, processStickerResult,
 } from '../apiBuilders/symbols';
-import { buildApiUserEmojiStatus } from '../apiBuilders/users';
-import { buildInputStickerSet, buildInputDocument, buildInputStickerSetShortName } from '../gramjsBuilders';
-import { buildVideoFromDocument } from '../apiBuilders/messages';
-import { DEFAULT_GIF_SEARCH_BOT_USERNAME, RECENT_STATUS_LIMIT, RECENT_STICKERS_LIMIT } from '../../../config';
-
+import { buildInputDocument, buildInputStickerSet, buildInputStickerSetShortName } from '../gramjsBuilders';
 import localDb from '../localDb';
-
-let onUpdate: OnApiUpdate;
-
-export function init(_onUpdate: OnApiUpdate) {
-  onUpdate = _onUpdate;
-}
+import { sendApiUpdate } from '../updates/apiUpdateEmitter';
+import { invokeRequest } from './client';
 
 export async function fetchCustomEmojiSets({ hash = '0' }: { hash?: string }) {
   const allStickers = await invokeRequest(new GramJs.messages.GetEmojiStickers({ hash: BigInt(hash) }));
@@ -132,7 +127,7 @@ export async function faveSticker({
 
   const result = await invokeRequest(request);
   if (result) {
-    onUpdate({
+    sendApiUpdate({
       '@type': 'updateFavoriteStickers',
     });
   }
@@ -164,7 +159,9 @@ export async function fetchStickers(
     stickerset: 'id' in stickerSetInfo
       ? buildInputStickerSet(stickerSetInfo.id, stickerSetInfo.accessHash)
       : buildInputStickerSetShortName(stickerSetInfo.shortName),
-  }), undefined, true);
+  }), {
+    shouldThrow: true,
+  });
 
   if (!(result instanceof GramJs.messages.StickerSet)) {
     return undefined;
@@ -279,6 +276,23 @@ export async function fetchDefaultStatusEmojis() {
   };
 }
 
+export async function fetchCollectibleEmojiStatuses({ hash = '0' }: { hash?: string }) {
+  const result = await invokeRequest(new GramJs.account.GetCollectibleEmojiStatuses(
+    { hash: BigInt(hash) },
+  ));
+
+  if (!(result instanceof GramJs.account.EmojiStatuses)) {
+    return undefined;
+  }
+
+  const statuses = result.statuses.map(buildApiEmojiStatus).filter(Boolean);
+
+  return {
+    statuses,
+    hash: String(result.hash),
+  };
+}
+
 export async function searchStickers({ query, hash = '0' }: { query: string; hash?: string }) {
   const result = await invokeRequest(new GramJs.messages.SearchStickerSets({
     q: query,
@@ -314,7 +328,7 @@ export function saveGif({ gif, shouldUnsave }: { gif: ApiVideo; shouldUnsave?: b
     unsave: shouldUnsave,
   });
 
-  return invokeRequest(request, true);
+  return invokeRequest(request, { shouldReturnTrue: true });
 }
 
 export async function installStickerSet({ stickerSetId, accessHash }: { stickerSetId: string; accessHash: string }) {
@@ -323,7 +337,7 @@ export async function installStickerSet({ stickerSetId, accessHash }: { stickerS
   }));
 
   if (result) {
-    onUpdate({
+    sendApiUpdate({
       '@type': 'updateStickerSet',
       id: stickerSetId,
       stickerSet: { installedDate: Date.now() },
@@ -337,7 +351,7 @@ export async function uninstallStickerSet({ stickerSetId, accessHash }: { sticke
   }));
 
   if (result) {
-    onUpdate({
+    sendApiUpdate({
       '@type': 'updateStickerSet',
       id: stickerSetId,
       stickerSet: { installedDate: undefined },
@@ -443,7 +457,7 @@ export async function fetchRecentEmojiStatuses(hash = '0') {
 
   const documentIds = result.statuses
     .slice(0, RECENT_STATUS_LIMIT)
-    .map(buildApiUserEmojiStatus)
+    .map(buildApiEmojiStatus)
     .filter(Boolean)
     .map(({ documentId }) => documentId);
   const emojiStatuses = await fetchCustomEmoji({ documentId: documentIds });

@@ -5,11 +5,12 @@ import { SettingsScreens } from '../../../../types';
 
 import { STICKER_SIZE_TWO_FA } from '../../../../config';
 import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
 
-import Button from '../../../ui/Button';
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useOldLang from '../../../../hooks/useOldLang';
+
 import AnimatedIcon from '../../../common/AnimatedIcon';
+import Button from '../../../ui/Button';
 
 type OwnProps = {
   isActive?: boolean;
@@ -20,7 +21,7 @@ type OwnProps = {
 const SettingsTwoFaCongratulations: FC<OwnProps> = ({
   isActive, onReset, onScreenSelect,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleClick = useCallback(() => {
     onScreenSelect(SettingsScreens.Privacy);
@@ -45,7 +46,7 @@ const SettingsTwoFaCongratulations: FC<OwnProps> = ({
         </p>
       </div>
 
-      <div className="settings-item pt-0">
+      <div className="settings-item pt-2">
         <Button onClick={handleClick}>{lang('TwoStepVerificationPasswordReturnSettings')}</Button>
       </div>
     </div>

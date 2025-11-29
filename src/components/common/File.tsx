@@ -1,23 +1,26 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useRef, useState, useMemo,
+  memo, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 
-import type { FC } from '../../lib/teact/teact';
+import type { IconName } from '../../types/icons';
 
-import { IS_CANVAS_FILTER_SUPPORTED } from '../../util/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { formatMediaDateTime, formatPastTimeShort } from '../../util/dateFormat';
+import { formatMediaDateTime, formatPastTimeShort } from '../../util/dates/dateFormat';
+import { IS_CANVAS_FILTER_SUPPORTED } from '../../util/windowEnvironment';
 import { getColorFromExtension, getFileSizeString } from './helpers/documentInfo';
 import { getDocumentThumbnailDimensions } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
-import useShowTransition from '../../hooks/useShowTransition';
-import useMediaTransition from '../../hooks/useMediaTransition';
-import useLang from '../../hooks/useLang';
-import useCanvasBlur from '../../hooks/useCanvasBlur';
-import useAppLayout from '../../hooks/useAppLayout';
 
-import ProgressSpinner from '../ui/ProgressSpinner';
+import useAppLayout from '../../hooks/useAppLayout';
+import useCanvasBlur from '../../hooks/useCanvasBlur';
+import useMediaTransitionDeprecated from '../../hooks/useMediaTransitionDeprecated';
+import useOldLang from '../../hooks/useOldLang';
+import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
+
 import Link from '../ui/Link';
+import ProgressSpinner from '../ui/ProgressSpinner';
+import Icon from './icons/Icon';
 
 import './File.scss';
 
@@ -37,7 +40,7 @@ type OwnProps = {
   isSelectable?: boolean;
   isSelected?: boolean;
   transferProgress?: number;
-  actionIcon?: string;
+  actionIcon?: IconName;
   onClick?: () => void;
   onDateClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
 };
@@ -62,7 +65,7 @@ const File: FC<OwnProps> = ({
   onClick,
   onDateClick,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
   // eslint-disable-next-line no-null/no-null
   let elementRef = useRef<HTMLDivElement>(null);
   if (ref) {
@@ -73,12 +76,12 @@ const File: FC<OwnProps> = ({
   const [withThumb] = useState(!previewData);
   const noThumb = Boolean(previewData);
   const thumbRef = useCanvasBlur(thumbnailDataUri, noThumb, isMobile && !IS_CANVAS_FILTER_SUPPORTED);
-  const thumbClassNames = useMediaTransition(!noThumb);
+  const thumbClassNames = useMediaTransitionDeprecated(!noThumb);
 
   const {
     shouldRender: shouldSpinnerRender,
     transitionClassNames: spinnerClassNames,
-  } = useShowTransition(isTransferring, undefined, true);
+  } = useShowTransitionDeprecated(isTransferring, undefined, true);
 
   const color = getColorFromExtension(extension);
   const sizeString = getFileSizeString(size);
@@ -101,7 +104,7 @@ const File: FC<OwnProps> = ({
     <div ref={elementRef} className={fullClassName} dir={lang.isRtl ? 'rtl' : undefined}>
       {isSelectable && (
         <div className="message-select-control">
-          {isSelected && <i className="icon icon-select" />}
+          {isSelected && <Icon name="select" />}
         </div>
       )}
       <div className="file-icon-container" onClick={isUploading ? undefined : onClick}>
@@ -112,6 +115,7 @@ const File: FC<OwnProps> = ({
               className="full-media"
               width={width}
               height={height}
+              draggable={false}
               alt=""
             />
             {withThumb && (
@@ -138,13 +142,9 @@ const File: FC<OwnProps> = ({
           </div>
         )}
         {onClick && (
-          <i
-            className={buildClassName(
-              'action-icon',
-              'icon',
-              actionIcon || 'icon-download',
-              shouldSpinnerRender && 'hidden',
-            )}
+          <Icon
+            name={actionIcon || 'download'}
+            className={buildClassName('action-icon', shouldSpinnerRender && 'hidden')}
           />
         )}
       </div>

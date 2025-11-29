@@ -1,26 +1,29 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiChat, ApiSticker, ApiTopic } from '../../api/types';
 import type { TabState } from '../../global/types';
 
 import { DEFAULT_TOPIC_ICON_STICKER_ID, GENERAL_TOPIC_ID } from '../../config';
-import { REM } from '../common/helpers/mediaDimensions';
-import { selectChat, selectIsCurrentUserPremium, selectTabState } from '../../global/selectors';
+import {
+  selectChat, selectIsCurrentUserPremium, selectTabState, selectTopic,
+} from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
+import { REM } from '../common/helpers/mediaDimensions';
 
-import useLang from '../../hooks/useLang';
 import useHistoryBack from '../../hooks/useHistoryBack';
+import useOldLang from '../../hooks/useOldLang';
 
-import TopicIcon from '../common/TopicIcon';
-import InputText from '../ui/InputText';
-import FloatingActionButton from '../ui/FloatingActionButton';
-import Spinner from '../ui/Spinner';
-import Loading from '../ui/Loading';
 import CustomEmojiPicker from '../common/CustomEmojiPicker';
+import Icon from '../common/icons/Icon';
+import TopicIcon from '../common/TopicIcon';
+import FloatingActionButton from '../ui/FloatingActionButton';
+import InputText from '../ui/InputText';
+import Loading from '../ui/Loading';
+import Spinner from '../ui/Spinner';
 import Transition from '../ui/Transition';
 
 import styles from './ManageTopic.module.scss';
@@ -51,7 +54,7 @@ const EditTopic: FC<OwnProps & StateProps> = ({
   const { editTopic, openPremiumModal } = getActions();
   const [title, setTitle] = useState('');
   const [iconEmojiId, setIconEmojiId] = useState<string | undefined>(undefined);
-  const lang = useLang();
+  const lang = useOldLang();
 
   const isLoading = Boolean(editTopicPanel?.isLoading);
   const isGeneral = topic?.id === GENERAL_TOPIC_ID;
@@ -60,6 +63,13 @@ const EditTopic: FC<OwnProps & StateProps> = ({
     isActive,
     onBack: onClose,
   });
+
+  useEffect(() => {
+    if (!isActive) {
+      setTitle('');
+      setIconEmojiId(undefined);
+    }
+  }, [isActive]);
 
   useEffect(() => {
     if (topic?.title || topic?.iconEmojiId) {
@@ -118,8 +128,8 @@ const EditTopic: FC<OwnProps & StateProps> = ({
         {!topic && <Loading />}
         {topic && (
           <>
-            <div className={buildClassName(styles.section, styles.top)}>
-              <span className={styles.heading}>{lang('CreateTopicTitle')}</span>
+            <div className={buildClassName(styles.section, styles.top, isGeneral && styles.general)}>
+              <span className={styles.heading}>{lang(isGeneral ? 'CreateGeneralTopicTitle' : 'CreateTopicTitle')}</span>
               <Transition
                 name="zoomFade"
                 activeKey={Number(dummyTopic.iconEmojiId) || 0}
@@ -150,6 +160,7 @@ const EditTopic: FC<OwnProps & StateProps> = ({
                   loadAndPlay={isActive}
                   onCustomEmojiSelect={handleCustomEmojiSelect}
                   className={styles.iconPicker}
+                  pickerListClassName="fab-padding-bottom"
                   withDefaultTopicIcons
                 />
               </div>
@@ -166,7 +177,7 @@ const EditTopic: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon icon-check" />
+          <Icon name="check" />
         )}
       </FloatingActionButton>
     </div>
@@ -177,7 +188,8 @@ export default memo(withGlobal(
   (global): StateProps => {
     const { editTopicPanel } = selectTabState(global);
     const chat = editTopicPanel?.chatId ? selectChat(global, editTopicPanel.chatId) : undefined;
-    const topic = editTopicPanel?.topicId ? chat?.topics?.[editTopicPanel?.topicId] : undefined;
+    const topic = editTopicPanel?.chatId && editTopicPanel?.topicId
+      ? selectTopic(global, editTopicPanel.chatId, editTopicPanel.topicId) : undefined;
 
     return {
       chat,

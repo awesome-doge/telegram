@@ -2,17 +2,26 @@ import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useEffect } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
+import type { ApiStarsAmount } from '../../../api/types';
 import { SettingsScreens } from '../../../types';
-import type { ApiUser } from '../../../api/types';
 
-import { selectIsPremiumPurchaseBlocked, selectUser } from '../../../global/selectors';
-import useLang from '../../../hooks/useLang';
+import { FAQ_URL, PRIVACY_URL } from '../../../config';
+import { formatStarsAmount } from '../../../global/helpers/payments';
+import {
+  selectIsGiveawayGiftsPurchaseAvailable,
+  selectIsPremiumPurchaseBlocked,
+} from '../../../global/selectors';
+
+import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
 
-import ListItem from '../../ui/ListItem';
+import StarIcon from '../../common/icons/StarIcon';
+import ChatExtra from '../../common/profile/ChatExtra';
 import ProfileInfo from '../../common/ProfileInfo';
-import ChatExtra from '../../common/ChatExtra';
-import PremiumIcon from '../../common/PremiumIcon';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import ListItem from '../../ui/ListItem';
 
 type OwnProps = {
   isActive?: boolean;
@@ -22,78 +31,88 @@ type OwnProps = {
 
 type StateProps = {
   sessionCount: number;
-  currentUser?: ApiUser;
-  lastSyncTime?: number;
+  currentUserId?: string;
   canBuyPremium?: boolean;
+  isGiveawayAvailable?: boolean;
+  starsBalance?: ApiStarsAmount;
 };
 
 const SettingsMain: FC<OwnProps & StateProps> = ({
   isActive,
+  currentUserId,
+  sessionCount,
+  canBuyPremium,
+  isGiveawayAvailable,
+  starsBalance,
   onScreenSelect,
   onReset,
-  currentUser,
-  sessionCount,
-  lastSyncTime,
-  canBuyPremium,
 }) => {
   const {
-    loadProfilePhotos,
-    loadAuthorizations,
+    loadMoreProfilePhotos,
     openPremiumModal,
+    openSupportChat,
+    openUrl,
+    openGiftRecipientPicker,
+    openStarsBalanceModal,
   } = getActions();
 
+  const [isSupportDialogOpen, openSupportDialog, closeSupportDialog] = useFlag(false);
+
   const lang = useLang();
-  const profileId = currentUser?.id;
 
   useEffect(() => {
-    if (profileId && lastSyncTime) {
-      loadProfilePhotos({ profileId });
+    if (currentUserId) {
+      loadMoreProfilePhotos({ peerId: currentUserId, isPreload: true });
     }
-  }, [lastSyncTime, profileId, loadProfilePhotos]);
+  }, [currentUserId]);
 
   useHistoryBack({
     isActive,
     onBack: onReset,
   });
 
-  useEffect(() => {
-    if (lastSyncTime) {
-      loadAuthorizations();
-    }
-  }, [lastSyncTime, loadAuthorizations]);
+  const handleOpenSupport = useLastCallback(() => {
+    openSupportChat();
+    closeSupportDialog();
+  });
 
   return (
     <div className="settings-content custom-scroll">
-      <div className="settings-main-menu">
-        {currentUser && (
+      <div className="settings-main-menu self-profile">
+        {currentUserId && (
           <ProfileInfo
-            userId={currentUser.id}
+            peerId={currentUserId}
             canPlayVideo={Boolean(isActive)}
             forceShowSelf
           />
         )}
-        {currentUser && (
+        {currentUserId && (
           <ChatExtra
-            chatOrUserId={currentUser.id}
-            forceShowSelf
+            chatOrUserId={currentUserId}
+            isInSettings
           />
         )}
+      </div>
+      <div className="settings-main-menu">
         <ListItem
           icon="settings"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.General)}
         >
-          {lang('Telegram.GeneralSettingsViewController')}
+          {lang('TelegramGeneralSettingsViewController')}
         </ListItem>
         <ListItem
           icon="animations"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.Performance)}
         >
-          {lang('Animations and Performance')}
+          {lang('MenuAnimations')}
         </ListItem>
         <ListItem
           icon="unmute"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.Notifications)}
         >
@@ -101,6 +120,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         </ListItem>
         <ListItem
           icon="data"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.DataStorage)}
         >
@@ -108,6 +128,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         </ListItem>
         <ListItem
           icon="lock"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.Privacy)}
         >
@@ -115,6 +136,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         </ListItem>
         <ListItem
           icon="folder"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.Folders)}
         >
@@ -122,6 +144,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         </ListItem>
         <ListItem
           icon="active-sessions"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.ActiveSessions)}
         >
@@ -130,43 +153,106 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         </ListItem>
         <ListItem
           icon="language"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.Language)}
         >
           {lang('Language')}
-          <span className="settings-item__current-value">{lang.langName}</span>
+          <span className="settings-item__current-value">{lang.languageInfo.nativeName}</span>
         </ListItem>
         <ListItem
           icon="stickers"
+          narrow
           // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onScreenSelect(SettingsScreens.Stickers)}
         >
-          {lang('StickersName')}
+          {lang('MenuStickers')}
         </ListItem>
+      </div>
+      <div className="settings-main-menu">
         {canBuyPremium && (
           <ListItem
-            leftElement={<PremiumIcon withGradient big />}
-            className="settings-main-menu-premium"
+            leftElement={<StarIcon className="icon ListItem-main-icon" type="premium" size="big" />}
+            narrow
             // eslint-disable-next-line react/jsx-no-bind
             onClick={() => openPremiumModal()}
           >
             {lang('TelegramPremium')}
           </ListItem>
         )}
+        <ListItem
+          leftElement={<StarIcon className="icon ListItem-main-icon" type="gold" size="big" />}
+          narrow
+          // eslint-disable-next-line react/jsx-no-bind
+          onClick={() => openStarsBalanceModal({})}
+        >
+          {lang('MenuStars')}
+          {Boolean(starsBalance) && (
+            <span className="settings-item__current-value">
+              {formatStarsAmount(lang, starsBalance)}
+            </span>
+          )}
+        </ListItem>
+        {isGiveawayAvailable && (
+          <ListItem
+            icon="gift"
+            narrow
+            // eslint-disable-next-line react/jsx-no-bind
+            onClick={() => openGiftRecipientPicker()}
+          >
+            {lang('MenuSendGift')}
+          </ListItem>
+        )}
       </div>
+      <div className="settings-main-menu">
+        <ListItem
+          icon="ask-support"
+          narrow
+          onClick={openSupportDialog}
+        >
+          {lang('AskAQuestion')}
+        </ListItem>
+        <ListItem
+          icon="help"
+          narrow
+          // eslint-disable-next-line react/jsx-no-bind
+          onClick={() => openUrl({ url: FAQ_URL })}
+        >
+          {lang('MenuTelegramFaq')}
+        </ListItem>
+        <ListItem
+          icon="privacy-policy"
+          narrow
+          // eslint-disable-next-line react/jsx-no-bind
+          onClick={() => openUrl({ url: PRIVACY_URL })}
+        >
+          {lang('MenuPrivacyPolicy')}
+        </ListItem>
+      </div>
+      <ConfirmDialog
+        isOpen={isSupportDialogOpen}
+        confirmLabel={lang('OK')}
+        title={lang('AskAQuestion')}
+        textParts={lang('MenuAskText', undefined, { withNodes: true, renderTextFilters: ['br'] })}
+        confirmHandler={handleOpenSupport}
+        onClose={closeSupportDialog}
+      />
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
   (global): StateProps => {
-    const { currentUserId, lastSyncTime } = global;
+    const { currentUserId } = global;
+    const isGiveawayAvailable = selectIsGiveawayGiftsPurchaseAvailable(global);
+    const starsBalance = global.stars?.balance;
 
     return {
       sessionCount: global.activeSessions.orderedHashes.length,
-      currentUser: currentUserId ? selectUser(global, currentUserId) : undefined,
-      lastSyncTime,
+      currentUserId,
       canBuyPremium: !selectIsPremiumPurchaseBlocked(global),
+      isGiveawayAvailable,
+      starsBalance,
     };
   },
 )(SettingsMain));

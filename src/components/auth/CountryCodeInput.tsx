@@ -1,17 +1,18 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useState, memo, useCallback, useRef,
+  memo, useCallback, useRef, useState,
 } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type { ApiCountryCode } from '../../api/types';
 
 import { ANIMATION_END_DELAY } from '../../config';
-import { prepareSearchWordsForNeedle } from '../../util/searchWords';
 import buildClassName from '../../util/buildClassName';
+import { isoToEmoji } from '../../util/emoji/emoji';
+import { prepareSearchWordsForNeedle } from '../../util/searchWords';
 import renderText from '../common/helpers/renderText';
+
 import useLang from '../../hooks/useLang';
-import { isoToEmoji } from '../../util/emoji';
 import useSyncEffect from '../../hooks/useSyncEffect';
 
 import DropdownMenu from '../ui/DropdownMenu';
@@ -119,7 +120,7 @@ const CountryCodeInput: FC<OwnProps & StateProps> = ({
           onInput={handleCodeInput}
           onKeyDown={handleInputKeyDown}
         />
-        <label>{lang('Login.SelectCountry.Title')}</label>
+        <label>{lang('LoginSelectCountryTitle')}</label>
         {isLoading ? (
           <Spinner color="black" />
         ) : (
@@ -153,7 +154,7 @@ const CountryCodeInput: FC<OwnProps & StateProps> = ({
           className="no-results"
           disabled
         >
-          <span>{lang('lng_country_none')}</span>
+          <span>{lang('CountryNone')}</span>
         </MenuItem>
       )}
     </DropdownMenu>

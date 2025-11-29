@@ -1,8 +1,10 @@
 import { inflate } from 'pako/dist/pako_inflate';
-import { createWorkerInterface } from '../../util/createPostMessageInterface';
+
 import type { CancellableCallback } from '../../util/PostMessageConnector';
 
-import 'script-loader!./rlottie-wasm';
+import { createWorkerInterface } from '../../util/createPostMessageInterface';
+
+importScripts(new URL('./rlottie-wasm.js', import.meta.url));
 
 declare const Module: any;
 
@@ -171,6 +173,6 @@ const api = {
   'rlottie:destroy': destroy,
 };
 
-createWorkerInterface(api);
+createWorkerInterface(api, 'media');
 
 export type RLottieApi = typeof api;

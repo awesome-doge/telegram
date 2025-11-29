@@ -1,76 +1,40 @@
 import type { StateHookSetter } from '../../../../lib/teact/teact';
 import { useEffect } from '../../../../lib/teact/teact';
+import { getActions } from '../../../../global';
 
 import type { ApiAttachment, ApiFormattedText, ApiMessage } from '../../../../api/types';
-import { ApiMessageEntityTypes } from '../../../../api/types';
 
-import buildAttachment from '../helpers/buildAttachment';
-import { DEBUG, EDITABLE_INPUT_ID, EDITABLE_INPUT_MODAL_ID } from '../../../../config';
-import getFilesFromDataTransferItems from '../helpers/getFilesFromDataTransferItems';
-import parseMessageInput, { ENTITY_CLASS_BY_NODE_NAME } from '../../../../util/parseMessageInput';
-import cleanDocsHtml from '../../../../lib/cleanDocsHtml';
+import {
+  EDITABLE_INPUT_ID, EDITABLE_INPUT_MODAL_ID, EDITABLE_STORY_INPUT_ID,
+} from '../../../../config';
+import { canReplaceMessageMedia, isUploadingFileSticker } from '../../../../global/helpers';
 import { containsCustomEmoji, stripCustomEmoji } from '../../../../global/helpers/symbols';
+import parseHtmlAsFormattedText from '../../../../util/parseHtmlAsFormattedText';
+import buildAttachment from '../helpers/buildAttachment';
+import { preparePastedHtml } from '../helpers/cleanHtml';
+import getFilesFromDataTransferItems from '../helpers/getFilesFromDataTransferItems';
 
-const MAX_MESSAGE_LENGTH = 4096;
+import useOldLang from '../../../../hooks/useOldLang';
 
-const STYLE_TAG_REGEX = /<style>(.*?)<\/style>/gs;
+const TYPE_HTML = 'text/html';
+const DOCUMENT_TYPE_WORD = 'urn:schemas-microsoft-com:office:word';
+const NAMESPACE_PREFIX_WORD = 'xmlns:w';
 
-function preparePastedHtml(html: string) {
-  let fragment = document.createElement('div');
-  try {
-    html = cleanDocsHtml(html);
-  } catch (err) {
-    if (DEBUG) {
-      // eslint-disable-next-line no-console
-      console.error(err);
-    }
-  }
-  fragment.innerHTML = html.replace(/\u00a0/g, ' ').replace(STYLE_TAG_REGEX, ''); // Strip &nbsp and styles
-
-  const textContents = fragment.querySelectorAll<HTMLDivElement>('.text-content');
-  if (textContents.length) {
-    fragment = textContents[textContents.length - 1]; // Replace with the last copied message
-  }
-
-  Array.from(fragment.getElementsByTagName('*')).forEach((node) => {
-    if (!(node instanceof HTMLElement)) return;
-    node.removeAttribute('style');
-
-    // Fix newlines
-    if (node.tagName === 'BR') node.replaceWith('\n');
-    if (node.tagName === 'P') node.appendChild(document.createTextNode('\n'));
-    if (node.tagName === 'IMG' && !node.dataset.entityType) node.replaceWith(node.getAttribute('alt') || '');
-    // We do not intercept copy logic, so we remove some nodes here
-    if (node.dataset.ignoreOnPaste) node.remove();
-
-    if (ENTITY_CLASS_BY_NODE_NAME[node.tagName]) {
-      node.setAttribute('data-entity-type', ENTITY_CLASS_BY_NODE_NAME[node.tagName]);
-    }
-    // Strip non-entity tags
-    if (!node.dataset.entityType && node.textContent === node.innerText) node.replaceWith(node.textContent);
-    // Append entity parameters for parsing
-    if (node.dataset.alt) node.setAttribute('alt', node.dataset.alt);
-    switch (node.dataset.entityType) {
-      case ApiMessageEntityTypes.MentionName:
-        node.replaceWith(node.textContent || '');
-        break;
-      case ApiMessageEntityTypes.CustomEmoji:
-        node.textContent = node.dataset.alt || '';
-        break;
-    }
-  });
-
-  return fragment.innerHTML.trimEnd();
-}
+const VALID_TARGET_IDS = new Set([EDITABLE_INPUT_ID, EDITABLE_INPUT_MODAL_ID, EDITABLE_STORY_INPUT_ID]);
+const CLOSEST_CONTENT_EDITABLE_SELECTOR = 'div[contenteditable]';
 
 const useClipboardPaste = (
   isActive: boolean,
   insertTextAndUpdateCursor: (text: ApiFormattedText, inputId?: string) => void,
   setAttachments: StateHookSetter<ApiAttachment[]>,
+  setNextText: StateHookSetter<ApiFormattedText | undefined>,
   editedMessage: ApiMessage | undefined,
   shouldStripCustomEmoji?: boolean,
   onCustomEmojiStripped?: VoidFunction,
 ) => {
+  const { showNotification } = getActions();
+  const lang = useOldLang();
+
   useEffect(() => {
     if (!isActive) {
       return undefined;
@@ -81,14 +45,22 @@ const useClipboardPaste = (
         return;
       }
 
-      const input = document.activeElement;
-      if (input && ![EDITABLE_INPUT_ID, EDITABLE_INPUT_MODAL_ID].includes(input.id)) {
+      const input = (e.target as HTMLElement)?.closest(CLOSEST_CONTENT_EDITABLE_SELECTOR);
+      if (!input || !VALID_TARGET_IDS.has(input.id)) {
         return;
       }
 
-      const pastedText = e.clipboardData.getData('text').substring(0, MAX_MESSAGE_LENGTH);
+      e.preventDefault();
+
+      // Some extensions can trigger paste into their panels without focus
+      if (document.activeElement !== input) {
+        return;
+      }
+
+      const pastedText = e.clipboardData.getData('text');
       const html = e.clipboardData.getData('text/html');
-      let pastedFormattedText = html ? parseMessageInput(
+
+      let pastedFormattedText = html ? parseHtmlAsFormattedText(
         preparePastedHtml(html), undefined, true,
       ) : undefined;
 
@@ -100,26 +72,61 @@ const useClipboardPaste = (
       const { items } = e.clipboardData;
       let files: File[] | undefined = [];
 
-      e.preventDefault();
       if (items.length > 0) {
         files = await getFilesFromDataTransferItems(items);
+        if (editedMessage) {
+          files = files?.slice(0, 1);
+        }
       }
 
       if (!files?.length && !pastedText) {
         return;
       }
 
-      if (files?.length && !editedMessage) {
-        const newAttachments = await Promise.all(files.map((file) => {
-          return buildAttachment(file.name, file);
-        }));
-        setAttachments((attachments) => attachments.concat(newAttachments));
-      }
-
       const textToPaste = pastedFormattedText?.entities?.length ? pastedFormattedText : { text: pastedText };
 
-      if (textToPaste) {
-        insertTextAndUpdateCursor(textToPaste, input?.id);
+      let isWordDocument = false;
+      try {
+        const parser = new DOMParser();
+        const parsedDocument = parser.parseFromString(html, TYPE_HTML);
+        isWordDocument = parsedDocument.documentElement
+          .getAttribute(NAMESPACE_PREFIX_WORD) === DOCUMENT_TYPE_WORD;
+      } catch (err: any) {
+        // Ignore
+      }
+
+      const hasText = textToPaste && textToPaste.text;
+      let shouldSetAttachments = files?.length && !isWordDocument;
+
+      const newAttachments = files ? await Promise.all(files.map((file) => buildAttachment(file.name, file))) : [];
+      const canReplace = (editedMessage && newAttachments?.length
+        && canReplaceMessageMedia(editedMessage, newAttachments[0])) || Boolean(hasText);
+      const isUploadingDocumentSticker = isUploadingFileSticker(newAttachments[0]);
+      const isInAlbum = editedMessage && editedMessage?.groupedId;
+
+      if (editedMessage && isUploadingDocumentSticker) {
+        showNotification({ message: lang(isInAlbum ? 'lng_edit_media_album_error' : 'lng_edit_media_invalid_file') });
+        return;
+      }
+
+      if (isInAlbum) {
+        shouldSetAttachments = canReplace;
+        if (!shouldSetAttachments) {
+          showNotification({ message: lang('lng_edit_media_album_error') });
+          return;
+        }
+      }
+
+      if (shouldSetAttachments) {
+        setAttachments(editedMessage ? newAttachments : (attachments) => attachments.concat(newAttachments));
+      }
+
+      if (hasText) {
+        if (shouldSetAttachments) {
+          setNextText(textToPaste);
+        } else {
+          insertTextAndUpdateCursor(textToPaste, input?.id);
+        }
       }
     }
 
@@ -129,7 +136,8 @@ const useClipboardPaste = (
       document.removeEventListener('paste', handlePaste, false);
     };
   }, [
-    insertTextAndUpdateCursor, editedMessage, setAttachments, isActive, shouldStripCustomEmoji, onCustomEmojiStripped,
+    insertTextAndUpdateCursor, editedMessage, setAttachments, isActive, shouldStripCustomEmoji,
+    onCustomEmojiStripped, setNextText, lang,
   ]);
 };
 

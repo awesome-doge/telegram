@@ -3,13 +3,17 @@ import React, { useEffect, useState } from '../../lib/teact/teact';
 
 import type { TextPart } from '../../types';
 
+import buildClassName from '../../util/buildClassName';
+import { throttle } from '../../util/schedulers';
 import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { REM } from '../common/helpers/mediaDimensions';
-import { throttle } from '../../util/schedulers';
-import buildClassName from '../../util/buildClassName';
+
 import useAppLayout from '../../hooks/useAppLayout';
-import useControlsSignal from './hooks/useControlsSignal';
 import useDerivedState from '../../hooks/useDerivedState';
+import useLastCallback from '../../hooks/useLastCallback';
+import useControlsSignal from './hooks/useControlsSignal';
+
+import Button from '../ui/Button';
 
 import './MediaViewerFooter.scss';
 
@@ -17,14 +21,16 @@ const RESIZE_THROTTLE_MS = 500;
 
 type OwnProps = {
   text: TextPart | TextPart[];
+  buttonText?: string;
   onClick: () => void;
+  handleSponsoredClick: (isFromMedia?: boolean) => void;
   isForVideo: boolean;
   isForceMobileVersion?: boolean;
   isProtected?: boolean;
 };
 
 const MediaViewerFooter: FC<OwnProps> = ({
-  text = '', isForVideo, onClick, isProtected, isForceMobileVersion,
+  text = '', buttonText, isForVideo, onClick, handleSponsoredClick, isProtected, isForceMobileVersion,
 }) => {
   const [isMultiline, setIsMultiline] = useState(false);
   const { isMobile } = useAppLayout();
@@ -58,6 +64,10 @@ const MediaViewerFooter: FC<OwnProps> = ({
     }
   }
 
+  const onButtonClick = useLastCallback(() => {
+    handleSponsoredClick();
+  });
+
   const classNames = buildClassName(
     'MediaViewerFooter',
     isForVideo && 'is-for-video',
@@ -70,8 +80,21 @@ const MediaViewerFooter: FC<OwnProps> = ({
     <div className={classNames} onClick={stopEvent}>
       {Boolean(text) && (
         <div className="media-viewer-footer-content" onClick={!isMobile ? onClick : undefined}>
-          <p className={`media-text custom-scroll ${isMultiline ? 'multiline' : ''}`} dir="auto">{text}</p>
+          <p className={`media-text custom-scroll allow-selection ${isMultiline ? 'multiline' : ''}`} dir="auto">
+            {text}
+          </p>
         </div>
+      )}
+      {Boolean(buttonText) && (
+        <Button
+          className={buildClassName('media-viewer-footer-content', 'media-viewer-button')}
+          size="default"
+          color="primary"
+          isRectangular
+          onClick={onButtonClick}
+        >
+          {buttonText}
+        </Button>
       )}
     </div>
   );

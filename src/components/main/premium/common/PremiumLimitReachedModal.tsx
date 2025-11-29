@@ -1,20 +1,23 @@
 import type { FC } from '../../../../lib/teact/teact';
 import React, { memo, useCallback, useEffect } from '../../../../lib/teact/teact';
+import { getActions, withGlobal } from '../../../../global';
 
-import type { ApiLimitTypeWithModal } from '../../../../global/types';
-import type { LangFn } from '../../../../hooks/useLang';
+import type { ApiLimitTypeWithModal } from '../../../../api/types';
+import type { OldLangFn } from '../../../../hooks/useOldLang';
+import type { IconName } from '../../../../types/icons';
 
-import renderText from '../../../common/helpers/renderText';
+import { MAX_UPLOAD_FILEPART_SIZE } from '../../../../config';
+import { selectIsCurrentUserPremium, selectIsPremiumPurchaseBlocked } from '../../../../global/selectors';
 import buildClassName from '../../../../util/buildClassName';
 import { formatFileSize } from '../../../../util/textFormat';
-import { getActions, withGlobal } from '../../../../global';
-import { selectIsCurrentUserPremium, selectIsPremiumPurchaseBlocked } from '../../../../global/selectors';
-import useLang from '../../../../hooks/useLang';
-import { MAX_UPLOAD_FILEPART_SIZE } from '../../../../config';
-import useFlag from '../../../../hooks/useFlag';
+import renderText from '../../../common/helpers/renderText';
 
-import Modal from '../../../ui/Modal';
+import useFlag from '../../../../hooks/useFlag';
+import useOldLang from '../../../../hooks/useOldLang';
+
+import Icon from '../../../common/icons/Icon';
 import Button from '../../../ui/Button';
+import Modal from '../../../ui/Modal';
 import PremiumLimitsCompare from './PremiumLimitsCompare';
 
 import styles from './PremiumLimitReachedModal.module.scss';
@@ -28,6 +31,7 @@ const LIMIT_DESCRIPTION: Record<ApiLimitTypeWithModal, string> = {
   channels: 'LimitReachedCommunities',
   chatlistInvites: 'LimitReachedFolderLinks',
   chatlistJoined: 'LimitReachedSharedFolders',
+  savedDialogsPinned: 'LimitReachedPinSavedDialogs',
 };
 
 const LIMIT_DESCRIPTION_BLOCKED: Record<ApiLimitTypeWithModal, string> = {
@@ -39,6 +43,7 @@ const LIMIT_DESCRIPTION_BLOCKED: Record<ApiLimitTypeWithModal, string> = {
   channels: 'LimitReachedCommunitiesLocked',
   chatlistInvites: 'LimitReachedFolderLinksLocked',
   chatlistJoined: 'LimitReachedSharedFoldersLocked',
+  savedDialogsPinned: 'LimitReachedPinSavedDialogsLocked',
 };
 
 const LIMIT_DESCRIPTION_PREMIUM: Record<ApiLimitTypeWithModal, string> = {
@@ -50,21 +55,23 @@ const LIMIT_DESCRIPTION_PREMIUM: Record<ApiLimitTypeWithModal, string> = {
   channels: 'LimitReachedCommunitiesPremium',
   chatlistInvites: 'LimitReachedFolderLinksPremium',
   chatlistJoined: 'LimitReachedSharedFoldersPremium',
+  savedDialogsPinned: 'LimitReachedPinSavedDialogsPremium',
 };
 
-const LIMIT_ICON: Record<ApiLimitTypeWithModal, string> = {
-  dialogFiltersChats: 'icon-chat-badge',
-  uploadMaxFileparts: 'icon-file-badge',
-  dialogFilters: 'icon-folder-badge',
-  dialogFolderPinned: 'icon-pin-badge',
-  channelsPublic: 'icon-link-badge',
-  channels: 'icon-chats-badge',
-  chatlistInvites: 'icon-link-badge',
-  chatlistJoined: 'icon-folder-badge',
+const LIMIT_ICON: Record<ApiLimitTypeWithModal, IconName> = {
+  dialogFiltersChats: 'chat-badge',
+  uploadMaxFileparts: 'file-badge',
+  dialogFilters: 'folder-badge',
+  dialogFolderPinned: 'pin-badge',
+  channelsPublic: 'link-badge',
+  channels: 'chats-badge',
+  chatlistInvites: 'link-badge',
+  chatlistJoined: 'folder-badge',
+  savedDialogsPinned: 'pin-badge',
 };
 
 const LIMIT_VALUE_FORMATTER: Partial<Record<ApiLimitTypeWithModal, (...args: any[]) => string>> = {
-  uploadMaxFileparts: (lang: LangFn, value: number) => {
+  uploadMaxFileparts: (lang: OldLangFn, value: number) => {
     // The real size is not exactly 4gb, so we need to round it
     if (value === 8000) return lang('FileSize.GB', '4');
     if (value === 4000) return lang('FileSize.GB', '2');
@@ -81,7 +88,7 @@ function getLimiterDescription({
   premiumValue,
   valueFormatter,
 }: {
-  lang: LangFn;
+  lang: OldLangFn;
   limitType?: ApiLimitTypeWithModal;
   isPremium?: boolean;
   canBuyPremium?: boolean;
@@ -125,7 +132,7 @@ const PremiumLimitReachedModal: FC<OwnProps & StateProps> = ({
   canBuyPremium,
 }) => {
   const { closeLimitReachedModal, openPremiumModal } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   const [isClosing, startClosing, stopClosing] = useFlag();
 
@@ -195,13 +202,13 @@ const PremiumLimitReachedModal: FC<OwnProps & StateProps> = ({
         {canUpgrade
       && (
         <Button
-          className={buildClassName('confirm-dialog-button', styles.subscribeButton)}
-          isShiny
+          className="confirm-dialog-button"
+          isText
           onClick={handleClick}
           color="primary"
         >
           {lang('IncreaseLimit')}
-          <i className={buildClassName(styles.buttonIcon, 'icon', 'icon-double-badge')} />
+          <Icon name="double-badge" className={styles.x2} />
         </Button>
       )}
       </div>

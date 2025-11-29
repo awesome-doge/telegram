@@ -1,0 +1,84 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 14rem;
+  overflow: hidden;
+}
+
+.modal {
+  :global(.modal-dialog) {
+    max-width: 22.5rem;
+  }
+
+  :global(.modal-title) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    padding-left: 0.5rem;
+  }
+}
+
+.loading {
+  margin-block: auto;
+}
+
+.description {
+  padding: 0.5rem;
+  line-height: 1.25;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.bold {
+  font-weight: var(--font-weight-medium);
+}
+
+.chip {
+  align-self: center;
+}
+
+.replaceModal :global(.modal-dialog) {
+  max-width: 20rem;
+}
+
+.replaceModalContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.avatarContainer {
+  display: flex;
+  align-self: center;
+  gap: 0.25rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.arrow {
+  font-size: 2rem;
+  color: var(--color-text-secondary);
+}
+
+.boostedWrapper {
+  position: relative;
+}
+
+.boostedMark {
+  position: absolute;
+  bottom: -0.125rem;
+  right: -0.125rem;
+  font-size: 1.25rem;
+  background-color: var(--color-background);
+  padding: 0.125rem;
+  border-radius: 50%;
+  z-index: 10;
+
+  &::before {
+    background-image: var(--premium-gradient);
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}

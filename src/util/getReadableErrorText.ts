@@ -16,7 +16,11 @@ const READABLE_ERROR_MESSAGES: Record<string, string> = {
   YOU_BLOCKED_USER: 'You blocked this user',
   IMAGE_PROCESS_FAILED: 'Failure while processing image',
   MEDIA_EMPTY: 'The provided media object is invalid',
+  MEDIA_GROUPED_INVALID: 'Failed to replace album media',
+  MEDIA_NEW_INVALID: 'Failed to replace new media',
+  MESSAGE_NOT_MODIFIED: 'Message not modified. The new content is identical to the current one.',
   MEDIA_INVALID: 'Media invalid',
+  PASSWORD_HASH_INVALID: 'Incorrect password',
   PHOTO_EXT_INVALID: 'The extension of the photo is invalid',
   PHOTO_INVALID_DIMENSIONS: 'The photo dimensions are invalid',
   PHOTO_SAVE_FILE_INVALID: 'Internal issues, try again later',
@@ -67,10 +71,16 @@ const READABLE_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_RANK_EMOJI_NOT_ALLOWED: 'An admin rank cannot contain emojis',
   ADMIN_RANK_INVALID: 'The specified admin rank is invalid',
   FRESH_CHANGE_ADMINS_FORBIDDEN: 'You were just elected admin, you can\'t add or modify other admins yet',
-  INPUT_USER_DEACTIVATED: 'The specified user was deleted',
+  INPUT_USER_DEACTIVATED: 'Can\'t do this action to a deleted account',
   BOT_PRECHECKOUT_TIMEOUT: 'The request for payment has expired',
+  PROVIDER_ACCOUNT_TIMEOUT: 'Request to the payment provider has expired',
+
+  STARGIFT_CONVERT_TOO_OLD: 'This gift no longer can be converted to Stars',
+  SUBSCRIPTION_ALREADY_ACTIVE: 'You are already subscribed',
 
   PEERS_LIST_EMPTY: 'No chats are added to the list',
+
+  PAID_MEDIA_FORBIDDEN: 'You can\'t send paid media in this chat',
 };
 
 if (DEBUG) {

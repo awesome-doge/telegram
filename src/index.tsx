@@ -1,27 +1,31 @@
 import './util/handleError';
 import './util/setupServiceWorker';
+import './global/init';
 
 import React from './lib/teact/teact';
 import TeactDOM from './lib/teact/teact-dom';
-import { enableStrict, requestMutation } from './lib/fasterdom/fasterdom';
-
 import {
   getActions, getGlobal,
 } from './global';
-import updateWebmanifest from './util/updateWebmanifest';
-import { IS_MULTITAB_SUPPORTED } from './util/windowEnvironment';
-import './global/init';
 
 import {
-  APP_VERSION, DEBUG, MULTITAB_LOCALSTORAGE_KEY, STRICTERDOM_ENABLED,
+  DEBUG, MULTITAB_LOCALSTORAGE_KEY, STRICTERDOM_ENABLED,
 } from './config';
-import { establishMultitabRole, subscribeToMasterChange } from './util/establishMultitabRole';
-import { requestGlobal, subscribeToMultitabBroadcastChannel } from './util/multitab';
-import { onBeforeUnload } from './util/schedulers';
+import { enableStrict, requestMutation } from './lib/fasterdom/fasterdom';
 import { selectTabState } from './global/selectors';
+import { betterView } from './util/betterView';
+import { establishMultitabRole, subscribeToMasterChange } from './util/establishMultitabRole';
+import { initGlobal } from './util/init';
+import { initLocalization } from './util/localization';
+import { requestGlobal, subscribeToMultitabBroadcastChannel } from './util/multitab';
+import { checkAndAssignPermanentWebVersion } from './util/permanentWebVersion';
+import { onBeforeUnload } from './util/schedulers';
+import updateWebmanifest from './util/updateWebmanifest';
+import { IS_MULTITAB_SUPPORTED } from './util/windowEnvironment';
 
 import App from './components/App';
 
+import './assets/fonts/roboto.css';
 import './styles/index.scss';
 
 if (STRICTERDOM_ENABLED) {
@@ -38,9 +42,12 @@ async function init() {
 
   if (!(window as any).isCompatTestPassed) return;
 
+  checkAndAssignPermanentWebVersion();
+
+  await window.electron?.restoreLocalStorage();
+
   if (IS_MULTITAB_SUPPORTED) {
     subscribeToMultitabBroadcastChannel();
-
     await requestGlobal(APP_VERSION);
     localStorage.setItem(MULTITAB_LOCALSTORAGE_KEY, '1');
     onBeforeUnload(() => {
@@ -51,15 +58,23 @@ async function init() {
     });
   }
 
-  getActions().initShared();
+  await initGlobal();
   getActions().init();
 
+  getActions().updateShouldEnableDebugLog();
+  getActions().updateShouldDebugExportedSenders();
+
+  const global = getGlobal();
+
+  initLocalization(global.settings.byKey.language, true);
+
   if (IS_MULTITAB_SUPPORTED) {
-    establishMultitabRole();
     subscribeToMasterChange((isMasterTab) => {
       getActions()
         .switchMultitabRole({ isMasterTab }, { forceSyncOnIOs: true });
     });
+    const shouldReestablishMasterToSelf = getGlobal().authState !== 'authorizationStateReady';
+    establishMultitabRole(shouldReestablishMasterToSelf);
   }
 
   if (DEBUG) {
@@ -74,6 +89,8 @@ async function init() {
       <App />,
       document.getElementById('root')!,
     );
+
+    betterView();
   });
 
   if (DEBUG) {
@@ -90,3 +107,9 @@ async function init() {
     });
   }
 }
+
+onBeforeUnload(() => {
+  const actions = getActions();
+  actions.leaveGroupCall?.({ isPageUnload: true });
+  actions.hangUp?.({ isPageUnload: true });
+});

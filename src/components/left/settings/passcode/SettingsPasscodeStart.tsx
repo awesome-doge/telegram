@@ -3,11 +3,12 @@ import React, { memo } from '../../../../lib/teact/teact';
 
 import { STICKER_SIZE_PASSCODE } from '../../../../config';
 import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
 
-import Button from '../../../ui/Button';
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useOldLang from '../../../../hooks/useOldLang';
+
 import AnimatedIconWithPreview from '../../../common/AnimatedIconWithPreview';
+import Button from '../../../ui/Button';
 
 import lockPreviewUrl from '../../../../assets/lock.png';
 
@@ -20,7 +21,7 @@ type OwnProps = {
 const SettingsPasscodeStart: FC<OwnProps> = ({
   isActive, onReset, onStart,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({ isActive, onBack: onReset });
 
@@ -43,7 +44,7 @@ const SettingsPasscodeStart: FC<OwnProps> = ({
         </p>
       </div>
 
-      <div className="settings-item pt-0">
+      <div className="settings-item pt-2">
         <Button onClick={onStart}>{lang('EnablePasscode')}</Button>
       </div>
     </div>

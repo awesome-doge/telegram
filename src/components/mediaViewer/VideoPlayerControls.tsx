@@ -1,29 +1,33 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useCallback, memo, useEffect, useMemo, useLayoutEffect,
+  memo, useEffect, useLayoutEffect,
+  useMemo,
+  useSignal,
 } from '../../lib/teact/teact';
 
-import type { BufferedRange } from '../../hooks/useBuffering';
 import type { ApiDimensions } from '../../api/types';
-
-import useLang from '../../hooks/useLang';
-import useFlag from '../../hooks/useFlag';
-import useAppLayout from '../../hooks/useAppLayout';
-import useDerivedState from '../../hooks/useDerivedState';
-import useSignal from '../../hooks/useSignal';
-import useCurrentTimeSignal from './hooks/currentTimeSignal';
-import useControlsSignal from './hooks/useControlsSignal';
+import type { BufferedRange } from '../../hooks/useBuffering';
+import type { IconName } from '../../types/icons';
 
 import buildClassName from '../../util/buildClassName';
-import { IS_IOS, IS_TOUCH_ENV } from '../../util/windowEnvironment';
-import { formatMediaDuration } from '../../util/dateFormat';
+import { formatMediaDuration } from '../../util/dates/dateFormat';
 import { formatFileSize } from '../../util/textFormat';
+import { IS_IOS, IS_TOUCH_ENV } from '../../util/windowEnvironment';
 
-import SeekLine from './SeekLine';
+import useAppLayout from '../../hooks/useAppLayout';
+import useCurrentTimeSignal from '../../hooks/useCurrentTimeSignal';
+import useDerivedState from '../../hooks/useDerivedState';
+import useFlag from '../../hooks/useFlag';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+import useControlsSignal from './hooks/useControlsSignal';
+
+import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
-import RangeSlider from '../ui/RangeSlider';
 import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
+import RangeSlider from '../ui/RangeSlider';
+import SeekLine from './SeekLine';
 
 import './VideoPlayerControls.scss';
 
@@ -46,7 +50,7 @@ type OwnProps = {
   playbackRate: number;
   posterSize?: ApiDimensions;
   onChangeFullscreen: (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
-  onPictureInPictureChange?: () => void ;
+  onPictureInPictureChange?: () => void;
   onVolumeClick: () => void;
   onVolumeChange: (volume: number) => void;
   onPlaybackRateChange: (playbackRate: number) => void;
@@ -134,22 +138,22 @@ const VideoPlayerControls: FC<OwnProps> = ({
     }
   }, [closePlaybackMenu, isVisible]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
-  const handleSeek = useCallback((position: number) => {
+  const handleSeek = useLastCallback((position: number) => {
     setIsSeeking(false);
     onSeek(position);
-  }, [onSeek, setIsSeeking]);
+  });
 
-  const handleSeekStart = useCallback(() => {
+  const handleSeekStart = useLastCallback(() => {
     setIsSeeking(true);
-  }, [setIsSeeking]);
+  });
 
-  const volumeIcon = useMemo(() => {
-    if (volume === 0 || isMuted) return 'icon-muted';
-    if (volume < 0.3) return 'icon-volume-1';
-    if (volume < 0.6) return 'icon-volume-2';
-    return 'icon-volume-3';
+  const volumeIcon: IconName = useMemo(() => {
+    if (volume === 0 || isMuted) return 'muted';
+    if (volume < 0.3) return 'volume-1';
+    if (volume < 0.6) return 'volume-2';
+    return 'volume-3';
   }, [volume, isMuted]);
 
   return (
@@ -161,9 +165,11 @@ const VideoPlayerControls: FC<OwnProps> = ({
         url={url}
         duration={duration}
         isReady={isReady}
+        isPlaying={isPlaying}
         isPreviewDisabled={isPreviewDisabled}
         posterSize={posterSize}
         bufferedRanges={bufferedRanges}
+        playbackRate={playbackRate}
         onSeek={handleSeek}
         onSeekStart={handleSeekStart}
         isActive={isVisible}
@@ -178,7 +184,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
           round
           onClick={onPlayPause}
         >
-          <i className={buildClassName('icon', isPlaying ? 'icon-pause' : 'icon-play')} />
+          <Icon name={isPlaying ? 'pause' : 'play'} />
         </Button>
         <Button
           ariaLabel="Volume"
@@ -188,7 +194,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
           round
           onClick={onVolumeClick}
         >
-          <i className={buildClassName('icon', volumeIcon)} />
+          <Icon name={volumeIcon} />
         </Button>
         {!IS_IOS && (
           <RangeSlider bold className="volume-slider" value={isMuted ? 0 : volume * 100} onChange={onVolumeChange} />
@@ -219,7 +225,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
             round
             onClick={onPictureInPictureChange}
           >
-            <i className="icon icon-pip" />
+            <Icon name="pip" />
           </Button>
         )}
         {isFullscreenSupported && (
@@ -231,7 +237,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
             round
             onClick={onChangeFullscreen}
           >
-            <i className={buildClassName('icon ', isFullscreen ? 'icon-smallscreen' : 'icon-fullscreen')} />
+            <Icon name={isFullscreen ? 'smallscreen' : 'fullscreen'} />
           </Button>
         )}
       </div>
@@ -265,4 +271,5 @@ function renderTime(currentTime: number, duration: number) {
     </div>
   );
 }
+
 export default memo(VideoPlayerControls);

@@ -1,11 +1,10 @@
-import { addActionHandler, getGlobal, setGlobal } from '../..';
-
 import type { GlobalState } from '../../types';
 
 import { TON_MSG_ADDRESS_REQUEST, TON_MSG_ADDRESS_RESPONSE } from '../../../config';
-import { selectChatMessages, selectCurrentMessageList } from '../../selectors';
-import { getMessageText } from '../../helpers';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { addActionHandler, getGlobal, setGlobal } from '../..';
+import { getMessageText } from '../../helpers';
+import { selectChatMessages, selectCurrentMessageList } from '../../selectors';
 
 addActionHandler('requestTonAddress', (global, actions, payload): void => {
   const { tabId = getCurrentTabId() } = payload || {};
@@ -21,7 +20,12 @@ addActionHandler('requestTonAddress', (global, actions, payload): void => {
     return;
   }
 
-  actions.sendMessage({ text: TON_MSG_ADDRESS_REQUEST, tabId });
+  const currentMessageList = selectCurrentMessageList(global, tabId);
+  actions.sendMessage({
+    messageList: currentMessageList!,
+    text: TON_MSG_ADDRESS_REQUEST,
+    tabId,
+  });
 });
 
 addActionHandler('shareTonAddress', (global, actions, payload): void => {
@@ -47,7 +51,9 @@ addActionHandler('shareTonAddress', (global, actions, payload): void => {
       return;
     }
 
+    const currentMessageList = selectCurrentMessageList(global, tabId);
     actions.sendMessage({
+      messageList: currentMessageList!,
       text: `${TON_MSG_ADDRESS_RESPONSE}${addresses[0]}`,
       tabId,
     });

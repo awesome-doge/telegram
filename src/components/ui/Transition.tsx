@@ -1,26 +1,31 @@
 import type { RefObject } from 'react';
-import React, { useEffect, useLayoutEffect, useRef } from '../../lib/teact/teact';
-import { addExtraClass, removeExtraClass, toggleExtraClass } from '../../lib/teact/teact-dom';
-import { requestMutation, requestForcedReflow } from '../../lib/fasterdom/fasterdom';
-
+import React, {
+  beginHeavyAnimation, useEffect, useLayoutEffect, useRef,
+} from '../../lib/teact/teact';
+import {
+  addExtraClass, removeExtraClass, setExtraStyles, toggleExtraClass,
+} from '../../lib/teact/teact-dom';
 import { getGlobal } from '../../global';
 
-import buildClassName from '../../util/buildClassName';
-import forceReflow from '../../util/forceReflow';
-import { waitForAnimationEnd, waitForTransitionEnd } from '../../util/cssAnimationEndListeners';
-import { dispatchHeavyAnimationEvent } from '../../hooks/useHeavyAnimationCheck';
+import { requestForcedReflow, requestMutation } from '../../lib/fasterdom/fasterdom';
 import { selectCanAnimateInterface } from '../../global/selectors';
+import buildClassName from '../../util/buildClassName';
+import { waitForAnimationEnd, waitForTransitionEnd } from '../../util/cssAnimationEndListeners';
+import forceReflow from '../../util/forceReflow';
+import { omit } from '../../util/iteratees';
+import { allowSwipeControlForTransition } from '../../util/swipeController';
+
 import useForceUpdate from '../../hooks/useForceUpdate';
-import usePrevious from '../../hooks/usePrevious';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
 import './Transition.scss';
 
 type AnimationName = (
-  'none' | 'slide' | 'slideRtl' | 'slideFade' | 'zoomFade' | 'slideLayers'
+  'none' | 'slide' | 'slideRtl' | 'slideFade' | 'zoomFade' | 'zoomBounceSemiFade' | 'slideLayers'
   | 'fade' | 'pushSlide' | 'reveal' | 'slideOptimized' | 'slideOptimizedRtl' | 'semiFade'
-  | 'slideVertical' | 'slideVerticalFade'
-);
-export type ChildrenFn = (isActive: boolean, isFrom: boolean, currentKey: number) => React.ReactNode;
+  | 'slideVertical' | 'slideVerticalFade' | 'slideFadeAndroid'
+  );
+export type ChildrenFn = (isActive: boolean, isFrom: boolean, currentKey: number, activeKey: number) => React.ReactNode;
 export type TransitionProps = {
   ref?: RefObject<HTMLDivElement>;
   activeKey: number;
@@ -31,12 +36,15 @@ export type TransitionProps = {
   shouldRestoreHeight?: boolean;
   shouldCleanup?: boolean;
   cleanupExceptionKey?: number;
+  cleanupOnlyKey?: number;
   // Used by async components which are usually remounted during first animation
   shouldWrap?: boolean;
   wrapExceptionKey?: number;
   id?: string;
   className?: string;
   slideClassName?: string;
+  withSwipeControl?: boolean;
+  isBlockingAnimation?: boolean;
   onStart?: NoneToVoidFunction;
   onStop?: NoneToVoidFunction;
   children: React.ReactNode | ChildrenFn;
@@ -50,8 +58,12 @@ const CLASSES = {
   to: 'Transition_slide-to',
   inactive: 'Transition_slide-inactive',
 };
+
+export const ACTIVE_SLIDE_CLASS_NAME = CLASSES.active;
+export const TO_SLIDE_CLASS_NAME = CLASSES.to;
+
 const DISABLEABLE_ANIMATIONS = new Set<AnimationName>([
-  'slide', 'slideRtl', 'slideFade', 'zoomFade', 'slideLayers', 'pushSlide', 'reveal',
+  'slide', 'slideRtl', 'slideFade', 'zoomFade', 'zoomBounceSemiFade', 'slideLayers', 'pushSlide', 'reveal',
   'slideOptimized', 'slideOptimizedRtl', 'slideVertical', 'slideVerticalFade',
 ]);
 
@@ -65,11 +77,14 @@ function Transition({
   shouldRestoreHeight,
   shouldCleanup,
   cleanupExceptionKey,
+  cleanupOnlyKey,
   shouldWrap,
   wrapExceptionKey,
   id,
   className,
   slideClassName,
+  withSwipeControl,
+  isBlockingAnimation,
   onStart,
   onStop,
   children,
@@ -86,12 +101,14 @@ function Transition({
   }
 
   const rendersRef = useRef<Record<number, React.ReactNode | ChildrenFn>>({});
-  const prevActiveKey = usePrevious<any>(activeKey);
+  const prevActiveKey = usePreviousDeprecated<any>(activeKey);
   const forceUpdate = useForceUpdate();
+  const isAnimatingRef = useRef(false);
+  const isSwipeJustCancelledRef = useRef(false);
 
-  const activeKeyChanged = prevActiveKey !== undefined && activeKey !== prevActiveKey;
+  const hasActiveKeyChanged = prevActiveKey !== undefined && activeKey !== prevActiveKey;
 
-  if (!renderCount && activeKeyChanged) {
+  if (!renderCount && hasActiveKeyChanged) {
     rendersRef.current = { [prevActiveKey]: rendersRef.current[prevActiveKey] };
   }
 
@@ -111,11 +128,13 @@ function Transition({
       if (!shouldCleanup) {
         return;
       }
-
-      const preservedRender = cleanupExceptionKey !== undefined ? rendersRef.current[cleanupExceptionKey] : undefined;
-
-      rendersRef.current = preservedRender ? { [cleanupExceptionKey!]: preservedRender } : {};
-
+      if (cleanupExceptionKey !== undefined) {
+        rendersRef.current = { [cleanupExceptionKey]: rendersRef.current[cleanupExceptionKey] };
+      } else if (cleanupOnlyKey !== undefined) {
+        rendersRef.current = omit(rendersRef.current, [cleanupOnlyKey]);
+      } else {
+        rendersRef.current = {};
+      }
       forceUpdate();
     }
 
@@ -135,26 +154,31 @@ function Transition({
       addExtraClass(el, CLASSES.slide);
 
       if (slideClassName) {
-        addExtraClass(el, slideClassName);
+        slideClassName.split(/\s+/).forEach((token) => {
+          addExtraClass(el, token);
+        });
       }
     });
 
-    if (!activeKeyChanged) {
-      if (childElements.length === 1 || (nextKey !== undefined && childElements.length === 2)) {
-        const firstChild = childNodes[activeIndex] as HTMLElement;
-
-        addExtraClass(firstChild, CLASSES.active);
-
-        if (isSlideOptimized) {
-          firstChild.style.transition = 'none';
-          firstChild.style.transform = 'translate3d(0, 0, 0)';
-        }
-
-        if (childElements.length === 2) {
-          const nextChild = childElements[0] === firstChild ? childElements[1] : childElements[0];
-          addExtraClass(nextChild, CLASSES.inactive);
-        }
+    if (!hasActiveKeyChanged) {
+      if (isAnimatingRef.current) {
+        return;
       }
+
+      childElements.forEach((childElement) => {
+        if (childElement === childNodes[activeIndex]) {
+          addExtraClass(childElement, CLASSES.active);
+
+          if (isSlideOptimized) {
+            setExtraStyles(childElement, {
+              transition: 'none',
+              transform: 'translate3d(0, 0, 0)',
+            });
+          }
+        } else if (!isSlideOptimized) {
+          addExtraClass(childElement, CLASSES.inactive);
+        }
+      });
 
       return;
     }
@@ -162,6 +186,10 @@ function Transition({
     currentKeyRef.current = activeKey;
 
     if (isSlideOptimized) {
+      if (!childNodes[activeIndex]) {
+        return;
+      }
+
       performSlideOptimized(
         shouldDisableAnimation,
         name,
@@ -169,10 +197,12 @@ function Transition({
         cleanup,
         activeKey,
         currentKeyRef,
+        isAnimatingRef,
         container,
         childNodes[activeIndex],
         childNodes[prevActiveIndex],
         shouldRestoreHeight,
+        isBlockingAnimation,
         onStart,
         onStop,
       );
@@ -180,7 +210,11 @@ function Transition({
       return;
     }
 
-    if (name === 'none' || shouldDisableAnimation) {
+    if (name === 'none' || shouldDisableAnimation || isSwipeJustCancelledRef.current) {
+      if (isSwipeJustCancelledRef.current) {
+        isSwipeJustCancelledRef.current = false;
+      }
+
       childNodes.forEach((node, i) => {
         if (node instanceof HTMLElement) {
           removeExtraClass(node, CLASSES.from);
@@ -204,7 +238,8 @@ function Transition({
       }
     });
 
-    const dispatchHeavyAnimationStop = dispatchHeavyAnimationEvent();
+    isAnimatingRef.current = true;
+    const endHeavyAnimation = beginHeavyAnimation(undefined, isBlockingAnimation);
     onStart?.();
 
     toggleExtraClass(container, `Transition-${name}`, !isBackwards);
@@ -216,6 +251,7 @@ function Transition({
 
       requestMutation(() => {
         if (activeKey !== currentKeyRef.current) {
+          endHeavyAnimation();
           return;
         }
 
@@ -233,24 +269,41 @@ function Transition({
 
         if (shouldRestoreHeight) {
           if (activeElement) {
-            activeElement.style.height = 'auto';
-            container.style.height = `${clientHeight}px`;
+            setExtraStyles(activeElement, { height: 'auto' });
+            setExtraStyles(container, { height: `${clientHeight}px` });
           }
         }
 
         onStop?.();
-        dispatchHeavyAnimationStop();
+        endHeavyAnimation();
+        isAnimatingRef.current = false;
 
         cleanup();
       });
     }
 
-    const watchedNode = name === 'reveal' && isBackwards
+    const watchedNode = (name === 'reveal' || name === 'slideFadeAndroid') && isBackwards
       ? childNodes[prevActiveIndex]
       : childNodes[activeIndex];
 
     if (watchedNode) {
-      waitForAnimationEnd(watchedNode, onAnimationEnd, undefined, FALLBACK_ANIMATION_END);
+      if (withSwipeControl && childNodes[prevActiveIndex]) {
+        const giveUpAnimationEnd = waitForAnimationEnd(watchedNode, onAnimationEnd);
+
+        allowSwipeControlForTransition(
+          childNodes[prevActiveIndex] as HTMLElement,
+          childNodes[activeIndex] as HTMLElement,
+          () => {
+            giveUpAnimationEnd();
+            isSwipeJustCancelledRef.current = true;
+            onStop?.();
+            endHeavyAnimation();
+            isAnimatingRef.current = false;
+          },
+        );
+      } else {
+        waitForAnimationEnd(watchedNode, onAnimationEnd, undefined, FALLBACK_ANIMATION_END);
+      }
     } else {
       onAnimationEnd();
     }
@@ -258,7 +311,7 @@ function Transition({
     activeKey,
     nextKey,
     prevActiveKey,
-    activeKeyChanged,
+    hasActiveKeyChanged,
     isBackwards,
     name,
     onStart,
@@ -270,6 +323,9 @@ function Transition({
     cleanupExceptionKey,
     shouldDisableAnimation,
     forceUpdate,
+    withSwipeControl,
+    isBlockingAnimation,
+    cleanupOnlyKey,
   ]);
 
   useEffect(() => {
@@ -278,21 +334,23 @@ function Transition({
     }
 
     const container = containerRef.current!;
-    const activeElement = container.querySelector<HTMLDivElement>(`.${CLASSES.active}`)
-      || container.querySelector<HTMLDivElement>(`.${CLASSES.from}`);
+    const activeElement = container.querySelector<HTMLDivElement>(`:scope > .${CLASSES.active}`)
+      || container.querySelector<HTMLDivElement>(`:scope > .${CLASSES.from}`);
     if (!activeElement) {
       return;
     }
 
-    const { clientHeight } = activeElement || {};
-    if (!clientHeight) {
+    const { clientHeight, clientWidth } = activeElement || {};
+    if (!clientHeight || !clientWidth) {
       return;
     }
 
     requestMutation(() => {
-      activeElement.style.height = 'auto';
-      container.style.height = `${clientHeight}px`;
-      container.style.flexBasis = `${clientHeight}px`;
+      setExtraStyles(activeElement, { height: 'auto' });
+      setExtraStyles(container, {
+        height: `${clientHeight}px`,
+        flexBasis: `${clientHeight}px`,
+      });
     });
   }, [shouldRestoreHeight, children]);
 
@@ -306,7 +364,7 @@ function Transition({
     }
 
     const rendered = typeof render === 'function'
-      ? render(key === activeKey, key === prevActiveKey, activeKey)
+      ? render(key === activeKey, key === prevActiveKey, key, activeKey)
       : render;
 
     return (shouldWrap && key !== wrapExceptionKey) || asFastList
@@ -335,10 +393,12 @@ function performSlideOptimized(
   cleanup: NoneToVoidFunction,
   activeKey: number,
   currentKeyRef: { current: number | undefined },
+  isAnimatingRef: { current: boolean | undefined },
   container: HTMLElement,
   toSlide: ChildNode,
   fromSlide?: ChildNode,
   shouldRestoreHeight?: boolean,
+  isBlockingAnimation?: boolean,
   onStart?: NoneToVoidFunction,
   onStop?: NoneToVoidFunction,
 ) {
@@ -347,15 +407,19 @@ function performSlideOptimized(
     toggleExtraClass(container, `Transition-${name}Backwards`, isBackwards);
 
     if (fromSlide instanceof HTMLElement) {
-      fromSlide.style.transition = 'none';
-      fromSlide.style.transform = '';
       removeExtraClass(fromSlide, CLASSES.active);
+      setExtraStyles(fromSlide, {
+        transition: 'none',
+        transform: '',
+      });
     }
 
     if (toSlide instanceof HTMLElement) {
-      toSlide.style.transition = 'none';
-      toSlide.style.transform = 'translate3d(0, 0, 0)';
       addExtraClass(toSlide, CLASSES.active);
+      setExtraStyles(toSlide, {
+        transition: 'none',
+        transform: 'translate3d(0, 0, 0)',
+      });
     }
 
     cleanup();
@@ -367,21 +431,25 @@ function performSlideOptimized(
     isBackwards = !isBackwards;
   }
 
-  const dispatchHeavyAnimationStop = dispatchHeavyAnimationEvent();
-
+  isAnimatingRef.current = true;
+  const endHeavyAnimation = beginHeavyAnimation(undefined, isBlockingAnimation);
   onStart?.();
 
   toggleExtraClass(container, `Transition-${name}`, !isBackwards);
   toggleExtraClass(container, `Transition-${name}Backwards`, isBackwards);
 
   if (fromSlide instanceof HTMLElement) {
-    fromSlide.style.transition = 'none';
-    fromSlide.style.transform = 'translate3d(0, 0, 0)';
+    setExtraStyles(fromSlide, {
+      transition: 'none',
+      transform: 'translate3d(0, 0, 0)',
+    });
   }
 
   if (toSlide instanceof HTMLElement) {
-    toSlide.style.transition = 'none';
-    toSlide.style.transform = `translate3d(${isBackwards ? '-' : ''}100%, 0, 0)`;
+    setExtraStyles(toSlide, {
+      transition: 'none',
+      transform: `translate3d(${isBackwards ? '-' : ''}100%, 0, 0)`,
+    });
   }
 
   requestForcedReflow(() => {
@@ -391,15 +459,19 @@ function performSlideOptimized(
 
     return () => {
       if (fromSlide instanceof HTMLElement) {
-        fromSlide.style.transition = '';
-        fromSlide.style.transform = `translate3d(${isBackwards ? '' : '-'}100%, 0, 0)`;
         removeExtraClass(fromSlide, CLASSES.active);
+        setExtraStyles(fromSlide, {
+          transition: '',
+          transform: `translate3d(${isBackwards ? '' : '-'}100%, 0, 0)`,
+        });
       }
 
       if (toSlide instanceof HTMLElement) {
-        toSlide.style.transition = '';
-        toSlide.style.transform = 'translate3d(0, 0, 0)';
         addExtraClass(toSlide, CLASSES.active);
+        setExtraStyles(toSlide, {
+          transition: '',
+          transform: 'translate3d(0, 0, 0)',
+        });
       }
     };
   });
@@ -409,21 +481,26 @@ function performSlideOptimized(
 
     requestMutation(() => {
       if (activeKey !== currentKeyRef.current) {
+        endHeavyAnimation();
         return;
       }
 
       if (fromSlide instanceof HTMLElement) {
-        fromSlide.style.transition = 'none';
-        fromSlide.style.transform = '';
+        setExtraStyles(fromSlide, {
+          transition: 'none',
+          transform: '',
+        });
       }
 
       if (shouldRestoreHeight && clientHeight && toSlide instanceof HTMLElement) {
-        toSlide.style.height = 'auto';
-        container.style.height = `${clientHeight}px`;
+        setExtraStyles(toSlide, { height: 'auto' });
+        setExtraStyles(container, { height: `${clientHeight}px` });
       }
 
       onStop?.();
-      dispatchHeavyAnimationStop();
+      endHeavyAnimation();
+      isAnimatingRef.current = false;
+
       cleanup();
     });
   });

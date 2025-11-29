@@ -1,10 +1,25 @@
+import type { ApiSticker, ApiStickerSet, ApiStickerSetInfo } from '../../api/types';
 import type { GlobalState, TabArgs } from '../types';
-import type { ApiStickerSetInfo, ApiSticker, ApiStickerSet } from '../../api/types';
 
 import { RESTRICTED_EMOJI_SET_ID } from '../../config';
-import { selectIsCurrentUserPremium } from './users';
-import { selectTabState } from './tabs';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
+import { selectTabState } from './tabs';
+import { selectIsCurrentUserPremium } from './users';
+
+// https://github.com/DrKLO/Telegram/blob/c319639e9a4dff2f22da6762dcebd12d49f5afa1/TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/cells/msg/GiveawayMessageCell.java#L59
+const MONTH_EMOTICON: Record<number, string> = {
+  1: `${1}\u{FE0F}\u20E3`,
+  3: `${2}\u{FE0F}\u20E3`,
+  6: `${3}\u{FE0F}\u20E3`,
+  12: `${4}\u{FE0F}\u20E3`,
+  24: `${5}\u{FE0F}\u20E3`,
+};
+
+const STAR_EMOTICON: Record<number, string> = {
+  1000: `${2}\u{FE0F}\u20E3`,
+  2500: `${3}\u{FE0F}\u20E3`,
+  5000: `${4}\u{FE0F}\u20E3`,
+};
 
 export function selectIsStickerFavorite<T extends GlobalState>(global: T, sticker: ApiSticker) {
   const { stickers } = global.stickers.favorite;
@@ -118,6 +133,21 @@ export function selectAnimatedEmoji<T extends GlobalState>(global: T, emoji: str
   return animatedEmojis.stickers.find((sticker) => sticker.emoji === emoji || sticker.emoji === cleanedEmoji);
 }
 
+export function selectRestrictedEmoji<T extends GlobalState>(global: T, emoji: string) {
+  const { restrictedEmoji } = global;
+  if (!restrictedEmoji || !restrictedEmoji.stickers) {
+    return undefined;
+  }
+
+  const cleanedEmoji = cleanEmoji(emoji);
+
+  return restrictedEmoji.stickers.find((sticker) => {
+    if (!sticker.emoji) return undefined;
+    const cleanedStickerEmoji = cleanEmoji(sticker.emoji);
+    return cleanedStickerEmoji === cleanedEmoji;
+  });
+}
+
 export function selectAnimatedEmojiEffect<T extends GlobalState>(global: T, emoji: string) {
   const { animatedEmojiEffects } = global;
   if (!animatedEmojiEffects || !animatedEmojiEffects.stickers) {
@@ -139,4 +169,28 @@ export function selectIsAlwaysHighPriorityEmoji<T extends GlobalState>(
   if (!('id' in stickerSet)) return false;
   return stickerSet.id === global.appConfig?.defaultEmojiStatusesStickerSetId
     || stickerSet.id === RESTRICTED_EMOJI_SET_ID;
+}
+
+export function selectGiftStickerForDuration<T extends GlobalState>(global: T, duration = 1) {
+  const stickers = global.premiumGifts?.stickers;
+  if (!stickers) return undefined;
+  const emoji = MONTH_EMOTICON[duration];
+  return stickers.find((sticker) => sticker.emoji === emoji) || stickers[0];
+}
+
+export function selectGiftStickerForStars<T extends GlobalState>(global: T, starCount?: number) {
+  const stickers = global.premiumGifts?.stickers;
+
+  if (!stickers || !starCount) return undefined;
+
+  let emoji;
+  if (starCount <= 1000) {
+    emoji = STAR_EMOTICON[1000];
+  } else if (starCount < 2500) {
+    emoji = STAR_EMOTICON[2500];
+  } else {
+    emoji = STAR_EMOTICON[5000];
+  }
+
+  return stickers.find((sticker) => sticker.emoji === emoji) || stickers[0];
 }

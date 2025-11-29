@@ -9,28 +9,30 @@ import type {
 } from '../../../api/types';
 import { ManagementScreens } from '../../../types';
 
-import { selectChat, selectChatFullInfo } from '../../../global/selectors';
 import { getUserFullName, isChatBasicGroup, isChatChannel } from '../../../global/helpers';
-import useLang from '../../../hooks/useLang';
+import { selectChat, selectChatFullInfo } from '../../../global/selectors';
+
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useOldLang from '../../../hooks/useOldLang';
 
+import Icon from '../../common/icons/Icon';
 import PrivateChatInfo from '../../common/PrivateChatInfo';
-import ListItem from '../../ui/ListItem';
 import Checkbox from '../../ui/Checkbox';
-import FloatingActionButton from '../../ui/FloatingActionButton';
-import Spinner from '../../ui/Spinner';
 import ConfirmDialog from '../../ui/ConfirmDialog';
+import FloatingActionButton from '../../ui/FloatingActionButton';
 import InputText from '../../ui/InputText';
+import ListItem from '../../ui/ListItem';
+import Spinner from '../../ui/Spinner';
 
 type OwnProps = {
   chatId: string;
   selectedUserId?: string;
   isPromotedByCurrentUser?: boolean;
   isNewAdmin?: boolean;
+  isActive: boolean;
   onScreenSelect: (screen: ManagementScreens) => void;
   onClose: NoneToVoidFunction;
-  isActive: boolean;
 };
 
 type StateProps = {
@@ -48,10 +50,10 @@ type StateProps = {
 const CUSTOM_TITLE_MAX_LENGTH = 16;
 
 const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
+  isActive,
   isNewAdmin,
   selectedUserId,
   defaultRights,
-  onScreenSelect,
   chat,
   usersById,
   currentUserId,
@@ -61,7 +63,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
   isForum,
   isFormFullyDisabled,
   onClose,
-  isActive,
+  onScreenSelect,
 }) => {
   const { updateChatAdmin } = getActions();
 
@@ -70,7 +72,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isDismissConfirmationDialogOpen, openDismissConfirmationDialog, closeDismissConfirmationDialog] = useFlag();
   const [customTitle, setCustomTitle] = useState('');
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -215,7 +217,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
 
           <h3 className="section-heading mt-4" dir="auto">{lang('EditAdminWhatCanDo')}</h3>
 
-          <div className="ListItem no-selection">
+          <div className="ListItem">
             <Checkbox
               name="changeInfo"
               checked={Boolean(permissions.changeInfo)}
@@ -226,7 +228,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
             />
           </div>
           {isChannel && (
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="postMessages"
                 checked={Boolean(permissions.postMessages)}
@@ -238,7 +240,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
             </div>
           )}
           {isChannel && (
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="editMessages"
                 checked={Boolean(permissions.editMessages)}
@@ -249,7 +251,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
               />
             </div>
           )}
-          <div className="ListItem no-selection">
+          <div className="ListItem">
             <Checkbox
               name="deleteMessages"
               checked={Boolean(permissions.deleteMessages)}
@@ -259,8 +261,38 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
               onChange={handlePermissionChange}
             />
           </div>
+          <div className="ListItem">
+            <Checkbox
+              name="postStories"
+              checked={Boolean(permissions.postStories)}
+              label={lang('EditAdminPostStories')}
+              blocking
+              disabled={getControlIsDisabled('postStories')}
+              onChange={handlePermissionChange}
+            />
+          </div>
+          <div className="ListItem">
+            <Checkbox
+              name="editStories"
+              checked={Boolean(permissions.editStories)}
+              label={lang('EditAdminEditStories')}
+              blocking
+              disabled={getControlIsDisabled('editStories')}
+              onChange={handlePermissionChange}
+            />
+          </div>
+          <div className="ListItem">
+            <Checkbox
+              name="deleteStories"
+              checked={Boolean(permissions.deleteStories)}
+              label={lang('EditAdminDeleteStories')}
+              blocking
+              disabled={getControlIsDisabled('deleteStories')}
+              onChange={handlePermissionChange}
+            />
+          </div>
           {!isChannel && (
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="banUsers"
                 checked={Boolean(permissions.banUsers)}
@@ -271,7 +303,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
               />
             </div>
           )}
-          <div className="ListItem no-selection">
+          <div className="ListItem">
             <Checkbox
               name="inviteUsers"
               checked={Boolean(permissions.inviteUsers)}
@@ -282,7 +314,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
             />
           </div>
           {!isChannel && (
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="pinMessages"
                 checked={Boolean(permissions.pinMessages)}
@@ -293,7 +325,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
               />
             </div>
           )}
-          <div className="ListItem no-selection">
+          <div className="ListItem">
             <Checkbox
               name="addAdmins"
               checked={Boolean(permissions.addAdmins)}
@@ -303,7 +335,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
               onChange={handlePermissionChange}
             />
           </div>
-          <div className="ListItem no-selection">
+          <div className="ListItem">
             <Checkbox
               name="manageCall"
               checked={Boolean(permissions.manageCall)}
@@ -314,7 +346,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
             />
           </div>
           {isForum && (
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="manageTopics"
                 checked={Boolean(permissions.manageTopics)}
@@ -326,7 +358,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
             </div>
           )}
           {!isChannel && (
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="anonymous"
                 checked={Boolean(permissions.anonymous)}
@@ -372,7 +404,7 @@ const ManageGroupAdminRights: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon icon-check" />
+          <Icon name="check" />
         )}
       </FloatingActionButton>
 
@@ -411,5 +443,8 @@ export default memo(withGlobal<OwnProps>(
       hasFullInfo: Boolean(fullInfo),
       adminMembersById: fullInfo?.adminMembersById,
     };
+  },
+  (global, { chatId }) => {
+    return Boolean(selectChat(global, chatId));
   },
 )(ManageGroupAdminRights));

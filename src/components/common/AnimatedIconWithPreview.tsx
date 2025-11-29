@@ -1,11 +1,13 @@
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import React, { memo } from '../../lib/teact/teact';
 
 import type { OwnProps as AnimatedIconProps } from './AnimatedIcon';
 
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
-import useMediaTransition from '../../hooks/useMediaTransition';
+
 import useFlag from '../../hooks/useFlag';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMediaTransitionDeprecated from '../../hooks/useMediaTransitionDeprecated';
 
 import AnimatedIcon from './AnimatedIcon';
 
@@ -15,6 +17,8 @@ type OwnProps =
   Partial<AnimatedIconProps>
   & { previewUrl?: string; thumbDataUri?: string; noPreviewTransition?: boolean };
 
+const ANIMATION_DURATION = 300;
+
 const loadedPreviewUrls = new Set();
 
 function AnimatedIconWithPreview(props: OwnProps) {
@@ -22,36 +26,47 @@ function AnimatedIconWithPreview(props: OwnProps) {
     previewUrl, thumbDataUri, className, ...otherProps
   } = props;
 
-  const [isPreviewLoaded, markPreviewLoaded] = useFlag(Boolean(thumbDataUri) || loadedPreviewUrls.has(previewUrl));
-  const transitionClassNames = useMediaTransition(isPreviewLoaded);
+  const [isThumbOpen, , unmarkThumbOpen] = useFlag(Boolean(thumbDataUri));
+  const thumbClassNames = useMediaTransitionDeprecated(isThumbOpen);
+
+  const [isPreviewOpen, markPreviewOpen, unmarkPreviewOpen] = useFlag(loadedPreviewUrls.has(previewUrl));
+  const previewClassNames = useMediaTransitionDeprecated(isPreviewOpen);
+
   const [isAnimationReady, markAnimationReady] = useFlag(false);
 
-  const handlePreviewLoad = useCallback(() => {
-    markPreviewLoaded();
+  const handlePreviewLoad = useLastCallback(() => {
+    markPreviewOpen();
     loadedPreviewUrls.add(previewUrl);
-  }, [markPreviewLoaded, previewUrl]);
+  });
+
+  const handleAnimationReady = useLastCallback(() => {
+    unmarkThumbOpen();
+    unmarkPreviewOpen();
+    setTimeout(markAnimationReady, ANIMATION_DURATION);
+  });
 
   const { size } = props;
 
   return (
     <div
-      className={buildClassName(className, styles.root, transitionClassNames)}
+      className={buildClassName(className, styles.root)}
       style={buildStyle(size !== undefined && `width: ${size}px; height: ${size}px;`)}
     >
       {thumbDataUri && !isAnimationReady && (
         // eslint-disable-next-line jsx-a11y/alt-text
-        <img src={thumbDataUri} className={styles.preview} />
+        <img src={thumbDataUri} className={buildClassName(styles.preview, thumbClassNames)} draggable={false} />
       )}
       {previewUrl && !isAnimationReady && (
         // eslint-disable-next-line jsx-a11y/alt-text
         <img
           src={previewUrl}
-          className={styles.preview}
+          className={buildClassName(styles.preview, previewClassNames)}
+          draggable={false}
           onLoad={handlePreviewLoad}
         />
       )}
       {/* eslint-disable-next-line react/jsx-props-no-spreading */}
-      <AnimatedIcon {...otherProps} onLoad={markAnimationReady} noTransition />
+      <AnimatedIcon {...otherProps} onLoad={handleAnimationReady} />
     </div>
   );
 }

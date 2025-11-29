@@ -1,47 +1,119 @@
 import { getActions } from '../global';
 
-import type { ApiChatType } from '../api/types';
+import type { ApiChatType, ApiFormattedText } from '../api/types';
+import type { DeepLinkMethod } from './deepLinkParser';
 
-import { API_CHAT_TYPES } from '../config';
-import { IS_SAFARI } from './windowEnvironment';
+import { API_CHAT_TYPES, RE_TG_LINK } from '../config';
+import { tryParseDeepLink } from './deepLinkParser';
+import { IS_BAD_URL_PARSER } from './windowEnvironment';
 
-type DeepLinkMethod = 'resolve' | 'login' | 'passport' | 'settings' | 'join' | 'addstickers' | 'addemoji' |
-'setlanguage' | 'addtheme' | 'confirmphone' | 'socks' | 'proxy' | 'privatepost' | 'bg' | 'share' | 'msg' | 'msg_url' |
-'invoice' | 'addlist';
+export const processDeepLink = (url: string): boolean => {
+  const actions = getActions();
 
-export const processDeepLink = (url: string) => {
+  const parsedLink = tryParseDeepLink(url);
+  if (parsedLink) {
+    switch (parsedLink.type) {
+      case 'privateMessageLink':
+        actions.openPrivateChannel({
+          id: parsedLink.channelId,
+          threadId: parsedLink.threadId,
+          messageId: parsedLink.messageId,
+          commentId: parsedLink.commentId,
+        });
+        return true;
+      case 'publicMessageLink': {
+        actions.openChatByUsername({
+          username: parsedLink.username,
+          threadId: parsedLink.threadId,
+          messageId: parsedLink.messageId,
+          commentId: parsedLink.commentId,
+        });
+        return true;
+      }
+      case 'publicUsernameOrBotLink': {
+        const choose = parseChooseParameter(parsedLink.choose);
+
+        actions.openChatByUsername({
+          username: parsedLink.username,
+          startParam: parsedLink.start,
+          ref: parsedLink.ref,
+          text: parsedLink.text,
+          startApp: parsedLink.startApp,
+          mode: parsedLink.mode,
+          startAttach: parsedLink.startAttach,
+          attach: parsedLink.attach,
+          choose,
+          originalParts: [parsedLink.username, parsedLink.appName],
+        });
+        return true;
+      }
+      case 'privateChannelLink': {
+        actions.openPrivateChannel({
+          id: parsedLink.channelId,
+        });
+        return true;
+      }
+      case 'businessChatLink':
+        actions.resolveBusinessChatLink({
+          slug: parsedLink.slug,
+        });
+        return true;
+      case 'premiumReferrerLink':
+        actions.openPremiumModal();
+        return true;
+      case 'premiumMultigiftLink':
+        actions.openGiftRecipientPicker();
+        return true;
+      case 'chatBoostLink':
+        actions.processBoostParameters({
+          usernameOrId: (parsedLink.username || parsedLink.id)!,
+          isPrivate: Boolean(parsedLink.id),
+        });
+        return true;
+      case 'giftUniqueLink':
+        actions.openUniqueGiftBySlug({ slug: parsedLink.slug });
+        return true;
+      default:
+        break;
+    }
+  }
+
+  if (!url.match(RE_TG_LINK)) {
+    return false;
+  }
+
+  const urlToParse = IS_BAD_URL_PARSER ? url.replace(/^tg:\/\//, 'https://') : url;
+
   const {
-    protocol, searchParams, pathname, hostname,
-  } = new URL(url);
+    protocol, searchParams, hostname,
+  } = new URL(urlToParse);
 
-  if (protocol !== 'tg:') return;
+  if (protocol !== 'tg:') return false;
+
+  const method = hostname as DeepLinkMethod;
+  const params = Object.fromEntries(searchParams);
 
   const {
-    openChatByInvite,
+    checkChatInvite,
     openChatByUsername,
     openChatByPhoneNumber,
     openStickerSet,
-    focusMessage,
     joinVoiceChatByLink,
     openInvoice,
-    processAttachBotParameters,
     openChatWithDraft,
     checkChatlistInvite,
-  } = getActions();
-
-  // Safari thinks the path in tg://path links is hostname for some reason
-  const method = (IS_SAFARI ? hostname : pathname).replace(/^\/\//, '') as DeepLinkMethod;
-  const params = Object.fromEntries(searchParams);
+    openStoryViewerByUsername,
+    checkGiftCode,
+    openStarsBalanceModal,
+  } = actions;
 
   switch (method) {
     case 'resolve': {
       const {
         domain, phone, post, comment, voicechat, livestream, start, startattach, attach, thread, topic,
-        appname, startapp,
+        appname, startapp, mode, story, text,
       } = params;
 
-      const startAttach = params.hasOwnProperty('startattach') && !startattach ? true : startattach;
-      const choose = parseChooseParameter(params.choose);
       const threadId = Number(thread) || Number(topic) || undefined;
 
       if (domain !== 'telegrampassport') {
@@ -49,13 +121,9 @@ export const processDeepLink = (url: string) => {
           openChatByUsername({
             username: domain,
             startApp: startapp,
+            mode,
             originalParts: [domain, appname],
-          });
-        } else if (startAttach && choose) {
-          processAttachBotParameters({
-            username: domain,
-            filter: choose,
-            ...(typeof startAttach === 'string' && { startParam: startAttach }),
+            text,
           });
         } else if (params.hasOwnProperty('voicechat') || params.hasOwnProperty('livestream')) {
           joinVoiceChatByLink({
@@ -63,30 +131,27 @@ export const processDeepLink = (url: string) => {
             inviteHash: voicechat || livestream,
           });
         } else if (phone) {
-          openChatByPhoneNumber({ phoneNumber: phone, startAttach, attach });
+          openChatByPhoneNumber({
+            phoneNumber: phone,
+            startAttach: startattach,
+            attach,
+            text,
+          });
+        } else if (story) {
+          openStoryViewerByUsername({ username: domain, storyId: Number(story) });
         } else {
           openChatByUsername({
             username: domain,
             messageId: post ? Number(post) : undefined,
             commentId: comment ? Number(comment) : undefined,
             startParam: start,
-            startAttach,
+            mode,
+            startAttach: startattach,
             attach,
             threadId,
           });
         }
       }
-      break;
-    }
-    case 'privatepost': {
-      const {
-        post, channel,
-      } = params;
-
-      focusMessage({
-        chatId: `-${channel}`,
-        messageId: Number(post),
-      });
       break;
     }
     case 'bg': {
@@ -98,7 +163,7 @@ export const processDeepLink = (url: string) => {
     case 'join': {
       const { invite } = params;
 
-      openChatByInvite({ hash: invite });
+      checkChatInvite({ hash: invite });
       break;
     }
     case 'addemoji':
@@ -131,22 +196,39 @@ export const processDeepLink = (url: string) => {
 
     case 'invoice': {
       const { slug } = params;
-      openInvoice({ slug });
+      openInvoice({ type: 'slug', slug });
+      break;
+    }
+
+    case 'stars_topup': {
+      const { balance, purpose } = params;
+      const balanceNeeded = Number(balance);
+      if (!balanceNeeded || balanceNeeded < 0) return true;
+
+      openStarsBalanceModal({ topup: { balanceNeeded, purpose } });
+      break;
+    }
+
+    case 'giftcode': {
+      const { slug } = params;
+      checkGiftCode({ slug });
       break;
     }
     default:
       // Unsupported deeplink
-
-      break;
+      return false;
   }
+  return true;
 };
 
-export function parseChooseParameter(choose?: string) {
+export function formatShareText(url?: string, text?: string, title?: string): ApiFormattedText {
+  return {
+    text: [url, title, text].filter(Boolean).join('\n'),
+  };
+}
+
+function parseChooseParameter(choose?: string) {
   if (!choose) return undefined;
   const types = choose.toLowerCase().split(' ');
   return types.filter((type): type is ApiChatType => API_CHAT_TYPES.includes(type as ApiChatType));
-}
-
-export function formatShareText(url?: string, text?: string, title?: string): string {
-  return [url, title, text].filter(Boolean).join('\n');
 }

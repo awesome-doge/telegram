@@ -1,8 +1,13 @@
-import Api from '../tl/api';
 import type TelegramClient from './TelegramClient';
-import utils from '../Utils';
+
+import Api from '../tl/api';
+
 import { sleep } from '../Helpers';
 import { computeCheck as computePasswordSrpCheck } from '../Password';
+import { getDisplayName } from '../Utils';
+import { Update } from './TelegramClient';
+import { RPCError } from '../errors';
+import { getServerTime } from '../../../util/serverTime';
 
 export interface UserAuthParams {
     phoneNumber: string | (() => Promise<string>);
@@ -29,7 +34,6 @@ interface ApiCredentials {
 }
 
 const DEFAULT_INITIAL_METHOD = 'phoneNumber';
-const QR_CODE_TIMEOUT = 30000;
 
 export async function authFlow(
     client: TelegramClient,
@@ -46,10 +50,10 @@ export async function authFlow(
         me = await signInUserWithPreferredMethod(client, apiCredentials, authParams);
     }
 
-    client._log.info('Signed in successfully as', utils.getDisplayName(me));
+    client._log.info(`Signed in successfully as ${getDisplayName(me)}`);
 }
 
-export async function signInUserWithPreferredMethod(
+export function signInUserWithPreferredMethod(
     client: TelegramClient, apiCredentials: ApiCredentials, authParams: UserAuthParams,
 ): Promise<Api.TypeUser> {
     const { initialMethod = DEFAULT_INITIAL_METHOD } = authParams;
@@ -65,8 +69,8 @@ export async function checkAuthorization(client: TelegramClient, shouldThrow = f
     try {
         await client.invoke(new Api.updates.GetState());
         return true;
-    } catch (e: any) {
-        if (e.message === 'Disconnect' || shouldThrow) throw e;
+    } catch (err: unknown) {
+        if ((err instanceof Error && err.message === 'Disconnect') || shouldThrow) throw err;
         return false;
     }
 }
@@ -87,8 +91,8 @@ async function signInUserWithWebToken(
         } else {
             throw new Error('SIGN_UP_REQUIRED');
         }
-    } catch (err: any) {
-        if (err.message === 'SESSION_PASSWORD_NEEDED') {
+    } catch (err: unknown) {
+        if (err instanceof RPCError && err.errorMessage === 'SESSION_PASSWORD_NEEDED') {
             return signInWithPassword(client, apiCredentials, authParams, true);
         } else {
             client._log.error(`Failed to login with web token: ${err}`);
@@ -114,8 +118,8 @@ async function signInUser(
             if (typeof authParams.phoneNumber === 'function') {
                 try {
                     phoneNumber = await authParams.phoneNumber();
-                } catch (err: any) {
-                    if (err.message === 'RESTART_AUTH_WITH_QR') {
+                } catch (err: unknown) {
+                    if (err instanceof Error && err.message === 'RESTART_AUTH_WITH_QR') {
                         return signInUserWithQrCode(client, apiCredentials, authParams);
                     }
 
@@ -151,9 +155,9 @@ async function signInUser(
         try {
             try {
                 phoneCode = await authParams.phoneCode(isCodeViaApp);
-            } catch (err: any) {
+            } catch (err: unknown) {
                 // This is the support for changing phone number from the phone code screen.
-                if (err.message === 'RESTART_AUTH') {
+                if (err instanceof Error && err.message === 'RESTART_AUTH') {
                     return signInUser(client, apiCredentials, authParams);
                 }
             }
@@ -177,11 +181,13 @@ async function signInUser(
             }
 
             return result.user;
-        } catch (err: any) {
-            if (err.message === 'SESSION_PASSWORD_NEEDED') {
+        } catch (err: unknown) {
+            if (err instanceof RPCError && err.errorMessage === 'SESSION_PASSWORD_NEEDED') {
                 return signInWithPassword(client, apiCredentials, authParams);
-            } else {
+            } else if (err instanceof Error) {
                 authParams.onError(err);
+            } else {
+                console.warn('Unexpected error:', err);
             }
         }
     }
@@ -231,8 +237,8 @@ async function signInUserWithQrCode(
             }
 
             const result = await client.invoke(new Api.auth.ExportLoginToken({
-                apiId: Number(process.env.TELEGRAM_T_API_ID),
-                apiHash: process.env.TELEGRAM_T_API_HASH,
+                apiId: Number(process.env.TELEGRAM_API_ID),
+                apiHash: process.env.TELEGRAM_API_HASH,
                 exceptIds: [],
             }));
             if (!(result instanceof Api.auth.LoginToken)) {
@@ -243,7 +249,7 @@ async function signInUserWithQrCode(
 
             await Promise.race([
                 authParams.qrCode({ token, expires }),
-                sleep(QR_CODE_TIMEOUT),
+                sleep((expires - getServerTime()) * 1000),
             ]);
         }
     })();
@@ -253,15 +259,15 @@ async function signInUserWithQrCode(
             if (update instanceof Api.UpdateLoginToken) {
                 resolve();
             }
-        }, { build: (update: object) => update });
+        }, { build: (update: Update) => update });
     });
 
     try {
         // Either we receive an update that QR is successfully scanned,
         // or we receive a rejection caused by user going back to the regular auth form
         await Promise.race([updatePromise, inputPromise]);
-    } catch (err: any) {
-        if (err.message === 'RESTART_AUTH') {
+    } catch (err: unknown) {
+        if (err instanceof Error && err.message === 'RESTART_AUTH') {
             return await signInUser(client, apiCredentials, authParams);
         }
 
@@ -272,8 +278,8 @@ async function signInUserWithQrCode(
 
     try {
         const result2 = await client.invoke(new Api.auth.ExportLoginToken({
-            apiId: Number(process.env.TELEGRAM_T_API_ID),
-            apiHash: process.env.TELEGRAM_T_API_HASH,
+            apiId: Number(process.env.TELEGRAM_API_ID),
+            apiHash: process.env.TELEGRAM_API_HASH,
             exceptIds: [],
         }));
 
@@ -290,8 +296,8 @@ async function signInUserWithQrCode(
                 return migratedResult.authorization.user;
             }
         }
-    } catch (err: any) {
-        if (err.message === 'SESSION_PASSWORD_NEEDED') {
+    } catch (err: unknown) {
+        if (err instanceof RPCError && err.errorMessage === 'SESSION_PASSWORD_NEEDED') {
             return signInWithPassword(client, apiCredentials, authParams);
         }
 
@@ -343,8 +349,8 @@ async function sendCode(
             phoneCodeHash: resendResult.phoneCodeHash,
             isCodeViaApp: resendResult.type instanceof Api.auth.SentCodeTypeApp,
         };
-    } catch (err: any) {
-        if (err.message === 'AUTH_RESTART') {
+    } catch (err: unknown) {
+        if (err instanceof RPCError && err.errorMessage === 'AUTH_RESTART') {
             return sendCode(client, apiCredentials, phoneNumber, forceSMS);
         } else {
             throw err;

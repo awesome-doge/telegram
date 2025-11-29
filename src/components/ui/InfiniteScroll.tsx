@@ -1,19 +1,22 @@
 import type { RefObject, UIEvent } from 'react';
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  useCallback, useEffect, useLayoutEffect, useMemo, useRef,
+  useEffect, useLayoutEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
-import { requestForcedReflow } from '../../lib/fasterdom/fasterdom';
 
 import { LoadMoreDirection } from '../../types';
-import type { FC } from '../../lib/teact/teact';
 
-import { debounce } from '../../util/schedulers';
-import resetScroll from '../../util/resetScroll';
-import { IS_ANDROID } from '../../util/windowEnvironment';
+import { requestForcedReflow } from '../../lib/fasterdom/fasterdom';
 import buildStyle from '../../util/buildStyle';
+import resetScroll from '../../util/resetScroll';
+import { debounce } from '../../util/schedulers';
+import { IS_ANDROID } from '../../util/windowEnvironment';
+
+import useLastCallback from '../../hooks/useLastCallback';
 
 type OwnProps = {
   ref?: RefObject<HTMLDivElement>;
+  style?: string;
   className?: string;
   items?: any[];
   itemSelector?: string;
@@ -26,9 +29,12 @@ type OwnProps = {
   noFastList?: boolean;
   cacheBuster?: any;
   beforeChildren?: React.ReactNode;
+  scrollContainerClosest?: string;
   children: React.ReactNode;
   onLoadMore?: ({ direction }: { direction: LoadMoreDirection; noScroll?: boolean }) => void;
   onScroll?: (e: UIEvent<HTMLDivElement>) => void;
+  onWheel?: (e: React.WheelEvent<HTMLDivElement>) => void;
+  onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onKeyDown?: (e: React.KeyboardEvent<any>) => void;
   onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -40,6 +46,7 @@ const DEFAULT_SENSITIVE_AREA = 800;
 
 const InfiniteScroll: FC<OwnProps> = ({
   ref,
+  style,
   className,
   items,
   itemSelector = DEFAULT_LIST_SELECTOR,
@@ -55,8 +62,11 @@ const InfiniteScroll: FC<OwnProps> = ({
   cacheBuster,
   beforeChildren,
   children,
+  scrollContainerClosest,
   onLoadMore,
   onScroll,
+  onWheel,
+  onClick,
   onKeyDown,
   onDragOver,
   onDragLeave,
@@ -92,7 +102,10 @@ const InfiniteScroll: FC<OwnProps> = ({
 
   // Initial preload
   useEffect(() => {
-    if (!loadMoreBackwards) {
+    const scrollContainer = scrollContainerClosest
+      ? containerRef.current!.closest<HTMLDivElement>(scrollContainerClosest)!
+      : containerRef.current!;
+    if (!loadMoreBackwards || !scrollContainer) {
       return;
     }
 
@@ -101,16 +114,21 @@ const InfiniteScroll: FC<OwnProps> = ({
       return;
     }
 
-    const { scrollHeight, clientHeight } = containerRef.current!;
-    if (clientHeight && scrollHeight <= clientHeight) {
+    const { scrollHeight, clientHeight } = scrollContainer;
+    if (clientHeight && scrollHeight < clientHeight) {
       loadMoreBackwards();
     }
-  }, [items, loadMoreBackwards, preloadBackwards]);
+  }, [items, loadMoreBackwards, preloadBackwards, scrollContainerClosest]);
 
   // Restore `scrollTop` after adding items
   useLayoutEffect(() => {
+    const scrollContainer = scrollContainerClosest
+      ? containerRef.current!.closest<HTMLDivElement>(scrollContainerClosest)!
+      : containerRef.current!;
+
+    const container = containerRef.current!;
+
     requestForcedReflow(() => {
-      const container = containerRef.current!;
       const state = stateRef.current;
 
       state.listItemElements = container.querySelectorAll<HTMLDivElement>(itemSelector);
@@ -118,7 +136,7 @@ const InfiniteScroll: FC<OwnProps> = ({
       let newScrollTop: number;
 
       if (state.currentAnchor && Array.from(state.listItemElements).includes(state.currentAnchor)) {
-        const { scrollTop } = container;
+        const { scrollTop } = scrollContainer;
         const newAnchorTop = state.currentAnchor!.getBoundingClientRect().top;
         newScrollTop = scrollTop + (newAnchorTop - state.currentAnchorTop!);
       } else {
@@ -133,20 +151,23 @@ const InfiniteScroll: FC<OwnProps> = ({
         return undefined;
       }
 
-      const { scrollTop } = container;
+      const { scrollTop } = scrollContainer;
       if (noScrollRestoreOnTop && scrollTop === 0) {
         return undefined;
       }
 
       return () => {
-        resetScroll(container, newScrollTop);
+        resetScroll(scrollContainer, newScrollTop);
 
         state.isScrollTopJustUpdated = true;
       };
     });
-  }, [items, itemSelector, noScrollRestore, noScrollRestoreOnTop, cacheBuster, withAbsolutePositioning]);
+  }, [
+    items, itemSelector, noScrollRestore, noScrollRestoreOnTop, cacheBuster, withAbsolutePositioning,
+    scrollContainerClosest,
+  ]);
 
-  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+  const handleScroll = useLastCallback((e: UIEvent<HTMLDivElement>) => {
     if (loadMoreForwards && loadMoreBackwards) {
       const {
         isScrollTopJustUpdated, currentAnchor, currentAnchorTop,
@@ -159,8 +180,10 @@ const InfiniteScroll: FC<OwnProps> = ({
       }
 
       const listLength = listItemElements.length;
-      const container = containerRef.current!;
-      const { scrollTop, scrollHeight, offsetHeight } = container;
+      const scrollContainer = scrollContainerClosest
+        ? containerRef.current!.closest<HTMLDivElement>(scrollContainerClosest)!
+        : containerRef.current!;
+      const { scrollTop, scrollHeight, offsetHeight } = scrollContainer;
       const top = listLength ? listItemElements[0].offsetTop : 0;
       const isNearTop = scrollTop <= top + sensitiveArea;
       const bottom = listLength
@@ -226,17 +249,34 @@ const InfiniteScroll: FC<OwnProps> = ({
     if (onScroll) {
       onScroll(e);
     }
-  }, [loadMoreBackwards, loadMoreForwards, onScroll, sensitiveArea]);
+  });
+
+  useLayoutEffect(() => {
+    const scrollContainer = scrollContainerClosest
+      ? containerRef.current!.closest<HTMLDivElement>(scrollContainerClosest)!
+      : containerRef.current!;
+    if (!scrollContainer) return undefined;
+
+    const handleNativeScroll = (e: Event) => handleScroll(e as unknown as UIEvent<HTMLDivElement>);
+
+    scrollContainer.addEventListener('scroll', handleNativeScroll);
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleNativeScroll);
+    };
+  }, [handleScroll, scrollContainerClosest]);
 
   return (
     <div
       ref={containerRef}
       className={className}
-      onScroll={handleScroll}
+      onWheel={onWheel}
       teactFastList={!noFastList && !withAbsolutePositioning}
       onKeyDown={onKeyDown}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
+      onClick={onClick}
+      style={style}
     >
       {beforeChildren}
       {withAbsolutePositioning && items?.length ? (

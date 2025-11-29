@@ -9,6 +9,7 @@ import type { ApiPhoto, ApiUser } from '../../../api/types';
 import { ManagementProgress } from '../../../types';
 
 import { SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
+import { isUserBot, selectIsChatMuted } from '../../../global/helpers';
 import {
   selectChat,
   selectNotifyExceptions,
@@ -17,20 +18,21 @@ import {
   selectUser,
   selectUserFullInfo,
 } from '../../../global/selectors';
-import { isUserBot, selectIsChatMuted } from '../../../global/helpers';
-import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
 
+import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useOldLang from '../../../hooks/useOldLang';
+
+import Avatar from '../../common/Avatar';
+import Icon from '../../common/icons/Icon';
+import PrivateChatInfo from '../../common/PrivateChatInfo';
+import Checkbox from '../../ui/Checkbox';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import FloatingActionButton from '../../ui/FloatingActionButton';
 import InputText from '../../ui/InputText';
 import ListItem from '../../ui/ListItem';
-import Checkbox from '../../ui/Checkbox';
-import FloatingActionButton from '../../ui/FloatingActionButton';
-import Spinner from '../../ui/Spinner';
-import PrivateChatInfo from '../../common/PrivateChatInfo';
-import ConfirmDialog from '../../ui/ConfirmDialog';
 import SelectAvatar from '../../ui/SelectAvatar';
-import Avatar from '../../common/Avatar';
+import Spinner from '../../ui/Spinner';
 
 import './Management.scss';
 
@@ -71,7 +73,7 @@ const ManageUser: FC<OwnProps & StateProps> = ({
   const [isResetPersonalPhotoDialogOpen, openResetPersonalPhotoDialog, closeResetPersonalPhotoDialog] = useFlag();
   const [isProfileFieldsTouched, setIsProfileFieldsTouched] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -188,23 +190,26 @@ const ManageUser: FC<OwnProps & StateProps> = ({
           <PrivateChatInfo
             userId={user.id}
             avatarSize="jumbo"
-            status="original name"
+            noStatusOrTyping
+            noEmojiStatus
             withFullInfo
           />
-          <InputText
-            id="user-first-name"
-            label={lang('UserInfo.FirstNamePlaceholder')}
-            onChange={handleFirstNameChange}
-            value={firstName}
-            error={error === ERROR_FIRST_NAME_MISSING ? error : undefined}
-          />
-          <InputText
-            id="user-last-name"
-            label={lang('UserInfo.LastNamePlaceholder')}
-            onChange={handleLastNameChange}
-            value={lastName}
-          />
-          <div className="ListItem no-selection narrow">
+          <div className="settings-edit">
+            <InputText
+              id="user-first-name"
+              label={lang('UserInfo.FirstNamePlaceholder')}
+              onChange={handleFirstNameChange}
+              value={firstName}
+              error={error === ERROR_FIRST_NAME_MISSING ? error : undefined}
+            />
+            <InputText
+              id="user-last-name"
+              label={lang('UserInfo.LastNamePlaceholder')}
+              onChange={handleLastNameChange}
+              value={lastName}
+            />
+          </div>
+          <div className="ListItem narrow">
             <Checkbox
               checked={isNotificationsEnabled}
               label={lang('Notifications')}
@@ -229,7 +234,7 @@ const ManageUser: FC<OwnProps & StateProps> = ({
                   <Avatar
                     photo={notPersonalPhoto}
                     noPersonalPhoto
-                    user={user}
+                    peer={user}
                     size="mini"
                     className="personal-photo"
                   />
@@ -240,7 +245,7 @@ const ManageUser: FC<OwnProps & StateProps> = ({
                 {lang('UserInfo.ResetCustomPhoto')}
               </ListItem>
             )}
-            <p className="text-muted" dir="auto">{lang('UserInfo.CustomPhotoInfo', user.firstName)}</p>
+            <p className="section-help" dir="auto">{lang('UserInfo.CustomPhotoInfo', user.firstName)}</p>
           </div>
         )}
         <div className="section">
@@ -258,7 +263,7 @@ const ManageUser: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon icon-check" />
+          <Icon name="check" />
         )}
       </FloatingActionButton>
       <ConfirmDialog

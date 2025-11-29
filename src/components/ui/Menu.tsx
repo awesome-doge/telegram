@@ -1,71 +1,66 @@
-import type { RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
+import React, {
+  beginHeavyAnimation,
+  type FC, memo, useEffect, useRef,
+} from '../../lib/teact/teact';
 
-import { IS_BACKDROP_BLUR_SUPPORTED } from '../../util/windowEnvironment';
-import captureEscKeyListener from '../../util/captureEscKeyListener';
+import type { MenuPositionOptions } from '../../hooks/useMenuPosition';
+
 import buildClassName from '../../util/buildClassName';
-import buildStyle from '../../util/buildStyle';
-import { dispatchHeavyAnimationEvent } from '../../hooks/useHeavyAnimationCheck';
+import captureEscKeyListener from '../../util/captureEscKeyListener';
+import { IS_BACKDROP_BLUR_SUPPORTED } from '../../util/windowEnvironment';
 import { preventMessageInputBlurWithBubbling } from '../middle/helpers/preventMessageInputBlur';
-import useShowTransition from '../../hooks/useShowTransition';
-import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
-import useVirtualBackdrop from '../../hooks/useVirtualBackdrop';
+
+import useAppLayout from '../../hooks/useAppLayout';
 import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
 import useHistoryBack from '../../hooks/useHistoryBack';
-import useAppLayout from '../../hooks/useAppLayout';
+import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMenuPosition from '../../hooks/useMenuPosition';
+import useShowTransition from '../../hooks/useShowTransition';
+import useVirtualBackdrop from '../../hooks/useVirtualBackdrop';
 
 import Portal from './Portal';
 
 import './Menu.scss';
 
-type OwnProps = {
-  ref?: RefObject<HTMLDivElement>;
-  containerRef?: RefObject<HTMLElement>;
-  isOpen: boolean;
-  id?: string;
-  className?: string;
-  bubbleClassName?: string;
-  style?: string;
-  bubbleStyle?: string;
-  ariaLabelledBy?: string;
-  transformOriginX?: number;
-  transformOriginY?: number;
-  positionX?: 'left' | 'right';
-  positionY?: 'top' | 'bottom';
-  autoClose?: boolean;
-  shouldSkipTransition?: boolean;
-  footer?: string;
-  noCloseOnBackdrop?: boolean;
-  backdropExcludedSelector?: string;
-  noCompact?: boolean;
-  onKeyDown?: (e: React.KeyboardEvent<any>) => void;
-  onCloseAnimationEnd?: () => void;
-  onClose: () => void;
-  onMouseEnter?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
-  onMouseEnterBackdrop?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
-  onMouseLeave?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
-  withPortal?: boolean;
-  children: React.ReactNode;
-};
+export type { MenuPositionOptions } from '../../hooks/useMenuPosition';
+
+type OwnProps =
+  {
+    ref?: React.RefObject<HTMLDivElement>;
+    isOpen: boolean;
+    shouldCloseFast?: boolean;
+    id?: string;
+    className?: string;
+    bubbleClassName?: string;
+    ariaLabelledBy?: string;
+    autoClose?: boolean;
+    footer?: string;
+    noCloseOnBackdrop?: boolean;
+    backdropExcludedSelector?: string;
+    noCompact?: boolean;
+    onKeyDown?: (e: React.KeyboardEvent<any>) => void;
+    onCloseAnimationEnd?: () => void;
+    onClose: () => void;
+    onMouseEnter?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
+    onMouseEnterBackdrop?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
+    onMouseLeave?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
+    withPortal?: boolean;
+    children?: React.ReactNode;
+  }
+  & MenuPositionOptions;
 
 const ANIMATION_DURATION = 200;
 
 const Menu: FC<OwnProps> = ({
-  ref,
-  containerRef,
+  ref: externalRef,
+  shouldCloseFast,
   isOpen,
   id,
   className,
   bubbleClassName,
-  style,
-  bubbleStyle,
   ariaLabelledBy,
   children,
-  transformOriginX,
-  transformOriginY,
-  positionX = 'left',
-  positionY = 'top',
   autoClose = false,
   footer,
   noCloseOnBackdrop = false,
@@ -75,27 +70,22 @@ const Menu: FC<OwnProps> = ({
   onClose,
   onMouseEnter,
   onMouseLeave,
-  shouldSkipTransition,
   withPortal,
   onMouseEnterBackdrop,
+  ...positionOptions
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  let menuRef = useRef<HTMLDivElement>(null);
-  if (ref) {
-    menuRef = ref;
-  }
-  const backdropContainerRef = containerRef || menuRef;
   const { isTouchScreen } = useAppLayout();
 
-  const {
-    transitionClassNames,
-  } = useShowTransition(
+  // eslint-disable-next-line no-null/no-null
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const { ref: bubbleRef } = useShowTransition({
     isOpen,
+    ref: externalRef,
     onCloseAnimationEnd,
-    shouldSkipTransition,
-    undefined,
-    shouldSkipTransition,
-  );
+  });
+
+  useMenuPosition(isOpen, containerRef, bubbleRef, positionOptions);
 
   useEffect(
     () => (isOpen ? captureEscKeyListener(onClose) : undefined),
@@ -110,15 +100,15 @@ const Menu: FC<OwnProps> = ({
 
   useEffectWithPrevDeps(([prevIsOpen]) => {
     if (isOpen || (!isOpen && prevIsOpen === true)) {
-      dispatchHeavyAnimationEvent(ANIMATION_DURATION);
+      beginHeavyAnimation(ANIMATION_DURATION);
     }
   }, [isOpen]);
 
-  const handleKeyDown = useKeyboardListNavigation(menuRef, isOpen, autoClose ? onClose : undefined, undefined, true);
+  const handleKeyDown = useKeyboardListNavigation(bubbleRef, isOpen, autoClose ? onClose : undefined, undefined, true);
 
   useVirtualBackdrop(
     isOpen,
-    backdropContainerRef,
+    containerRef,
     noCloseOnBackdrop ? undefined : onClose,
     undefined,
     backdropExcludedSelector,
@@ -126,26 +116,29 @@ const Menu: FC<OwnProps> = ({
 
   const bubbleFullClassName = buildClassName(
     'bubble menu-container custom-scroll',
-    positionY,
-    positionX,
     footer && 'with-footer',
-    transitionClassNames,
     bubbleClassName,
+    shouldCloseFast && 'close-fast',
   );
 
-  const transformOriginYStyle = transformOriginY !== undefined ? `${transformOriginY}px` : undefined;
-  const transformOriginXStyle = transformOriginX !== undefined ? `${transformOriginX}px` : undefined;
+  const handleClick = useLastCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (autoClose) {
+      onClose();
+    }
+  });
 
   const menu = (
     <div
+      ref={containerRef}
       id={id}
       className={buildClassName(
-        'Menu no-selection',
+        'Menu',
         !noCompact && !isTouchScreen && 'compact',
         !IS_BACKDROP_BLUR_SUPPORTED && 'no-blur',
+        withPortal && 'in-portal',
         className,
       )}
-      style={style}
       aria-labelledby={ariaLabelledBy}
       role={ariaLabelledBy ? 'menu' : undefined}
       onKeyDown={isOpen ? handleKeyDown : undefined}
@@ -162,13 +155,9 @@ const Menu: FC<OwnProps> = ({
       )}
       <div
         role="presentation"
-        ref={menuRef}
+        ref={bubbleRef}
         className={bubbleFullClassName}
-        style={buildStyle(
-          `transform-origin: ${transformOriginXStyle || positionX} ${transformOriginYStyle || positionY}`,
-          bubbleStyle,
-        )}
-        onClick={autoClose ? onClose : undefined}
+        onClick={handleClick}
       >
         {children}
         {footer && <div className="footer">{footer}</div>}

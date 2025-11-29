@@ -1,29 +1,29 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useRef,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import type { ApiPhoto, ApiUser } from '../../../api/types';
+import type { ApiPhoto } from '../../../api/types';
 
 import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
-import ListItem from '../../ui/ListItem';
-import SelectAvatar from '../../ui/SelectAvatar';
 import Avatar from '../../common/Avatar';
 import ConfirmDialog from '../../ui/ConfirmDialog';
+import ListItem from '../../ui/ListItem';
+import SelectAvatar from '../../ui/SelectAvatar';
 
 import styles from './SettingsPrivacyPublicPhoto.module.scss';
 
 type OwnProps = {
-  currentUser: ApiUser;
+  currentUserId: string;
   hasCurrentUserFullInfo?: boolean;
   currentUserFallbackPhoto?: ApiPhoto;
 };
 
 const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
-  currentUser,
+  currentUserId,
   hasCurrentUserFullInfo,
   currentUserFallbackPhoto,
 }) => {
@@ -31,7 +31,7 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
     loadFullUser, uploadProfilePhoto, deleteProfilePhoto, showNotification,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const [isDeleteFallbackPhotoModalOpen, openDeleteFallbackPhotoModal, closeDeleteFallbackPhotoModal] = useFlag(false);
 
@@ -40,9 +40,9 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
 
   useEffect(() => {
     if (!hasCurrentUserFullInfo) {
-      loadFullUser({ userId: currentUser.id });
+      loadFullUser({ userId: currentUserId });
     }
-  }, [hasCurrentUserFullInfo, currentUser.id, loadFullUser]);
+  }, [hasCurrentUserFullInfo, currentUserId, loadFullUser]);
 
   const handleSelectFile = useCallback((file: File) => {
     uploadProfilePhoto({
@@ -66,6 +66,7 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
   return (
     <div className="settings-item">
       <ListItem
+        narrow
         icon="camera-add"
         onClick={handleOpenFileSelector}
       >
@@ -79,6 +80,7 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
       </ListItem>
       {currentUserFallbackPhoto && (
         <ListItem
+          narrow
           leftElement={<Avatar photo={currentUserFallbackPhoto} size="mini" className={styles.fallbackPhoto} />}
           onClick={openDeleteFallbackPhotoModal}
           destructive

@@ -6,10 +6,11 @@ import type { ApiUser } from '../../../api/types';
 
 import { getUserFullName } from '../../../global/helpers';
 import { selectUser } from '../../../global/selectors';
-import { formatHumanDate, formatTime, isToday } from '../../../util/dateFormat';
-import { getServerTime } from '../../../util/serverTime';
 import { createClassNameBuilder } from '../../../util/buildClassName';
-import useLang from '../../../hooks/useLang';
+import { formatHumanDate, formatTime, isToday } from '../../../util/dates/dateFormat';
+import { getServerTime } from '../../../util/serverTime';
+
+import useOldLang from '../../../hooks/useOldLang';
 
 import Avatar from '../../common/Avatar';
 import Button from '../../ui/Button';
@@ -40,7 +41,7 @@ const JoinRequest: FC<OwnProps & StateProps> = ({
   const { openChat, hideChatJoinRequest } = getActions();
 
   const buildClassName = createClassNameBuilder('JoinRequest');
-  const lang = useLang();
+  const lang = useOldLang();
 
   const fullName = getUserFullName(user);
   const fixedDate = (date - getServerTime()) * 1000 + Date.now();
@@ -67,7 +68,7 @@ const JoinRequest: FC<OwnProps & StateProps> = ({
           <Avatar
             key={userId}
             size="medium"
-            user={user}
+            peer={user}
           />
           <div className={buildClassName('user-info')}>
             <div className={buildClassName('user-name')}>{fullName}</div>

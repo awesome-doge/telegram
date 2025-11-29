@@ -2,17 +2,20 @@ import React, {
   memo, useMemo, useRef,
 } from '../../lib/teact/teact';
 
-import type { ApiFormattedText, ApiMessage } from '../../api/types';
+import type { ApiFormattedText, ApiMessage, ApiStory } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
-
 import { ApiMessageEntityTypes } from '../../api/types';
+
+import { CONTENT_NOT_SUPPORTED } from '../../config';
+import { extractMessageText, stripCustomEmoji } from '../../global/helpers';
 import trimText from '../../util/trimText';
-import { extractMessageText, getMessageText, stripCustomEmoji } from '../../global/helpers';
 import { renderTextWithEntities } from './helpers/renderTextWithEntities';
+
 import useSyncEffect from '../../hooks/useSyncEffect';
+import useUniqueId from '../../hooks/useUniqueId';
 
 interface OwnProps {
-  message: ApiMessage;
+  messageOrStory: ApiMessage | ApiStory;
   translatedText?: ApiFormattedText;
   isForAnimation?: boolean;
   emojiSize?: number;
@@ -25,12 +28,16 @@ interface OwnProps {
   withTranslucentThumbs?: boolean;
   shouldRenderAsHtml?: boolean;
   inChatList?: boolean;
+  forcePlayback?: boolean;
+  focusedQuote?: string;
+  isInSelectMode?: boolean;
+  canBeEmpty?: boolean;
 }
 
 const MIN_CUSTOM_EMOJIS_FOR_SHARED_CANVAS = 3;
 
 function MessageText({
-  message,
+  messageOrStory,
   translatedText,
   isForAnimation,
   emojiSize,
@@ -43,6 +50,10 @@ function MessageText({
   withTranslucentThumbs,
   shouldRenderAsHtml,
   inChatList,
+  forcePlayback,
+  focusedQuote,
+  isInSelectMode,
+  canBeEmpty,
 }: OwnProps) {
   // eslint-disable-next-line no-null/no-null
   const sharedCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -51,9 +62,11 @@ function MessageText({
 
   const textCacheBusterRef = useRef(0);
 
-  const formattedText = translatedText || extractMessageText(message, inChatList);
+  const formattedText = translatedText || extractMessageText(messageOrStory, inChatList);
   const adaptedFormattedText = isForAnimation && formattedText ? stripCustomEmoji(formattedText) : formattedText;
   const { text, entities } = adaptedFormattedText || {};
+
+  const containerId = useUniqueId();
 
   useSyncEffect(() => {
     textCacheBusterRef.current += 1;
@@ -69,9 +82,8 @@ function MessageText({
     return customEmojisCount >= MIN_CUSTOM_EMOJIS_FOR_SHARED_CANVAS;
   }, [entities]) || 0;
 
-  if (!text) {
-    const contentNotSupportedText = getMessageText(message);
-    return contentNotSupportedText ? [trimText(contentNotSupportedText, truncateLength)] : undefined as any;
+  if (!text && !canBeEmpty) {
+    return <span className="content-unsupported">{CONTENT_NOT_SUPPORTED}</span>;
   }
 
   return (
@@ -85,7 +97,7 @@ function MessageText({
           highlight,
           emojiSize,
           shouldRenderAsHtml,
-          messageId: message.id,
+          containerId,
           isSimple,
           isProtected,
           observeIntersectionForLoading,
@@ -94,6 +106,9 @@ function MessageText({
           sharedCanvasRef,
           sharedCanvasHqRef,
           cacheBuster: textCacheBusterRef.current.toString(),
+          forcePlayback,
+          focusedQuote,
+          isInSelectMode,
         }),
       ].flat().filter(Boolean)}
     </>

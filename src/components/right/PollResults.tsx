@@ -2,48 +2,52 @@ import type { FC } from '../../lib/teact/teact';
 import React, { memo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
-import type { ApiMessage, ApiChat } from '../../api/types';
-import { selectChat, selectChatMessage, selectTabState } from '../../global/selectors';
-import { buildCollectionByKey } from '../../util/iteratees';
-import { getMessagePoll } from '../../global/helpers';
-import renderText from '../common/helpers/renderText';
-import useLang from '../../hooks/useLang';
-import useHistoryBack from '../../hooks/useHistoryBack';
+import type { ApiChat, ApiMessage, ApiPoll } from '../../api/types';
 
-import PollAnswerResults from './PollAnswerResults';
+import {
+  selectChat, selectChatMessage, selectPollFromMessage, selectTabState,
+} from '../../global/selectors';
+import { buildCollectionByKey } from '../../util/iteratees';
+import { renderTextWithEntities } from '../common/helpers/renderTextWithEntities';
+
+import useHistoryBack from '../../hooks/useHistoryBack';
+import useOldLang from '../../hooks/useOldLang';
+
 import Loading from '../ui/Loading';
+import PollAnswerResults from './PollAnswerResults';
 
 import './PollResults.scss';
 
 type OwnProps = {
-  onClose: NoneToVoidFunction;
   isActive: boolean;
+  onClose: NoneToVoidFunction;
 };
 
 type StateProps = {
   chat?: ApiChat;
   message?: ApiMessage;
-  lastSyncTime?: number;
+  poll?: ApiPoll;
 };
 
 const PollResults: FC<OwnProps & StateProps> = ({
-  onClose,
   isActive,
   chat,
   message,
-  lastSyncTime,
+  poll,
+  onClose,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
+
   useHistoryBack({
     isActive,
     onBack: onClose,
   });
 
-  if (!message || !chat) {
+  if (!message || !poll || !chat) {
     return <Loading />;
   }
 
-  const { summary, results } = getMessagePoll(message)!;
+  const { summary, results } = poll;
   if (!results.results) {
     return undefined;
   }
@@ -52,11 +56,16 @@ const PollResults: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="PollResults" dir={lang.isRtl ? 'rtl' : undefined}>
-      <h3 className="poll-question" dir="auto">{renderText(summary.question, ['emoji', 'br'])}</h3>
+      <h3 className="poll-question" dir="auto">
+        {renderTextWithEntities({
+          text: summary.question.text,
+          entities: summary.question.entities,
+        })}
+      </h3>
       <div className="poll-results-list custom-scroll">
-        {Boolean(lastSyncTime) && summary.answers.map((answer) => (
+        {summary.answers.map((answer) => (
           <PollAnswerResults
-            key={`${message.id}-${answer.option}`}
+            key={`${poll.id}-${answer.option}`}
             chat={chat}
             message={message}
             answer={answer}
@@ -64,7 +73,6 @@ const PollResults: FC<OwnProps & StateProps> = ({
             totalVoters={results.totalVoters!}
           />
         ))}
-        {!lastSyncTime && <Loading />}
       </div>
     </div>
   );
@@ -75,7 +83,6 @@ export default memo(withGlobal(
     const {
       pollResults: { chatId, messageId },
     } = selectTabState(global);
-    const { lastSyncTime } = global;
 
     if (!chatId || !messageId) {
       return {};
@@ -83,11 +90,12 @@ export default memo(withGlobal(
 
     const chat = selectChat(global, chatId);
     const message = selectChatMessage(global, chatId, messageId);
+    const poll = message && selectPollFromMessage(global, message);
 
     return {
       chat,
       message,
-      lastSyncTime,
+      poll,
     };
   },
 )(PollResults));

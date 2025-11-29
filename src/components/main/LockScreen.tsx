@@ -6,20 +6,22 @@ import { getActions, withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
 
+import { decryptSession, UnrecoverablePasscodeError } from '../../util/passcode';
 import { LOCAL_TGS_URLS } from '../common/helpers/animatedAssets';
-import useLang from '../../hooks/useLang';
-import { decryptSession } from '../../util/passcode';
-import useShowTransition from '../../hooks/useShowTransition';
-import useTimeout from '../../hooks/useTimeout';
+
+import useTimeout from '../../hooks/schedulers/useTimeout';
 import useFlag from '../../hooks/useFlag';
+import useOldLang from '../../hooks/useOldLang';
+import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 
 import AnimatedIconWithPreview from '../common/AnimatedIconWithPreview';
 import PasswordForm from '../common/PasswordForm';
-import ConfirmDialog from '../ui/ConfirmDialog';
 import Button from '../ui/Button';
+import ConfirmDialog from '../ui/ConfirmDialog';
 import Link from '../ui/Link';
 
 import styles from './LockScreen.module.scss';
+
 import lockPreviewUrl from '../../assets/lock.png';
 
 export type OwnProps = {
@@ -49,11 +51,11 @@ const LockScreen: FC<OwnProps & StateProps> = ({
     isLoading,
   } = passcodeSettings;
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [validationError, setValidationError] = useState<string>('');
   const [shouldShowPasscode, setShouldShowPasscode] = useState(false);
   const [isSignOutDialogOpen, openSignOutConfirmation, closeSignOutConfirmation] = useFlag(false);
-  const { shouldRender } = useShowTransition(isLocked);
+  const { shouldRender } = useShowTransitionDeprecated(isLocked);
 
   useTimeout(resetInvalidUnlockAttempts, timeoutUntil ? timeoutUntil - Date.now() : undefined);
 
@@ -68,7 +70,11 @@ const LockScreen: FC<OwnProps & StateProps> = ({
     }
 
     setValidationError('');
-    decryptSession(passcode).then(unlockScreen, () => {
+    decryptSession(passcode).then(unlockScreen, (err) => {
+      if (err instanceof UnrecoverablePasscodeError) {
+        signOut({ forceInitApi: true });
+      }
+
       logInvalidUnlockAttempt();
       setValidationError(lang('lng_passcode_wrong'));
     });

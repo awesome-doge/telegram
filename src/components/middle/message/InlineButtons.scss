@@ -15,7 +15,7 @@
     margin: 0.125rem;
     background: var(--pattern-color);
     border-radius: var(--border-radius-messages-small);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     text-transform: none;
     transition: background-color 150ms, color 150ms, backdrop-filter 150ms, filter 150ms;
 
@@ -37,7 +37,7 @@
       margin-right: 0;
     }
 
-    .icon {
+    .corner-icon {
       font-size: 0.875rem;
       position: absolute;
       right: 0.1875rem;

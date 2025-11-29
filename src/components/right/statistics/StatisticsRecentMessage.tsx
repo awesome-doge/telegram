@@ -1,31 +1,35 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback } from '../../../lib/teact/teact';
-
-import type { LangFn } from '../../../hooks/useLang';
-import useLang from '../../../hooks/useLang';
 import { getActions } from '../../../global';
 
-import type { ApiMessage, StatisticsRecentMessage as StatisticsRecentMessageType } from '../../../api/types';
+import type { ApiMessage, StatisticsMessageInteractionCounter } from '../../../api/types';
+import type { OldLangFn } from '../../../hooks/useOldLang';
 
-import buildClassName from '../../../util/buildClassName';
-import { formatDateTimeToString } from '../../../util/dateFormat';
 import {
   getMessageMediaHash,
   getMessageMediaThumbDataUri,
-  getMessageVideo,
   getMessageRoundVideo,
+  getMessageVideo,
 } from '../../../global/helpers';
+import buildClassName from '../../../util/buildClassName';
+import { formatDateTimeToString } from '../../../util/dates/dateFormat';
 import { renderMessageSummary } from '../../common/helpers/renderMessageText';
-import useMedia from '../../../hooks/useMedia';
 
-import './StatisticsRecentMessage.scss';
+import useMedia from '../../../hooks/useMedia';
+import useOldLang from '../../../hooks/useOldLang';
+
+import Icon from '../../common/icons/Icon';
+import StatisticsRecentPostMeta from './StatisticsRecentPostMeta';
+
+import styles from './StatisticsRecentPost.module.scss';
 
 export type OwnProps = {
-  message: ApiMessage & StatisticsRecentMessageType;
+  postStatistic: StatisticsMessageInteractionCounter;
+  message: ApiMessage;
 };
 
-const StatisticsRecentMessage: FC<OwnProps> = ({ message }) => {
-  const lang = useLang();
+const StatisticsRecentMessage: FC<OwnProps> = ({ postStatistic, message }) => {
+  const lang = useOldLang();
   const { toggleMessageStatistics } = getActions();
 
   const mediaThumbnail = getMessageMediaThumbDataUri(message);
@@ -39,41 +43,44 @@ const StatisticsRecentMessage: FC<OwnProps> = ({ message }) => {
   return (
     <div
       className={buildClassName(
-        'StatisticsRecentMessage',
-        Boolean(mediaBlobUrl || mediaThumbnail) && 'StatisticsRecentMessage--with-image',
+        styles.root,
+        Boolean(mediaBlobUrl || mediaThumbnail) && styles.withImage,
       )}
       onClick={handleClick}
     >
-      <div className="StatisticsRecentMessage__title">
-        <div className="StatisticsRecentMessage__summary">
+      <div className={styles.title}>
+        <div className={styles.summary}>
           {renderSummary(lang, message, mediaBlobUrl || mediaThumbnail, isRoundVideo)}
         </div>
-        <div className="StatisticsRecentMessage__meta">
-          {lang('ChannelStats.ViewsCount', message.views, 'i')}
+        <div className={styles.meta}>
+          {lang('ChannelStats.ViewsCount', postStatistic.viewsCount, 'i')}
         </div>
       </div>
 
-      <div className="StatisticsRecentMessage__info">
-        <div className="StatisticsRecentMessage__date">
+      <div className={styles.info}>
+        <div className={styles.date}>
           {formatDateTimeToString(message.date * 1000, lang.code)}
         </div>
-        <div className="StatisticsRecentMessage__meta">
-          {message.forwards ? lang('ChannelStats.SharesCount', message.forwards) : 'No shares'}
-        </div>
+        <StatisticsRecentPostMeta postStatistic={postStatistic} />
       </div>
     </div>
   );
 };
 
-function renderSummary(lang: LangFn, message: ApiMessage, blobUrl?: string, isRoundVideo?: boolean) {
+function renderSummary(lang: OldLangFn, message: ApiMessage, blobUrl?: string, isRoundVideo?: boolean) {
   if (!blobUrl) {
     return renderMessageSummary(lang, message);
   }
 
   return (
-    <span className="media-preview">
-      <img src={blobUrl} alt="" className={buildClassName('media-preview__image', isRoundVideo && 'round')} />
-      {getMessageVideo(message) && <i className="icon icon-play" />}
+    <span>
+      <img
+        src={blobUrl}
+        alt=""
+        draggable={false}
+        className={buildClassName(styles.image, isRoundVideo && styles.round)}
+      />
+      {getMessageVideo(message) && <Icon name="play" />}
       {renderMessageSummary(lang, message, true)}
     </span>
   );

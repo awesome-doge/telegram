@@ -1,14 +1,15 @@
 import type { FC } from '../../../../lib/teact/teact';
 import React, { memo } from '../../../../lib/teact/teact';
 
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
+import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
 
-import Button from '../../../ui/Button';
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useOldLang from '../../../../hooks/useOldLang';
+
 import AnimatedIconWithPreview from '../../../common/AnimatedIconWithPreview';
+import Button from '../../../ui/Button';
 
 import lockPreviewUrl from '../../../../assets/lock.png';
-import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
 
 type OwnProps = {
   onStart: NoneToVoidFunction;
@@ -19,7 +20,7 @@ type OwnProps = {
 const SettingsTwoFaStart: FC<OwnProps> = ({
   isActive, onReset, onStart,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,

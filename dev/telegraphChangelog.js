@@ -4,7 +4,6 @@ const { JSDOM } = require('jsdom');
 const { gitlogPromise } = require('gitlog');
 
 // CONSTANTS
-
 const AUTH_TOKEN = process.env.TELEGRAPH_TOKEN;
 const version = require('../package.json').version;
 
@@ -21,7 +20,7 @@ const pageTemplate = `
     <h3>Commits since ${version}</h3>\
     <p><i>This list is automatically updated when a new commit pushed to the beta repo</i></p>\
     <ul id="list"></ul>\
-    <aside><a href="https://t.me/webatalks">Web A Discussion</a> <b>|</b> <a href="https://t.me/webatalksru">Web A Обсуждение</a></aside>\
+    <aside><a href="https://t.me/webatalks">Web A Discussion</a> <b>|</b> <a href="https://t.me/webatalksru">Web A Обсуждение</a> <b>|</b> <a href="https://t.me/webatalksuk">Web A Обговорення</a></aside>\
     <aside><i>Last update: ${new Date().toLocaleDateString('en-CA')}</i></aside>\
 </body>
 `.trim();

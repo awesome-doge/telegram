@@ -1,12 +1,13 @@
 import type { RefObject } from 'react';
-import { useState, useEffect, useCallback } from '../lib/teact/teact';
+import { useEffect, useState } from '../lib/teact/teact';
 import { addExtraClass, removeExtraClass } from '../lib/teact/teact-dom';
-import { requestMutation } from '../lib/fasterdom/fasterdom';
 
 import type { IAnchorPosition } from '../types';
-import {
-  IS_TOUCH_ENV, IS_PWA, IS_IOS,
-} from '../util/windowEnvironment';
+import type { Signal } from '../util/signals';
+
+import { requestMutation } from '../lib/fasterdom/fasterdom';
+import { IS_IOS, IS_PWA, IS_TOUCH_ENV } from '../util/windowEnvironment';
+import useLastCallback from './useLastCallback';
 
 const LONG_TAP_DURATION_MS = 200;
 const IOS_PWA_CONTEXT_MENU_DELAY_MS = 100;
@@ -22,19 +23,22 @@ const useContextMenuHandlers = (
   isMenuDisabled?: boolean,
   shouldDisableOnLink?: boolean,
   shouldDisableOnLongTap?: boolean,
+  getIsReady?: Signal<boolean>,
+  shouldDisablePropagation?: boolean,
 ) => {
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
-  const [contextMenuPosition, setContextMenuPosition] = useState<IAnchorPosition | undefined>(undefined);
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<IAnchorPosition | undefined>(undefined);
+  const [contextMenuTarget, setContextMenuTarget] = useState<HTMLElement | undefined>(undefined);
 
-  const handleBeforeContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleBeforeContextMenu = useLastCallback((e: React.MouseEvent) => {
     if (!isMenuDisabled && e.button === 2) {
       requestMutation(() => {
         addExtraClass(e.target as HTMLElement, 'no-selection');
       });
     }
-  }, [isMenuDisabled]);
+  });
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleContextMenu = useLastCallback((e: React.MouseEvent) => {
     requestMutation(() => {
       removeExtraClass(e.target as HTMLElement, 'no-selection');
     });
@@ -43,26 +47,28 @@ const useContextMenuHandlers = (
       return;
     }
     e.preventDefault();
+    e.stopPropagation();
 
-    if (contextMenuPosition) {
+    if (contextMenuAnchor) {
       return;
     }
 
     setIsContextMenuOpen(true);
-    setContextMenuPosition({ x: e.clientX, y: e.clientY });
-  }, [isMenuDisabled, shouldDisableOnLink, contextMenuPosition]);
+    setContextMenuAnchor({ x: e.clientX, y: e.clientY });
+    setContextMenuTarget(e.target as HTMLElement);
+  });
 
-  const handleContextMenuClose = useCallback(() => {
+  const handleContextMenuClose = useLastCallback(() => {
     setIsContextMenuOpen(false);
-  }, []);
+  });
 
-  const handleContextMenuHide = useCallback(() => {
-    setContextMenuPosition(undefined);
-  }, []);
+  const handleContextMenuHide = useLastCallback(() => {
+    setContextMenuAnchor(undefined);
+  });
 
   // Support context menu on touch devices
   useEffect(() => {
-    if (isMenuDisabled || !IS_TOUCH_ENV || shouldDisableOnLongTap) {
+    if (isMenuDisabled || !IS_TOUCH_ENV || shouldDisableOnLongTap || (getIsReady && !getIsReady())) {
       return undefined;
     }
 
@@ -85,19 +91,19 @@ const useContextMenuHandlers = (
 
       const { clientX, clientY, target } = originalEvent.touches[0];
 
-      if (contextMenuPosition || (shouldDisableOnLink && (target as HTMLElement).matches('a[href]'))) {
+      if (contextMenuAnchor || (shouldDisableOnLink && (target as HTMLElement).matches('a[href]'))) {
         return;
       }
 
       // Temporarily intercept and clear the next click
-      element.addEventListener('touchend', (e) => {
+      document.addEventListener('touchend', (e) => {
         // On iOS in PWA mode, the context menu may cause click-through to the element in the menu upon opening
         if (IS_IOS && IS_PWA) {
           setTimeout(() => {
-            element.removeEventListener('mousedown', stopEvent, {
+            document.removeEventListener('mousedown', stopEvent, {
               capture: true,
             });
-            element.removeEventListener('click', stopEvent, {
+            document.removeEventListener('click', stopEvent, {
               capture: true,
             });
           }, IOS_PWA_CONTEXT_MENU_DELAY_MS);
@@ -110,24 +116,25 @@ const useContextMenuHandlers = (
 
       // On iOS15, in PWA mode, the context menu immediately closes after opening
       if (IS_PWA && IS_IOS) {
-        element.addEventListener('mousedown', stopEvent, {
+        document.addEventListener('mousedown', stopEvent, {
           once: true,
           capture: true,
         });
-        element.addEventListener('click', stopEvent, {
+        document.addEventListener('click', stopEvent, {
           once: true,
           capture: true,
         });
       }
 
       setIsContextMenuOpen(true);
-      setContextMenuPosition({ x: clientX, y: clientY });
+      setContextMenuAnchor({ x: clientX, y: clientY });
     };
 
     const startLongPressTimer = (e: TouchEvent) => {
       if (isMenuDisabled) {
         return;
       }
+      if (shouldDisablePropagation) e.stopPropagation();
       clearLongPressTimer();
 
       timer = window.setTimeout(() => emulateContextMenuEvent(e), LONG_TAP_DURATION_MS);
@@ -146,11 +153,15 @@ const useContextMenuHandlers = (
       element.removeEventListener('touchend', clearLongPressTimer, true);
       element.removeEventListener('touchmove', clearLongPressTimer);
     };
-  }, [contextMenuPosition, isMenuDisabled, shouldDisableOnLongTap, elementRef, shouldDisableOnLink]);
+  }, [
+    contextMenuAnchor, isMenuDisabled, shouldDisableOnLongTap, elementRef, shouldDisableOnLink, getIsReady,
+    shouldDisablePropagation,
+  ]);
 
   return {
     isContextMenuOpen,
-    contextMenuPosition,
+    contextMenuAnchor,
+    contextMenuTarget,
     handleBeforeContextMenu,
     handleContextMenu,
     handleContextMenuClose,

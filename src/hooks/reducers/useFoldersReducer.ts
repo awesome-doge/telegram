@@ -1,31 +1,21 @@
-import type { StateReducer, Dispatch } from '../useReducer';
-import type { ApiChatFolder } from '../../api/types';
+import { getGlobal } from '../../global';
 
-import { pick, omit } from '../../util/iteratees';
+import type { ApiChatFolder } from '../../api/types';
+import type { IconName } from '../../types/icons';
+import type { Dispatch, StateReducer } from '../useReducer';
+
+import { selectChat } from '../../global/selectors';
+import { omit, pick } from '../../util/iteratees';
 import useReducer from '../useReducer';
 
 export type FolderChatType = {
-  icon: string;
+  icon: IconName;
   title: string;
   key: keyof Pick<ApiChatFolder, (
     'contacts' | 'nonContacts' | 'groups' | 'channels' | 'bots' |
     'excludeMuted' | 'excludeArchived' | 'excludeRead'
   )>;
 };
-
-export const INCLUDED_CHAT_TYPES: FolderChatType[] = [
-  { icon: 'user', title: 'FilterContacts', key: 'contacts' },
-  { icon: 'non-contacts', title: 'FilterNonContacts', key: 'nonContacts' },
-  { icon: 'group', title: 'FilterGroups', key: 'groups' },
-  { icon: 'channel', title: 'FilterChannels', key: 'channels' },
-  { icon: 'bots', title: 'FilterBots', key: 'bots' },
-];
-
-export const EXCLUDED_CHAT_TYPES: FolderChatType[] = [
-  { icon: 'mute', title: 'FilterMuted', key: 'excludeMuted' },
-  { icon: 'archive', title: 'FilterArchived', key: 'excludeArchived' },
-  { icon: 'readchats', title: 'FilterRead', key: 'excludeRead' },
-];
 
 const INCLUDE_FILTER_FIELDS: Array<keyof FolderIncludeFilters> = [
   'includedChatIds', 'bots', 'channels', 'groups', 'contacts', 'nonContacts',
@@ -68,8 +58,11 @@ export function selectChatFilters(state: FoldersState, mode: 'included' | 'exclu
       .filter((key) => Boolean(excludeFilters[key]));
   }
 
+  const global = getGlobal();
+  const existingSelectedChatIds = selectedChatIds.filter((id) => selectChat(global, id));
+
   return {
-    selectedChatIds,
+    selectedChatIds: existingSelectedChatIds,
     selectedChatTypes,
   };
 }
@@ -124,14 +117,14 @@ export type FoldersActions = (
   'setTitle' | 'saveFilters' | 'editFolder' | 'reset' | 'setChatFilter' | 'setIsLoading' | 'setError' |
   'editIncludeFilters' | 'editExcludeFilters' | 'setIncludeFilters' | 'setExcludeFilters' | 'setIsTouched' |
   'setFolderId' | 'setIsChatlist'
-);
+  );
 export type FolderEditDispatch = Dispatch<FoldersState, FoldersActions>;
 
 const INITIAL_STATE: FoldersState = {
   mode: 'create',
   chatFilter: '',
   folder: {
-    title: '',
+    title: { text: '' },
     includedChatIds: [],
     excludedChatIds: [],
   },
@@ -140,14 +133,14 @@ const INITIAL_STATE: FoldersState = {
 const foldersReducer: StateReducer<FoldersState, FoldersActions> = (
   state,
   action,
-) => {
+): FoldersState => {
   switch (action.type) {
     case 'setTitle':
       return {
         ...state,
         folder: {
           ...state.folder,
-          title: action.payload,
+          title: { text: action.payload },
         },
         isTouched: true,
       };
@@ -191,7 +184,7 @@ const foldersReducer: StateReducer<FoldersState, FoldersActions> = (
           ...state,
           folder: {
             ...omit(state.folder, INCLUDE_FILTER_FIELDS),
-            title: state.folder.title ? state.folder.title : getSuggestedFolderName(state.includeFilters),
+            title: state.folder.title ? state.folder.title : { text: getSuggestedFolderName(state.includeFilters) },
             ...state.includeFilters,
           },
           includeFilters: undefined,

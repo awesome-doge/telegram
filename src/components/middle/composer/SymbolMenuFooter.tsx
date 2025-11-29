@@ -1,9 +1,12 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import React, { memo } from '../../../lib/teact/teact';
 
 import buildClassName from '../../../util/buildClassName';
-import useLang from '../../../hooks/useLang';
 
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
+
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 
 type OwnProps = {
@@ -13,6 +16,7 @@ type OwnProps = {
   onSearchOpen: (type: 'stickers' | 'gifs') => void;
   isAttachmentModal?: boolean;
   canSendPlainText?: boolean;
+  canSearch?: boolean;
 };
 
 export enum SymbolMenuTabs {
@@ -38,9 +42,9 @@ const SYMBOL_MENU_TAB_ICONS = {
 
 const SymbolMenuFooter: FC<OwnProps> = ({
   activeTab, onSwitchTab, onRemoveSymbol, onSearchOpen, isAttachmentModal,
-  canSendPlainText,
+  canSendPlainText, canSearch,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   function renderTabButton(tab: SymbolMenuTabs) {
     return (
@@ -58,9 +62,9 @@ const SymbolMenuFooter: FC<OwnProps> = ({
     );
   }
 
-  const handleSearchOpen = useCallback(() => {
+  const handleSearchOpen = useLastCallback(() => {
     onSearchOpen(activeTab === SymbolMenuTabs.Stickers ? 'stickers' : 'gifs');
-  }, [activeTab, onSearchOpen]);
+  });
 
   function stopPropagation(event: any) {
     event.stopPropagation();
@@ -68,7 +72,7 @@ const SymbolMenuFooter: FC<OwnProps> = ({
 
   return (
     <div className="SymbolMenu-footer" onClick={stopPropagation} dir={lang.isRtl ? 'rtl' : undefined}>
-      {activeTab !== SymbolMenuTabs.Emoji && activeTab !== SymbolMenuTabs.CustomEmoji && (
+      {activeTab !== SymbolMenuTabs.Emoji && activeTab !== SymbolMenuTabs.CustomEmoji && canSearch && (
         <Button
           className="symbol-search-button"
           ariaLabel={activeTab === SymbolMenuTabs.Stickers ? 'Search Stickers' : 'Search GIFs'}
@@ -77,7 +81,7 @@ const SymbolMenuFooter: FC<OwnProps> = ({
           color="translucent"
           onClick={handleSearchOpen}
         >
-          <i className="icon icon-search" />
+          <Icon name="search" />
         </Button>
       )}
 
@@ -95,7 +99,7 @@ const SymbolMenuFooter: FC<OwnProps> = ({
           faded
           color="translucent"
         >
-          <i className="icon icon-delete-left" />
+          <Icon name="delete-left" />
         </Button>
       )}
     </div>

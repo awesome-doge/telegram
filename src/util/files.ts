@@ -21,20 +21,6 @@ if (typeof File === 'undefined') {
   } as typeof File;
 }
 
-export function dataUriToBlob(dataUri: string) {
-  const arr = dataUri.split(',');
-  const mime = arr[0].match(/:(.*?);/)![1];
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
-
-  return new Blob([u8arr], { type: mime });
-}
-
 export function blobToDataUri(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -80,27 +66,34 @@ export function preloadVideo(url: string): Promise<HTMLVideoElement> {
 }
 
 export async function createPosterForVideo(url: string): Promise<string | undefined> {
-  const video = await preloadVideo(url);
+  try {
+    const video = await preloadVideo(url);
 
-  return Promise.race([
-    pause(2000) as Promise<undefined>,
-    new Promise<string | undefined>((resolve, reject) => {
-      video.onseeked = () => {
-        if (!video.videoWidth || !video.videoHeight) {
-          resolve(undefined);
-        }
+    return await Promise.race([
+      pause(2000) as Promise<undefined>,
+      new Promise<string | undefined>((resolve, reject) => {
+        video.onseeked = () => {
+          if (!video.videoWidth || !video.videoHeight) {
+            resolve(undefined);
+          }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(video, 0, 0);
-        resolve(canvas.toDataURL('image/jpeg'));
-      };
-      video.onerror = reject;
-      video.currentTime = Math.min(video.duration, 1);
-    }),
-  ]);
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(video, 0, 0);
+
+          canvas.toBlob((blob) => {
+            resolve(blob ? URL.createObjectURL(blob) : undefined);
+          });
+        };
+        video.onerror = reject;
+        video.currentTime = Math.min(video.duration, 1);
+      }),
+    ]);
+  } catch (e) {
+    return undefined;
+  }
 }
 
 export async function fetchBlob(blobUrl: string) {

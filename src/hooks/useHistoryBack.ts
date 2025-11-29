@@ -1,12 +1,12 @@
 import { useCallback, useRef } from '../lib/teact/teact';
-import { getActions } from '../lib/teact/teactn';
-import { requestMeasure } from '../lib/fasterdom/fasterdom';
+import { getActions } from '../global';
 
 import { IS_TEST } from '../config';
+import { requestMeasure } from '../lib/fasterdom/fasterdom';
 import { IS_IOS } from '../util/windowEnvironment';
-
-import useSyncEffect from './useSyncEffect';
 import useEffectOnce from './useEffectOnce';
+import useLastCallback from './useLastCallback';
+import useSyncEffect from './useSyncEffect';
 
 const PATH_BASE = `${window.location.pathname}${window.location.search}`;
 // Carefully selected by swiping and observing visual changes
@@ -241,6 +241,8 @@ export default function useHistoryBack({
   shouldResetUrlHash?: boolean;
   onBack: VoidFunction;
 }) {
+  const lastOnBack = useLastCallback(onBack);
+
   // Active index of the record
   const indexRef = useRef<number>();
   const wasReplaced = useRef(false);
@@ -262,17 +264,12 @@ export default function useHistoryBack({
 
     historyState[indexRef.current] = {
       index: indexRef.current,
-      onBack,
+      onBack: lastOnBack,
       shouldBeReplaced,
       markReplaced: () => {
         wasReplaced.current = true;
       },
     };
-
-    // Delete forward navigation in the virtual history. Not really needed, just looks better when debugging `logState`
-    for (let i = indexRef.current + 1; i < historyState.length; i++) {
-      delete historyState[i];
-    }
 
     deferHistoryOperation({
       type: shouldReplace ? 'replaceState' : 'pushState',
@@ -283,7 +280,7 @@ export default function useHistoryBack({
       // Space is a hack to make the browser completely remove the hash
       hash: hash ? `#${hash}` : (shouldResetUrlHash ? ' ' : undefined),
     });
-  }, [hash, onBack, shouldBeReplaced, shouldResetUrlHash]);
+  }, [hash, shouldBeReplaced, shouldResetUrlHash]);
 
   const processBack = useCallback(() => {
     // Only process back on open records

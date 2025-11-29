@@ -1,17 +1,33 @@
 import { Api as GramJs } from '../../../lib/gramjs';
 
 import type {
+  ApiChatLink,
+  ApiCollectibleInfo,
   ApiConfig,
-  ApiCountry, ApiSession, ApiUrlAuthResult, ApiWallpaper, ApiWebSession,
+  ApiCountry,
+  ApiLanguage,
+  ApiOldLangString,
+  ApiPeerColors,
+  ApiPrivacyKey,
+  ApiSession,
+  ApiTimezone,
+  ApiUrlAuthResult,
+  ApiWallpaper,
+  ApiWebSession,
+  LangPackStringValue,
 } from '../../types';
-import type { ApiPrivacySettings, ApiPrivacyKey, PrivacyVisibility } from '../../../types';
 
-import { buildApiDocument, buildApiReaction } from './messages';
-import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
-import { pick } from '../../../util/iteratees';
+import { numberToHexColor } from '../../../util/colors';
+import {
+  buildCollectionByCallback, omit, omitUndefined, pick,
+} from '../../../util/iteratees';
 import { getServerTime } from '../../../util/serverTime';
+import { addUserToLocalDb } from '../helpers/localDb';
+import { omitVirtualClassFields } from './helpers';
+import { buildApiDocument, buildMessageTextContent } from './messageContent';
+import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
+import { buildApiReaction } from './reactions';
 import { buildApiUser } from './users';
-import { addUserToLocalDb } from '../helpers';
 
 export function buildApiWallpaper(wallpaper: GramJs.TypeWallPaper): ApiWallpaper | undefined {
   if (wallpaper instanceof GramJs.WallPaperNoFile) {
@@ -41,6 +57,7 @@ export function buildApiSession(session: GramJs.Authorization): ApiSession {
     hash: String(session.hash),
     areCallsEnabled: !session.callRequestsDisabled,
     areSecretChatsEnabled: !session.encryptedRequestsDisabled,
+    isUnconfirmed: session.unconfirmed,
     ...pick(session, [
       'deviceModel', 'platform', 'systemVersion', 'appName', 'appVersion', 'dateCreated', 'dateActive',
       'ip', 'country', 'region',
@@ -62,6 +79,8 @@ export function buildPrivacyKey(key: GramJs.TypePrivacyKey): ApiPrivacyKey | und
   switch (key.className) {
     case 'PrivacyKeyPhoneNumber':
       return 'phoneNumber';
+    case 'PrivacyKeyAddedByPhone':
+      return 'addByPhone';
     case 'PrivacyKeyStatusTimestamp':
       return 'lastSeen';
     case 'PrivacyKeyProfilePhoto':
@@ -76,50 +95,15 @@ export function buildPrivacyKey(key: GramJs.TypePrivacyKey): ApiPrivacyKey | und
       return 'voiceMessages';
     case 'PrivacyKeyChatInvite':
       return 'chatInvite';
+    case 'PrivacyKeyAbout':
+      return 'bio';
+    case 'PrivacyKeyBirthday':
+      return 'birthday';
+    case 'PrivacyKeyStarGiftsAutoSave':
+      return 'gifts';
   }
 
   return undefined;
-}
-
-export function buildPrivacyRules(rules: GramJs.TypePrivacyRule[]): ApiPrivacySettings {
-  let visibility: PrivacyVisibility | undefined;
-  let allowUserIds: string[] | undefined;
-  let allowChatIds: string[] | undefined;
-  let blockUserIds: string[] | undefined;
-  let blockChatIds: string[] | undefined;
-
-  rules.forEach((rule) => {
-    if (rule instanceof GramJs.PrivacyValueAllowAll) {
-      visibility = visibility || 'everybody';
-    } else if (rule instanceof GramJs.PrivacyValueAllowContacts) {
-      visibility = visibility || 'contacts';
-    } else if (rule instanceof GramJs.PrivacyValueDisallowContacts) {
-      visibility = visibility || 'nonContacts';
-    } else if (rule instanceof GramJs.PrivacyValueDisallowAll) {
-      visibility = visibility || 'nobody';
-    } else if (rule instanceof GramJs.PrivacyValueAllowUsers) {
-      allowUserIds = rule.users.map((chatId) => buildApiPeerId(chatId, 'user'));
-    } else if (rule instanceof GramJs.PrivacyValueDisallowUsers) {
-      blockUserIds = rule.users.map((chatId) => buildApiPeerId(chatId, 'user'));
-    } else if (rule instanceof GramJs.PrivacyValueAllowChatParticipants) {
-      allowChatIds = rule.chats.map((chatId) => buildApiPeerId(chatId, 'chat'));
-    } else if (rule instanceof GramJs.PrivacyValueDisallowChatParticipants) {
-      blockChatIds = rule.chats.map((chatId) => buildApiPeerId(chatId, 'chat'));
-    }
-  });
-
-  if (!visibility) {
-    // disallow by default.
-    visibility = 'nobody';
-  }
-
-  return {
-    visibility,
-    allowUserIds: allowUserIds || [],
-    allowChatIds: allowChatIds || [],
-    blockUserIds: blockUserIds || [],
-    blockChatIds: blockChatIds || [],
-  };
 }
 
 export function buildApiNotifyException(
@@ -136,6 +120,7 @@ export function buildApiNotifyException(
     isMuted: silent || (typeof muteUntil === 'number' && getServerTime() < muteUntil),
     ...(!hasSound && { isSilent: true }),
     ...(showPreviews !== undefined && { shouldShowPreviews: Boolean(showPreviews) }),
+    muteUntil,
   };
 }
 
@@ -154,6 +139,7 @@ export function buildApiNotifyExceptionTopic(
     isMuted: silent || (typeof muteUntil === 'number' && getServerTime() < muteUntil),
     ...(!hasSound && { isSilent: true }),
     ...(showPreviews !== undefined && { shouldShowPreviews: Boolean(showPreviews) }),
+    muteUntil,
   };
 }
 
@@ -242,11 +228,140 @@ export function buildApiUrlAuthResult(result: GramJs.TypeUrlAuthResult): ApiUrlA
 }
 
 export function buildApiConfig(config: GramJs.Config): ApiConfig {
-  const defaultReaction = config.reactionsDefault && buildApiReaction(config.reactionsDefault);
+  const {
+    testMode, expires, gifSearchUsername, chatSizeMax, autologinToken, reactionsDefault,
+    messageLengthMax, editTimeLimit, forwardedCountMax,
+  } = config;
+  const defaultReaction = reactionsDefault && buildApiReaction(reactionsDefault);
   return {
-    expiresAt: config.expires,
-    gifSearchUsername: config.gifSearchUsername,
+    isTestServer: testMode,
+    expiresAt: expires,
+    gifSearchUsername,
     defaultReaction,
-    maxGroupSize: config.chatSizeMax,
+    maxGroupSize: chatSizeMax,
+    autologinToken,
+    maxMessageLength: messageLengthMax,
+    editTimeLimit,
+    maxForwardedCount: forwardedCountMax,
+  };
+}
+
+export function oldBuildLangPack(mtpLangPack: GramJs.LangPackDifference) {
+  return mtpLangPack.strings.reduce<Record<string, ApiOldLangString | undefined>>((acc, mtpString) => {
+    acc[mtpString.key] = oldBuildLangPackString(mtpString);
+    return acc;
+  }, {});
+}
+
+export function oldBuildLangPackString(mtpString: GramJs.TypeLangPackString) {
+  return mtpString instanceof GramJs.LangPackString
+    ? mtpString.value
+    : mtpString instanceof GramJs.LangPackStringPluralized
+      ? omit(omitVirtualClassFields(mtpString), ['key'])
+      : undefined;
+}
+
+export function buildLangStrings(strings: GramJs.TypeLangPackString[]) {
+  const keysToRemove: string[] = [];
+  const apiStrings = strings.reduce<Record<string, LangPackStringValue>>((acc, mtpString) => {
+    if (mtpString instanceof GramJs.LangPackStringDeleted) {
+      keysToRemove.push(mtpString.key);
+    }
+
+    if (mtpString instanceof GramJs.LangPackString) {
+      acc[mtpString.key] = mtpString.value;
+    }
+
+    if (mtpString instanceof GramJs.LangPackStringPluralized) {
+      acc[mtpString.key] = omitUndefined({
+        zero: mtpString.zeroValue,
+        one: mtpString.oneValue,
+        two: mtpString.twoValue,
+        few: mtpString.fewValue,
+        many: mtpString.manyValue,
+        other: mtpString.otherValue,
+      });
+    }
+
+    return acc;
+  }, {});
+
+  return {
+    keysToRemove,
+    strings: apiStrings,
+  };
+}
+
+export function buildApiLanguage(lang: GramJs.TypeLangPackLanguage): ApiLanguage {
+  const {
+    name, nativeName, langCode, pluralCode, rtl, stringsCount, translatedCount, translationsUrl, beta, official,
+  } = lang;
+  return {
+    name,
+    nativeName,
+    langCode,
+    pluralCode,
+    isRtl: rtl,
+    isBeta: beta,
+    isOfficial: official,
+    stringsCount,
+    translatedCount,
+    translationsUrl,
+  };
+}
+
+function buildApiPeerColorSet(colorSet: GramJs.help.TypePeerColorSet) {
+  if (colorSet instanceof GramJs.help.PeerColorSet) {
+    return colorSet.colors.map((color) => numberToHexColor(color));
+  }
+  return undefined;
+}
+
+export function buildApiPeerColors(wrapper: GramJs.help.TypePeerColors): ApiPeerColors['general'] | undefined {
+  if (!(wrapper instanceof GramJs.help.PeerColors)) return undefined;
+
+  return buildCollectionByCallback(wrapper.colors, (color) => {
+    return [color.colorId, {
+      isHidden: color.hidden,
+      colors: color.colors && buildApiPeerColorSet(color.colors),
+      darkColors: color.darkColors && buildApiPeerColorSet(color.darkColors),
+    }];
+  });
+}
+
+export function buildApiTimezone(timezone: GramJs.TypeTimezone): ApiTimezone {
+  const { id, name, utcOffset } = timezone;
+  return {
+    id,
+    name,
+    utcOffset,
+  };
+}
+
+export function buildApiChatLink(data: GramJs.account.ResolvedBusinessChatLinks): ApiChatLink {
+  const chatId = getApiChatIdFromMtpPeer(data.peer);
+  return {
+    chatId,
+    text: buildMessageTextContent(data.message, data.entities),
+  };
+}
+
+export function buildApiCollectibleInfo(info: GramJs.fragment.TypeCollectibleInfo): ApiCollectibleInfo {
+  const {
+    amount,
+    currency,
+    cryptoAmount,
+    cryptoCurrency,
+    purchaseDate,
+    url,
+  } = info;
+
+  return {
+    amount: amount.toJSNumber(),
+    currency,
+    cryptoAmount: cryptoAmount.toJSNumber(),
+    cryptoCurrency,
+    purchaseDate,
+    url,
   };
 }

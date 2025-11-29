@@ -1,15 +1,14 @@
 import type { RefObject } from 'react';
-import {
-  useEffect, useRef, useCallback, useState,
-} from '../lib/teact/teact';
+import { useEffect, useRef, useState } from '../lib/teact/teact';
 
 import type { Scheduler } from '../util/schedulers';
 
+import { type CallbackManager, createCallbackManager } from '../util/callbacks';
 import {
-  throttle, debounce, throttleWith,
+  debounce, throttle, throttleWith,
 } from '../util/schedulers';
-import useEffectOnce from './useEffectOnce';
-import useHeavyAnimationCheck from './useHeavyAnimationCheck';
+import useHeavyAnimation from './useHeavyAnimation';
+import useLastCallback from './useLastCallback';
 
 type TargetCallback = (entry: IntersectionObserverEntry) => void;
 type RootCallback = (entries: IntersectionObserverEntry[]) => void;
@@ -18,7 +17,9 @@ export type ObserveFn = (target: HTMLElement, targetCallback?: TargetCallback) =
 
 interface IntersectionController {
   observer: IntersectionObserver;
-  callbacks: Map<HTMLElement, TargetCallback>;
+  addCallback: (element: HTMLElement, callback: TargetCallback) => void;
+  removeCallback: (element: HTMLElement, callback: TargetCallback) => void;
+  destroy: NoneToVoidFunction;
 }
 
 interface Response {
@@ -53,11 +54,11 @@ export function useIntersectionObserver({
 
   rootCallbackRef.current = rootCallback;
 
-  const freeze = useCallback(() => {
+  const freeze = useLastCallback(() => {
     freezeFlagsRef.current++;
-  }, []);
+  });
 
-  const unfreeze = useCallback(() => {
+  const unfreeze = useLastCallback(() => {
     if (!freezeFlagsRef.current) {
       return;
     }
@@ -68,9 +69,9 @@ export function useIntersectionObserver({
       onUnfreezeRef.current();
       onUnfreezeRef.current = undefined;
     }
-  }, []);
+  });
 
-  useHeavyAnimationCheck(freeze, unfreeze);
+  useHeavyAnimation(freeze, unfreeze);
 
   useEffect(() => {
     if (isDisabled) {
@@ -80,14 +81,14 @@ export function useIntersectionObserver({
     return () => {
       if (controllerRef.current) {
         controllerRef.current.observer.disconnect();
-        controllerRef.current.callbacks.clear();
+        controllerRef.current.destroy();
         controllerRef.current = undefined;
       }
     };
   }, [isDisabled]);
 
   function initController() {
-    const callbacks = new Map();
+    const callbacks = new Map<HTMLElement, CallbackManager<TargetCallback>>();
     const entriesAccumulator = new Map<Element, IntersectionObserverEntry>();
 
     let observerCallback: typeof observerCallbackSync;
@@ -110,10 +111,8 @@ export function useIntersectionObserver({
       const entries = Array.from(entriesAccumulator.values());
 
       entries.forEach((entry: IntersectionObserverEntry) => {
-        const callback = callbacks.get(entry.target);
-        if (callback) {
-          callback!(entry, entries);
-        }
+        const callbackManager = callbacks.get(entry.target as HTMLElement);
+        callbackManager?.runCallbacks(entry);
       });
 
       if (rootCallbackRef.current) {
@@ -121,6 +120,25 @@ export function useIntersectionObserver({
       }
 
       entriesAccumulator.clear();
+    }
+
+    function addCallback(element: HTMLElement, callback: TargetCallback) {
+      if (!callbacks.get(element)) {
+        callbacks.set(element, createCallbackManager<TargetCallback>());
+      }
+
+      const callbackManager = callbacks.get(element)!;
+      callbackManager.addCallback(callback);
+    }
+
+    function removeCallback(element: HTMLElement, callback: TargetCallback) {
+      const callbackManager = callbacks.get(element);
+      if (!callbackManager) return;
+      callbackManager.removeCallback(callback);
+
+      if (!callbackManager.hasCallbacks()) {
+        callbacks.delete(element);
+      }
     }
 
     const observer = new IntersectionObserver(
@@ -142,10 +160,21 @@ export function useIntersectionObserver({
       },
     );
 
-    controllerRef.current = { observer, callbacks };
+    function destroy() {
+      callbacks.clear();
+      observer.disconnect();
+      entriesAccumulator.clear();
+    }
+
+    controllerRef.current = {
+      observer,
+      addCallback,
+      removeCallback,
+      destroy,
+    };
   }
 
-  const observe = useCallback((target, targetCallback) => {
+  const observe = useLastCallback((target, targetCallback) => {
     if (!controllerRef.current) {
       initController();
     }
@@ -154,19 +183,17 @@ export function useIntersectionObserver({
     controller.observer.observe(target);
 
     if (targetCallback) {
-      controller.callbacks.set(target, targetCallback);
+      controller.addCallback(target, targetCallback);
     }
 
     return () => {
       if (targetCallback) {
-        controller.callbacks.delete(target);
+        controller.removeCallback(target, targetCallback);
       }
 
       controller.observer.unobserve(target);
     };
-    // Arguments should never change
-    // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps
-  }, [isDisabled]);
+  });
 
   return { observe, freeze, unfreeze };
 }
@@ -174,10 +201,11 @@ export function useIntersectionObserver({
 export function useOnIntersect(
   targetRef: RefObject<HTMLDivElement>, observe?: ObserveFn, callback?: TargetCallback,
 ) {
-  useEffectOnce(() => {
-    return observe ? observe(targetRef.current!, callback) : undefined;
-    // Arguments should never change
-  });
+  const lastCallback = useLastCallback(callback);
+
+  useEffect(() => {
+    return observe ? observe(targetRef.current!, lastCallback) : undefined;
+  }, [lastCallback, observe, targetRef]);
 }
 
 export function useIsIntersecting(

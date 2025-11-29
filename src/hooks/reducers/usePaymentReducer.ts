@@ -1,4 +1,6 @@
-import type { StateReducer, Dispatch } from '../useReducer';
+import type { RegularLangFnParameters } from '../../util/localization';
+import type { Dispatch, StateReducer } from '../useReducer';
+
 import useReducer from '../useReducer';
 
 export type FormState = {
@@ -20,7 +22,7 @@ export type FormState = {
   billingZip: string;
   saveInfo: boolean;
   saveCredentials: boolean;
-  formErrors: Record<string, string>;
+  formErrors: Partial<Record<string, RegularLangFnParameters>>;
   tipAmount: number;
   savedCredentialId: string;
 };

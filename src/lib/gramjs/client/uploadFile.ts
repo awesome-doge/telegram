@@ -1,11 +1,12 @@
-// eslint-disable-next-line import/no-named-default
-import { default as Api } from '../tl/api';
-
 import type TelegramClient from './TelegramClient';
+
+import { Foreman } from '../../../util/foreman';
+import { FloodPremiumWaitError, FloodWaitError } from '../errors';
+import Api from '../tl/api';
+
+import LocalUpdatePremiumFloodWait from '../../../api/gramjs/updates/UpdatePremiumFloodWait';
 import { generateRandomBytes, readBigIntFromBuffer, sleep } from '../Helpers';
 import { getUploadPartSize } from '../Utils';
-import errors from '../errors';
-import { Foreman } from '../../../util/foreman';
 
 interface OnProgress {
     isCanceled?: boolean;
@@ -33,6 +34,7 @@ const foremans = Array(MAX_CONCURRENT_CONNECTIONS_PREMIUM).fill(undefined)
 export async function uploadFile(
     client: TelegramClient,
     fileParams: UploadFileParams,
+    shouldDebugExportedSenders?: boolean,
 ): Promise<Api.InputFile | Api.InputFileBig> {
     const { file, onProgress } = fileParams;
 
@@ -42,6 +44,13 @@ export async function uploadFile(
     const fileId = readBigIntFromBuffer(generateRandomBytes(8), true, true);
     const isLarge = size > LARGE_FILE_THRESHOLD;
 
+    const logWithId = (...args: any[]) => {
+        if (!shouldDebugExportedSenders) return;
+        // eslint-disable-next-line no-console
+        console.log(`⬆️ [${fileId}]`, ...args);
+    };
+
+    logWithId('Uploading file...');
     const partSize = getUploadPartSize(size) * KB_TO_BYTES;
     const partCount = Math.floor((size + partSize - 1) / partSize);
 
@@ -55,6 +64,9 @@ export async function uploadFile(
     if (onProgress) {
         onProgress(progress);
     }
+
+    // Limit updates to one per file
+    let isPremiumFloodWaitSent = false;
 
     const promises: Promise<any>[] = [];
 
@@ -70,6 +82,10 @@ export async function uploadFile(
             break;
         }
 
+        const logWithSenderIndex = (...args: any[]) => {
+            logWithId(`[${senderIndex}]`, ...args);
+        };
+
         const blobSlice = file.slice(i * partSize, (i + 1) * partSize);
         // eslint-disable-next-line no-loop-func, @typescript-eslint/no-loop-func
         promises.push((async (jMemo: number, blobSliceMemo: Blob) => {
@@ -78,8 +94,24 @@ export async function uploadFile(
                 let sender;
                 try {
                     // We always upload from the DC we are in
+                    let isDone = false;
+                    if (shouldDebugExportedSenders) {
+                        setTimeout(() => {
+                            if (isDone) return;
+                            logWithSenderIndex(`❗️️ getSender took too long j=${jMemo}`);
+                        }, 8000);
+                    }
                     sender = await client.getSender(client.session.dcId, senderIndex, isPremium);
+                    isDone = true;
+
+                    let isDone2 = false;
                     const partBytes = await blobSliceMemo.arrayBuffer();
+                    if (shouldDebugExportedSenders) {
+                        setTimeout(() => {
+                            if (isDone2) return;
+                            logWithSenderIndex(`❗️️ sender.send took too long j=${jMemo}`);
+                        }, 6000);
+                    }
                     await sender.send(
                         isLarge
                             ? new Api.upload.SaveBigFilePart({
@@ -94,15 +126,23 @@ export async function uploadFile(
                                 bytes: Buffer.from(partBytes),
                             }),
                     );
+                    client.releaseExportedSender(sender);
+                    isDone2 = true;
                 } catch (err) {
+                    logWithSenderIndex(`❗️️️Upload part failed ${err?.toString()} j=${jMemo}`);
                     if (sender && !sender.isConnected()) {
                         await sleep(DISCONNECT_SLEEP);
                         continue;
-                    } else if (err instanceof errors.FloodWaitError) {
+                    } else if (err instanceof FloodWaitError) {
+                        if (err instanceof FloodPremiumWaitError && !isPremiumFloodWaitSent) {
+                            sender?._updateCallback(new LocalUpdatePremiumFloodWait(true));
+                            isPremiumFloodWaitSent = true;
+                        }
                         await sleep(err.seconds * 1000);
                         continue;
                     }
                     foremans[senderIndex].releaseWorker();
+                    if (sender) client.releaseExportedSender(sender);
 
                     throw err;
                 }
@@ -115,6 +155,7 @@ export async function uploadFile(
                     }
 
                     progress += (1 / partCount);
+                    logWithSenderIndex(`${progress * 100}%`);
                     onProgress(progress);
                 }
                 break;

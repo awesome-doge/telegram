@@ -3,17 +3,19 @@ import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
-import { requestMutation } from '../../lib/fasterdom/fasterdom';
 
 import { MIN_PASSWORD_LENGTH } from '../../config';
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import buildClassName from '../../util/buildClassName';
 import stopEvent from '../../util/stopEvent';
-import useLang from '../../hooks/useLang';
-import useTimeout from '../../hooks/useTimeout';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+
+import useTimeout from '../../hooks/schedulers/useTimeout';
 import useAppLayout from '../../hooks/useAppLayout';
+import useOldLang from '../../hooks/useOldLang';
 
 import Button from '../ui/Button';
+import Icon from './icons/Icon';
 
 type OwnProps = {
   submitLabel?: string;
@@ -52,7 +54,7 @@ const PasswordForm: FC<OwnProps> = ({
 }) => {
   // eslint-disable-next-line no-null/no-null
   const inputRef = useRef<HTMLInputElement>(null);
-  const lang = useLang();
+  const lang = useOldLang();
 
   const { isMobile } = useAppLayout();
   const [password, setPassword] = useState('');
@@ -146,13 +148,14 @@ const PasswordForm: FC<OwnProps> = ({
           role="button"
           tabIndex={0}
           title="Toggle password visibility"
+          aria-label="Toggle password visibility"
         >
-          <i className={buildClassName('icon', isPasswordVisible ? 'icon-eye' : 'icon-eye-closed')} />
+          <Icon name={isPasswordVisible ? 'eye' : 'eye-closed'} />
         </div>
       </div>
       {description && <p className="description">{description}</p>}
       {onSubmit && (canSubmit || shouldShowSubmit) && (
-        <Button type="submit" ripple={!noRipple} isLoading={isLoading} disabled={!canSubmit}>
+        <Button size="smaller" type="submit" ripple={!noRipple} isLoading={isLoading} disabled={!canSubmit}>
           {submitLabel}
         </Button>
       )}

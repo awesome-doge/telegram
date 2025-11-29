@@ -5,13 +5,14 @@ import { getActions, withGlobal } from '../../../../global';
 import type { GlobalState } from '../../../../global/types';
 import { SettingsScreens } from '../../../../types';
 
-import useLang from '../../../../hooks/useLang';
 import { decryptSession } from '../../../../util/passcode';
 
-import SettingsPasscodeStart from './SettingsPasscodeStart';
+import useOldLang from '../../../../hooks/useOldLang';
+
 import SettingsPasscodeForm from '../SettingsPasswordForm';
-import SettingsPasscodeEnabled from './SettingsPasscodeEnabled';
 import SettingsPasscodeCongratulations from './SettingsPasscodeCongratulations';
+import SettingsPasscodeEnabled from './SettingsPasscodeEnabled';
+import SettingsPasscodeStart from './SettingsPasscodeStart';
 
 export type OwnProps = {
   passcode: string;
@@ -43,7 +44,7 @@ const SettingsPasscode: FC<OwnProps & StateProps> = ({
     clearPasscodeError,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleStartWizard = useCallback(() => {
     onSetPasscode('');

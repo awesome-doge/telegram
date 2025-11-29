@@ -1,8 +1,9 @@
-// export { initApi, callApi, cancelApiProgress } from './provider';
+// export { initApi, callApi, cancelApiProgress } from './methods/init';
 export {
   initApi, callApi, cancelApiProgress, cancelApiProgressMaster, callApiLocal,
   handleMethodCallback,
   handleMethodResponse,
   updateFullLocalDb,
   updateLocalDb,
-} from './worker/provider';
+  setShouldEnableDebugLog,
+} from './worker/connector';

@@ -8,21 +8,22 @@ import type { ApiChat } from '../../../api/types';
 import { ManagementScreens } from '../../../types';
 
 import { STICKER_SIZE_DISCUSSION_GROUPS } from '../../../config';
-import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
-import { selectChat, selectChatFullInfo } from '../../../global/selectors';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
-
-import ListItem from '../../ui/ListItem';
-import NothingFound from '../../common/NothingFound';
-import GroupChatInfo from '../../common/GroupChatInfo';
-import ConfirmDialog from '../../ui/ConfirmDialog';
-import useFlag from '../../../hooks/useFlag';
-import renderText from '../../common/helpers/renderText';
-import Avatar from '../../common/Avatar';
 import { isChatChannel } from '../../../global/helpers';
-import AnimatedIcon from '../../common/AnimatedIcon';
+import { selectChat, selectChatFullInfo } from '../../../global/selectors';
+import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
+import renderText from '../../common/helpers/renderText';
+
+import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useOldLang from '../../../hooks/useOldLang';
+
+import AnimatedIconWithPreview from '../../common/AnimatedIconWithPreview';
+import Avatar from '../../common/Avatar';
+import GroupChatInfo from '../../common/GroupChatInfo';
+import NothingFound from '../../common/NothingFound';
 import Checkbox from '../../ui/Checkbox';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import ListItem from '../../ui/ListItem';
 
 type OwnProps = {
   chatId: string;
@@ -63,7 +64,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
   const [isConfirmLinkGroupDialogOpen, openConfirmLinkGroupDialog, closeConfirmLinkGroupDialog] = useFlag();
   const [isJoinToSend, setIsJoinToSend] = useState(Boolean(linkedChat?.isJoinToSend));
   const [isJoinRequest, setIsJoinRequest] = useState(Boolean(linkedChat?.isJoinRequest));
-  const lang = useLang();
+  const lang = useOldLang();
   const linkedChatId = linkedChat?.id;
 
   useHistoryBack({
@@ -118,7 +119,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
       <div className="modal-header">
         <Avatar
           size="tiny"
-          chat={linkedChat}
+          peer={linkedChat}
         />
         <div className="modal-title">
           {lang(isChannel ? 'DiscussionUnlinkGroup' : 'DiscussionUnlinkChannel')}
@@ -136,7 +137,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
       <div className="modal-header">
         <Avatar
           size="tiny"
-          chat={linkedGroup}
+          peer={linkedGroup}
         />
         <div className="modal-title">
           {lang('Channel.DiscussionGroup.LinkGroup')}
@@ -247,7 +248,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
     <div className="Management">
       <div className="custom-scroll">
         <div className="section">
-          <AnimatedIcon
+          <AnimatedIconWithPreview
             tgsUrl={LOCAL_TGS_URLS.DiscussionGroups}
             size={STICKER_SIZE_DISCUSSION_GROUPS}
             className="section-icon"
@@ -258,19 +259,23 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
         {linkedChat && (
           <div className="section">
             <h3 className="section-heading">{lang('ChannelSettingsJoinTitle')}</h3>
-            <Checkbox
-              checked={isJoinToSend}
-              onCheck={handleJoinToSendCheck}
-              label={lang('ChannelSettingsJoinToSend')}
-            />
-            {isJoinToSend && (
+            <div className="ListItem narrow">
               <Checkbox
-                checked={isJoinRequest}
-                onCheck={handleJoinRequestCheck}
-                label={lang('ChannelSettingsJoinRequest')}
+                checked={isJoinToSend}
+                onCheck={handleJoinToSendCheck}
+                label={lang('ChannelSettingsJoinToSend')}
               />
+            </div>
+            {isJoinToSend && (
+              <div className="ListItem narrow">
+                <Checkbox
+                  checked={isJoinRequest}
+                  onCheck={handleJoinRequestCheck}
+                  label={lang('ChannelSettingsJoinRequest')}
+                />
+              </div>
             )}
-            <p className="text-muted">
+            <p className="section-info section-info_push">
               {isJoinToSend ? lang('ChannelSettingsJoinRequestInfo') : lang('ChannelSettingsJoinToSendInfo')}
             </p>
           </div>
@@ -285,9 +290,7 @@ export default memo(withGlobal<OwnProps>(
     const chat = selectChat(global, chatId);
     const { linkedChatId } = selectChatFullInfo(global, chatId) || {};
     const { forDiscussionIds, byId: chatsByIds } = global.chats;
-    const linkedChat = linkedChatId
-      ? selectChat(global, linkedChatId)
-      : undefined;
+    const linkedChat = linkedChatId ? selectChat(global, linkedChatId) : undefined;
 
     return {
       chat,

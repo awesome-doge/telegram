@@ -1,10 +1,11 @@
-import type { TabState, GlobalState } from './types';
 import type { PerformanceType } from '../types';
+import type { GlobalState, TabState } from './types';
 import { NewChatMembersProgress } from '../types';
 
 import {
   ANIMATION_LEVEL_DEFAULT,
   DARK_THEME_PATTERN_COLOR,
+  DEFAULT_GIFT_PROFILE_FILTER_OPTIONS,
   DEFAULT_MESSAGE_TEXT_SIZE_PX,
   DEFAULT_PATTERN_COLOR,
   DEFAULT_PLAYBACK_RATE,
@@ -28,6 +29,8 @@ export const INITIAL_PERFORMANCE_STATE_MAX: PerformanceType = {
   reactionEffects: true,
   rightColumnAnimations: true,
   stickerEffects: true,
+  storyRibbonAnimations: true,
+  snapEffect: true,
 };
 
 export const INITIAL_PERFORMANCE_STATE_MID: PerformanceType = {
@@ -44,6 +47,8 @@ export const INITIAL_PERFORMANCE_STATE_MID: PerformanceType = {
   reactionEffects: true,
   rightColumnAnimations: false,
   stickerEffects: false,
+  storyRibbonAnimations: false,
+  snapEffect: false,
 };
 
 export const INITIAL_PERFORMANCE_STATE_MIN: PerformanceType = {
@@ -60,13 +65,17 @@ export const INITIAL_PERFORMANCE_STATE_MIN: PerformanceType = {
   reactionEffects: false,
   rightColumnAnimations: false,
   stickerEffects: false,
+  storyRibbonAnimations: false,
+  snapEffect: false,
 };
 
 export const INITIAL_GLOBAL_STATE: GlobalState = {
+  isInited: true,
   attachMenu: { bots: {} },
   passcode: {},
   twoFaSettings: {},
-  isUpdateAvailable: false,
+  isAppUpdateAvailable: false,
+  isElectronUpdateAvailable: false,
   shouldShowContextMenuHint: true,
 
   audioPlayer: {
@@ -92,6 +101,13 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
     byId: {},
     statusesById: {},
     fullInfoById: {},
+    previewMediaByBotId: {},
+    commonChatsById: {},
+    botAppPermissionsById: {},
+  },
+
+  peers: {
+    profilePhotosById: {},
   },
 
   chats: {
@@ -99,13 +115,34 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
     isFullyLoaded: {},
     orderedPinnedIds: {},
     totalCount: {},
+    lastMessageIds: {},
     byId: {},
     fullInfoById: {},
+    similarChannelsById: {},
+    similarBotsById: {},
+    topicsInfoById: {},
+    loadingParameters: {
+      active: {},
+      archived: {},
+      saved: {},
+    },
   },
 
   messages: {
     byChatId: {},
     sponsoredByChatId: {},
+    pollById: {},
+  },
+
+  stories: {
+    byPeerId: {},
+    orderedPeerIds: {
+      archived: [],
+      active: [],
+    },
+    hasNext: true,
+    hasNextInArchive: true,
+    stealthMode: {},
   },
 
   groupCalls: {
@@ -115,10 +152,17 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
   attachmentSettings: {
     shouldCompress: true,
     shouldSendGrouped: true,
+    isInvertedMedia: undefined,
+    webPageMediaSize: undefined,
   },
 
   scheduledMessages: {
     byChatId: {},
+  },
+
+  quickReplies: {
+    byId: {},
+    messagesById: {},
   },
 
   chatFolders: {
@@ -127,13 +171,20 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
   },
 
   fileUploads: {
-    byMessageLocalId: {},
+    byMessageKey: {},
   },
 
   recentEmojis: ['grinning', 'kissing_heart', 'christmas_tree', 'brain', 'trophy', 'duck', 'cherries'],
   recentCustomEmojis: ['5377305978079288312'],
-  topReactions: [],
-  recentReactions: [],
+
+  reactions: {
+    defaultTags: [],
+    topReactions: [],
+    recentReactions: [],
+    effectReactions: [],
+    hash: {},
+  },
+  availableEffectById: {},
 
   stickers: {
     setsById: {},
@@ -150,11 +201,12 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
     premium: {
       stickers: [],
     },
-    premiumSet: {
-      stickers: [],
-    },
     featured: {
       setIds: [],
+    },
+    effect: {
+      stickers: [],
+      emojis: [],
     },
     forEmoji: {},
   },
@@ -176,6 +228,7 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
   topPeers: {},
 
   topInlineBots: {},
+  topBotApps: {},
 
   activeSessions: {
     byHash: {},
@@ -214,16 +267,21 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
       notificationSoundVolume: 5,
       shouldSuggestStickers: true,
       shouldSuggestCustomEmoji: true,
+      shouldSkipWebAppCloseConfirmation: false,
       shouldUpdateStickerSetOrder: true,
       language: 'en',
       timeFormat: '24h',
       wasTimeFormatSetManually: false,
       isConnectionStatusMinimized: true,
       shouldArchiveAndMuteNewNonContact: false,
+      shouldNewNonContactPeersRequirePremium: false,
+      shouldHideReadMarks: false,
       canTranslate: false,
       canTranslateChats: true,
       doNotTranslate: [],
       canDisplayChatInTitle: true,
+      shouldAllowHttpTransport: true,
+      shouldWarnAboutSvg: true,
     },
     themes: {
       light: {
@@ -238,6 +296,7 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
     performance: INITIAL_PERFORMANCE_STATE_MAX,
     privacy: {},
     notifyExceptions: {},
+    botVerificationShownPeerIds: [],
   },
 
   serviceNotifications: [],
@@ -281,20 +340,45 @@ export const INITIAL_TAB_STATE: TabState = {
     byUsername: {},
   },
 
+  webApps: {
+    openedWebApps: {},
+    openedOrderedKeys: [],
+    sessionKeys: [],
+    modalState: 'maximized',
+    isModalOpen: false,
+    isMoreAppsTabActive: false,
+  },
+
   globalSearch: {},
 
   userSearch: {},
 
-  localTextSearch: {
+  middleSearch: {
     byChatThreadKey: {},
   },
 
-  localMediaSearch: {
+  sharedMediaSearch: {
+    byChatThreadKey: {},
+  },
+
+  chatMediaSearch: {
     byChatThreadKey: {},
   },
 
   management: {
     byChatId: {},
+  },
+
+  savedGifts: {
+    filter: {
+      ...DEFAULT_GIFT_PROFILE_FILTER_OPTIONS,
+    },
+    giftsByPeerId: {},
+  },
+
+  storyViewer: {
+    isMuted: true,
+    isRibbonShown: false,
   },
 
   mediaViewer: {
@@ -309,11 +393,18 @@ export const INITIAL_TAB_STATE: TabState = {
     isMuted: false,
   },
 
+  isShareMessageModalShown: false,
+
+  isWebAppsCloseConfirmationModalOpen: false,
+
   forwardMessages: {},
+
+  replyingMessage: {},
 
   pollResults: {},
 
   payment: {},
+  starsPayment: {},
 
   notifications: [],
 
@@ -321,9 +412,7 @@ export const INITIAL_TAB_STATE: TabState = {
 
   activeReactions: {},
 
-  activeDownloads: {
-    byChatId: {},
-  },
+  activeDownloads: {},
 
   statistics: {
     byChatId: {},

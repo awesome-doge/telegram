@@ -1,53 +1,69 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useRef,
+  memo, useEffect, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type {
   ApiAvailableReaction,
+  ApiChat,
   ApiChatReactions,
   ApiMessage,
+  ApiPeer,
+  ApiPoll,
   ApiReaction,
-  ApiSponsoredMessage,
   ApiStickerSet,
   ApiThreadInfo,
+  ApiTypeStory,
   ApiUser,
 } from '../../../api/types';
 import type { IAnchorPosition } from '../../../types';
 
-import { REM } from '../../common/helpers/mediaDimensions';
-import { getMessageCopyOptions } from './helpers/copyOptions';
-import { disableScrolling, enableScrolling } from '../../../util/scrollLock';
-import { getUserFullName } from '../../../global/helpers';
+import {
+  getUserFullName,
+  groupStatetefulContent,
+  isUserId,
+} from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
+import { disableScrolling } from '../../../util/scrollLock';
+import { REM } from '../../common/helpers/mediaDimensions';
 import renderText from '../../common/helpers/renderText';
+import { getMessageCopyOptions } from './helpers/copyOptions';
 
-import useFlag from '../../../hooks/useFlag';
-import useMenuPosition from '../../../hooks/useMenuPosition';
-import useLang from '../../../hooks/useLang';
 import useAppLayout from '../../../hooks/useAppLayout';
+import useFlag from '../../../hooks/useFlag';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 
+import AvatarList from '../../common/AvatarList';
 import Menu from '../../ui/Menu';
 import MenuItem from '../../ui/MenuItem';
 import MenuSeparator from '../../ui/MenuSeparator';
-import Skeleton from '../../ui/Skeleton';
-import Avatar from '../../common/Avatar';
-import ReactionSelector from './ReactionSelector';
+import Skeleton from '../../ui/placeholder/Skeleton';
+import LastEditTimeMenuItem from './LastEditTimeMenuItem';
+import ReactionSelector from './reactions/ReactionSelector';
+import ReadTimeMenuItem from './ReadTimeMenuItem';
 
 import './MessageContextMenu.scss';
 
 type OwnProps = {
+  isReactionPickerOpen?: boolean;
   availableReactions?: ApiAvailableReaction[];
   topReactions?: ApiReaction[];
+  defaultTagReactions?: ApiReaction[];
   isOpen: boolean;
   anchor: IAnchorPosition;
-  message: ApiMessage | ApiSponsoredMessage;
+  targetHref?: string;
+  message: ApiMessage;
+  poll?: ApiPoll;
+  story?: ApiTypeStory;
   canSendNow?: boolean;
   enabledReactions?: ApiChatReactions;
-  maxUniqueReactions?: number;
+  isWithPaidReaction?: boolean;
+  reactionsLimit?: number;
   canReschedule?: boolean;
   canReply?: boolean;
+  canQuote?: boolean;
   repliesThreadInfo?: ApiThreadInfo;
   canPin?: boolean;
   canUnpin?: boolean;
@@ -74,12 +90,14 @@ type OwnProps = {
   canClosePoll?: boolean;
   isDownloading?: boolean;
   canShowSeenBy?: boolean;
-  seenByRecentUsers?: ApiUser[];
+  seenByRecentPeers?: ApiPeer[];
   noReplies?: boolean;
   hasCustomEmoji?: boolean;
   customEmojiSets?: ApiStickerSet[];
   canPlayAnimatedEmojis?: boolean;
-  noTransition?: boolean;
+  isInSavedMessages?: boolean;
+  shouldRenderShowWhen?: boolean;
+  canLoadReadDate?: boolean;
   onReply?: NoneToVoidFunction;
   onOpenThread?: VoidFunction;
   onEdit?: NoneToVoidFunction;
@@ -87,8 +105,8 @@ type OwnProps = {
   onUnpin?: NoneToVoidFunction;
   onForward?: NoneToVoidFunction;
   onDelete?: NoneToVoidFunction;
-  onReport?: NoneToVoidFunction;
   onFaveSticker?: NoneToVoidFunction;
+  onReport?: NoneToVoidFunction;
   onUnfaveSticker?: NoneToVoidFunction;
   onSelect?: NoneToVoidFunction;
   onSend?: NoneToVoidFunction;
@@ -104,42 +122,49 @@ type OwnProps = {
   onClosePoll?: NoneToVoidFunction;
   onShowSeenBy?: NoneToVoidFunction;
   onShowReactors?: NoneToVoidFunction;
-  onAboutAds?: NoneToVoidFunction;
-  onSponsoredHide?: NoneToVoidFunction;
-  onSponsorInfo?: NoneToVoidFunction;
   onTranslate?: NoneToVoidFunction;
   onShowOriginal?: NoneToVoidFunction;
   onSelectLanguage?: NoneToVoidFunction;
   onToggleReaction?: (reaction: ApiReaction) => void;
+  onSendPaidReaction?: NoneToVoidFunction;
+  onShowPaidReactionModal?: NoneToVoidFunction;
   onReactionPickerOpen?: (position: IAnchorPosition) => void;
+  userFullName?: string;
+  canGift?: boolean;
 };
 
 const SCROLLBAR_WIDTH = 10;
-const REACTION_BUBBLE_EXTRA_WIDTH = 32;
 const REACTION_SELECTOR_WIDTH_REM = 19.25;
 const ANIMATION_DURATION = 200;
 
 const MessageContextMenu: FC<OwnProps> = ({
+  isReactionPickerOpen,
   availableReactions,
   topReactions,
+  defaultTagReactions,
   isOpen,
   message,
+  poll,
+  story,
   isPrivate,
   isCurrentUserPremium,
   enabledReactions,
-  maxUniqueReactions,
+  isWithPaidReaction,
+  reactionsLimit,
   anchor,
+  targetHref,
   canSendNow,
   canReschedule,
   canBuyPremium,
   canReply,
+  canQuote,
   canEdit,
   noReplies,
   canPin,
   canUnpin,
   canDelete,
-  canReport,
   canForward,
+  canReport,
   canFaveSticker,
   canUnfaveSticker,
   canCopy,
@@ -157,11 +182,13 @@ const MessageContextMenu: FC<OwnProps> = ({
   canShowSeenBy,
   canShowReactionsCount,
   canShowReactionList,
-  seenByRecentUsers,
+  seenByRecentPeers,
   hasCustomEmoji,
   customEmojiSets,
   canPlayAnimatedEmojis,
-  noTransition,
+  isInSavedMessages,
+  shouldRenderShowWhen,
+  canLoadReadDate,
   onReply,
   onOpenThread,
   onEdit,
@@ -169,8 +196,8 @@ const MessageContextMenu: FC<OwnProps> = ({
   onUnpin,
   onForward,
   onDelete,
-  onReport,
   onFaveSticker,
+  onReport,
   onUnfaveSticker,
   onSelect,
   onSend,
@@ -186,40 +213,73 @@ const MessageContextMenu: FC<OwnProps> = ({
   onShowSeenBy,
   onShowReactors,
   onToggleReaction,
+  onSendPaidReaction,
+  onShowPaidReactionModal,
   onCopyMessages,
-  onAboutAds,
-  onSponsoredHide,
-  onSponsorInfo,
   onReactionPickerOpen,
   onTranslate,
   onShowOriginal,
   onSelectLanguage,
+  userFullName,
+  canGift,
 }) => {
-  const { showNotification, openStickerSet, openCustomEmojiSets } = getActions();
+  const {
+    showNotification, openStickerSet, openCustomEmojiSets, loadStickers, openGiftModal,
+  } = getActions();
   // eslint-disable-next-line no-null/no-null
   const menuRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line no-null/no-null
   const scrollableRef = useRef<HTMLDivElement>(null);
-  const lang = useLang();
+  const lang = useOldLang();
   const noReactions = !isPrivate && !enabledReactions;
-  const withReactions = canShowReactionList && !noReactions;
-  const isSponsoredMessage = !('id' in message);
-  const messageId = !isSponsoredMessage ? message.id : '';
-  const seenByDates = !isSponsoredMessage ? message.seenByDates : undefined;
+  const areReactionsPossible = message.areReactionsPossible;
+  const withReactions = (canShowReactionList && !noReactions) || areReactionsPossible;
+  const isEdited = ('isEdited' in message) && message.isEdited;
+  const seenByDates = message.seenByDates;
+  const isPremiumGift = message.content.action?.type === 'giftPremium';
+  const isGiftCode = message.content.action?.type === 'giftCode';
+  const isStarGift = message.content.action?.type === 'starGift';
+  const isStarGiftUnique = message.content.action?.type === 'starGiftUnique';
+  const shouldShowGiftButton = isUserId(message.chatId)
+    && canGift && (isPremiumGift || isGiftCode || isStarGift || isStarGiftUnique);
 
   const [areItemsHidden, hideItems] = useFlag();
   const [isReady, markIsReady, unmarkIsReady] = useFlag();
   const { isMobile, isDesktop } = useAppLayout();
   const seenByDatesCount = useMemo(() => (seenByDates ? Object.keys(seenByDates).length : 0), [seenByDates]);
 
-  const handleAfterCopy = useCallback(() => {
+  const handleAfterCopy = useLastCallback(() => {
     showNotification({
       message: lang('Share.Link.Copied'),
     });
     onClose();
-  }, [lang, onClose, showNotification]);
+  });
 
-  const handleOpenCustomEmojiSets = useCallback(() => {
+  const handleGiftClick = useLastCallback(() => {
+    openGiftModal({ forUserId: message.chatId });
+    onClose();
+  });
+
+  useEffect(() => {
+    if (isOpen && areItemsHidden && !isReactionPickerOpen) {
+      onClose();
+    }
+  }, [onClose, isOpen, isReactionPickerOpen, areItemsHidden]);
+
+  useEffect(() => {
+    if (customEmojiSets?.length) {
+      customEmojiSets.map((customEmojiSet) => {
+        return loadStickers({
+          stickerSetInfo: {
+            id: customEmojiSet.id,
+            accessHash: customEmojiSet.accessHash,
+          },
+        });
+      });
+    }
+  }, [customEmojiSets, openCustomEmojiSets]);
+
+  const handleOpenCustomEmojiSets = useLastCallback(() => {
     if (!customEmojiSets) return;
     if (customEmojiSets.length === 1) {
       openStickerSet({
@@ -233,47 +293,43 @@ const MessageContextMenu: FC<OwnProps> = ({
       });
     }
     onClose();
-  }, [customEmojiSets, onClose, openCustomEmojiSets, openStickerSet]);
+  });
 
-  const copyOptions = isSponsoredMessage
-    ? []
-    : getMessageCopyOptions(
-      message, handleAfterCopy, canCopyLink ? onCopyLink : undefined, onCopyMessages, onCopyNumber,
-    );
-
-  const getTriggerElement = useCallback(() => {
-    return isSponsoredMessage
-      ? document.querySelector('.Transition_slide-active > .MessageList .SponsoredMessage')
-      : document.querySelector(`.Transition_slide-active > .MessageList div[data-message-id="${messageId}"]`);
-  }, [isSponsoredMessage, messageId]);
-
-  const getRootElement = useCallback(
-    () => document.querySelector('.Transition_slide-active > .MessageList'),
-    [],
+  const copyOptions = getMessageCopyOptions(
+    message,
+    groupStatetefulContent({ poll, story }),
+    targetHref,
+    canCopy,
+    handleAfterCopy,
+    canCopyLink ? onCopyLink : undefined,
+    onCopyMessages,
+    onCopyNumber,
   );
 
-  const getMenuElement = useCallback(
-    () => document.querySelector('.MessageContextMenu .bubble'),
-    [],
-  );
+  const getTriggerElement = useLastCallback(() => {
+    return document.querySelector(`.Transition_slide-active > .MessageList div[data-message-id="${message.id}"]`);
+  });
 
-  const getLayout = useCallback(() => {
+  const getRootElement = useLastCallback(() => document.querySelector('.Transition_slide-active > .MessageList'));
+
+  const getMenuElement = useLastCallback(() => document.querySelector('.MessageContextMenu .bubble'));
+
+  const getLayout = useLastCallback(() => {
     const extraHeightAudioPlayer = (isMobile
       && (document.querySelector<HTMLElement>('.AudioPlayer-content'))?.offsetHeight) || 0;
-    const pinnedElement = document.querySelector<HTMLElement>('.HeaderPinnedMessageWrapper');
-    const extraHeightPinned = (((isMobile && !extraHeightAudioPlayer)
-        || (!isMobile && pinnedElement?.classList.contains('full-width')))
-      && pinnedElement?.offsetHeight) || 0;
+    const middleColumn = document.getElementById('MiddleColumn')!;
+    const middleColumnComputedStyle = getComputedStyle(middleColumn);
+    const headerToolsHeight = parseFloat(middleColumnComputedStyle.getPropertyValue('--middle-header-panes-height'));
+    const extraHeightPinned = headerToolsHeight || 0;
 
     return {
       extraPaddingX: SCROLLBAR_WIDTH,
       extraTopPadding: (document.querySelector<HTMLElement>('.MiddleHeader')!).offsetHeight,
-      marginSides: withReactions ? REACTION_BUBBLE_EXTRA_WIDTH : undefined,
       extraMarginTop: extraHeightPinned + extraHeightAudioPlayer,
       shouldAvoidNegativePosition: !isDesktop,
       menuElMinWidth: withReactions && isMobile ? REACTION_SELECTOR_WIDTH_REM * REM : undefined,
     };
-  }, [isDesktop, isMobile, withReactions]);
+  });
 
   useEffect(() => {
     if (!isOpen) {
@@ -286,35 +342,28 @@ const MessageContextMenu: FC<OwnProps> = ({
     }, ANIMATION_DURATION);
   }, [isOpen, markIsReady, unmarkIsReady]);
 
-  const {
-    positionX, positionY, transformOriginX, transformOriginY, style, menuStyle, withScroll,
-  } = useMenuPosition(anchor, getTriggerElement, getRootElement, getMenuElement, getLayout);
-
   useEffect(() => {
-    disableScrolling(withScroll ? scrollableRef.current : undefined, '.ReactionPicker');
+    return disableScrolling(scrollableRef.current, '.ReactionPicker');
+  }, [isOpen]);
 
-    return enableScrolling;
-  }, [withScroll]);
-
-  const handleOpenReactionPicker = useCallback((position: IAnchorPosition) => {
+  const handleOpenMessageReactionPicker = useLastCallback((position: IAnchorPosition) => {
     onReactionPickerOpen!(position);
     hideItems();
-  }, [onReactionPickerOpen]);
+  });
 
   return (
     <Menu
       ref={menuRef}
       isOpen={isOpen}
-      transformOriginX={transformOriginX}
-      transformOriginY={transformOriginY}
-      positionX={positionX}
-      positionY={positionY}
-      style={style}
-      bubbleStyle={menuStyle}
+      anchor={anchor}
+      getTriggerElement={getTriggerElement}
+      getRootElement={getRootElement}
+      getMenuElement={getMenuElement}
+      getLayout={getLayout}
+      withMaxHeight
       className={buildClassName(
         'MessageContextMenu', 'fluid', withReactions && 'with-reactions',
       )}
-      shouldSkipTransition={noTransition}
       onClose={onClose}
       onCloseAnimationEnd={onCloseAnimationEnd}
     >
@@ -323,31 +372,49 @@ const MessageContextMenu: FC<OwnProps> = ({
           enabledReactions={enabledReactions}
           topReactions={topReactions}
           allAvailableReactions={availableReactions}
-          currentReactions={!isSponsoredMessage ? message.reactions?.results : undefined}
-          maxUniqueReactions={maxUniqueReactions}
+          defaultTagReactions={defaultTagReactions}
+          currentReactions={message.reactions?.results}
+          reactionsLimit={reactionsLimit}
           onToggleReaction={onToggleReaction!}
+          onSendPaidReaction={onSendPaidReaction}
+          onShowPaidReactionModal={onShowPaidReactionModal}
+          isWithPaidReaction={isWithPaidReaction}
           isPrivate={isPrivate}
           isReady={isReady}
           canBuyPremium={canBuyPremium}
           isCurrentUserPremium={isCurrentUserPremium}
+          isInSavedMessages={isInSavedMessages}
           canPlayAnimatedEmojis={canPlayAnimatedEmojis}
-          onShowMore={handleOpenReactionPicker}
+          onShowMore={handleOpenMessageReactionPicker}
+          onClose={onClose}
+          className={buildClassName(areItemsHidden && 'ReactionSelector-hidden')}
         />
       )}
 
       <div
+        ref={scrollableRef}
         className={buildClassName(
           'MessageContextMenu_items scrollable-content custom-scroll',
           areItemsHidden && 'MessageContextMenu_items-hidden',
         )}
-        style={menuStyle}
-        ref={scrollableRef}
+        dir={lang.isRtl ? 'rtl' : undefined}
       >
+        {shouldShowGiftButton
+          && (
+            <MenuItem icon="gift" onClick={handleGiftClick}>
+              {message?.isOutgoing ? lang('SendAnotherGift')
+                : lang('Conversation.ContextMenuSendGiftTo', userFullName)}
+            </MenuItem>
+          )}
         {canSendNow && <MenuItem icon="send-outline" onClick={onSend}>{lang('MessageScheduleSend')}</MenuItem>}
         {canReschedule && (
           <MenuItem icon="schedule" onClick={onReschedule}>{lang('MessageScheduleEditTime')}</MenuItem>
         )}
-        {canReply && <MenuItem icon="reply" onClick={onReply}>{lang('Reply')}</MenuItem>}
+        {canReply && (
+          <MenuItem icon="reply" onClick={onReply}>
+            {lang(canQuote ? 'lng_context_quote_and_reply' : 'Reply')}
+          </MenuItem>
+        )}
         {!noReplies && Boolean(repliesThreadInfo?.messagesCount) && (
           <MenuItem icon="replies" onClick={onOpenThread}>
             {lang('Conversation.ContextViewReplies', repliesThreadInfo!.messagesCount, 'i')}
@@ -365,8 +432,14 @@ const MessageContextMenu: FC<OwnProps> = ({
         {canSelectLanguage && (
           <MenuItem icon="web" onClick={onSelectLanguage}>{lang('lng_settings_change_lang')}</MenuItem>
         )}
-        {canCopy && copyOptions.map((option) => (
-          <MenuItem key={option.label} icon={option.icon} onClick={option.handler}>{lang(option.label)}</MenuItem>
+        {copyOptions.map((option) => (
+          <MenuItem
+            key={option.label}
+            icon={option.icon}
+            onClick={option.handler}
+            withPreventDefaultOnMouseDown
+          >{lang(option.label)}
+          </MenuItem>
         ))}
         {canPin && <MenuItem icon="pin" onClick={onPin}>{lang('DialogPin')}</MenuItem>}
         {canUnpin && <MenuItem icon="unpin" onClick={onUnpin}>{lang('DialogUnpin')}</MenuItem>}
@@ -381,44 +454,10 @@ const MessageContextMenu: FC<OwnProps> = ({
         {canForward && <MenuItem icon="forward" onClick={onForward}>{lang('Forward')}</MenuItem>}
         {canSelect && <MenuItem icon="select" onClick={onSelect}>{lang('Common.Select')}</MenuItem>}
         {canReport && <MenuItem icon="flag" onClick={onReport}>{lang('lng_context_report_msg')}</MenuItem>}
-        {(canShowSeenBy || canShowReactionsCount) && !isSponsoredMessage && (
-          <MenuItem
-            className="MessageContextMenu--seen-by"
-            icon={canShowReactionsCount ? 'heart-outline' : 'group'}
-            onClick={canShowReactionsCount ? onShowReactors : onShowSeenBy}
-            disabled={!canShowReactionsCount && !seenByDatesCount}
-          >
-            <span className="MessageContextMenu--seen-by-label">
-              {canShowReactionsCount && message.reactors?.count ? (
-                canShowSeenBy && seenByDatesCount
-                  ? lang(
-                    'Chat.OutgoingContextMixedReactionCount',
-                    [message.reactors.count, seenByDatesCount],
-                  )
-                  : lang('Chat.ContextReactionCount', message.reactors.count, 'i')
-              ) : (
-                seenByDatesCount === 1 && seenByRecentUsers
-                  ? renderText(getUserFullName(seenByRecentUsers[0])!)
-                  : (seenByDatesCount
-                    ? lang('Conversation.ContextMenuSeen', seenByDatesCount, 'i')
-                    : lang('Conversation.ContextMenuNoViews')
-                  )
-              )}
-            </span>
-            <div className="avatars">
-              {seenByRecentUsers?.map((user) => (
-                <Avatar
-                  size="micro"
-                  user={user}
-                />
-              ))}
-            </div>
-          </MenuItem>
-        )}
         {canDelete && <MenuItem destructive icon="delete" onClick={onDelete}>{lang('Delete')}</MenuItem>}
         {hasCustomEmoji && (
           <>
-            <MenuSeparator />
+            <MenuSeparator size="thick" />
             {!customEmojiSets && (
               <>
                 <Skeleton inline className="menu-loading-row" />
@@ -437,12 +476,56 @@ const MessageContextMenu: FC<OwnProps> = ({
             )}
           </>
         )}
-        {isSponsoredMessage && message.sponsorInfo && (
-          <MenuItem icon="channel" onClick={onSponsorInfo}>{lang('SponsoredMessageSponsor')}</MenuItem>
+        {(canShowSeenBy || canShowReactionsCount) && (
+          <>
+            <MenuSeparator size={hasCustomEmoji ? 'thin' : 'thick'} />
+            <MenuItem
+              icon={canShowReactionsCount ? 'heart-outline' : 'group'}
+              onClick={canShowReactionsCount ? onShowReactors : onShowSeenBy}
+              disabled={!canShowReactionsCount && !seenByDatesCount}
+            >
+              <span className="MessageContextMenu--seen-by-label-wrapper">
+                <span className="MessageContextMenu--seen-by-label" dir={lang.isRtl ? 'rtl' : undefined}>
+                  {canShowReactionsCount && message.reactors?.count ? (
+                    canShowSeenBy && seenByDatesCount
+                      ? lang(
+                        'Chat.OutgoingContextMixedReactionCount',
+                        [message.reactors.count, seenByDatesCount],
+                      )
+                      : lang('Chat.ContextReactionCount', message.reactors.count, 'i')
+                  ) : (
+                    seenByDatesCount === 1 && seenByRecentPeers
+                      ? renderText(
+                        isUserId(seenByRecentPeers[0].id)
+                          ? getUserFullName(seenByRecentPeers[0] as ApiUser)!
+                          : (seenByRecentPeers[0] as ApiChat).title,
+                      ) : (
+                        seenByDatesCount
+                          ? lang('Conversation.ContextMenuSeen', seenByDatesCount, 'i')
+                          : lang('Conversation.ContextMenuNoViews')
+                      )
+                  )}
+                </span>
+              </span>
+              <AvatarList className="avatars" size="micro" peers={seenByRecentPeers} />
+            </MenuItem>
+          </>
         )}
-        {isSponsoredMessage && <MenuItem icon="help" onClick={onAboutAds}>{lang('SponsoredMessageInfo')}</MenuItem>}
-        {isSponsoredMessage && onSponsoredHide && (
-          <MenuItem icon="stop" onClick={onSponsoredHide}>{lang('HideAd')}</MenuItem>
+        {(canLoadReadDate || shouldRenderShowWhen || isEdited) && (
+          <MenuSeparator size={hasCustomEmoji ? 'thin' : 'thick'} />
+        )}
+        {(canLoadReadDate || shouldRenderShowWhen) && (
+          <ReadTimeMenuItem
+            canLoadReadDate={canLoadReadDate}
+            shouldRenderShowWhen={shouldRenderShowWhen}
+            message={message}
+            closeContextMenu={onClose}
+          />
+        )}
+        {isEdited && (
+          <LastEditTimeMenuItem
+            message={message}
+          />
         )}
       </div>
     </Menu>
